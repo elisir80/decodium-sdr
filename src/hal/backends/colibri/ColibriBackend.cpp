@@ -26,9 +26,6 @@ constexpr int kMaxLogicalRxChannels = 4;
 constexpr qint64 kMinFrequencyHz = 100'000;
 constexpr qint64 kMaxFrequencyHz = 55'000'000;
 
-/// Ogni quanto si cerca il device quando non ce n'è uno aperto.
-constexpr int kDiscoveryIntervalMs = 2000;
-
 } // namespace
 
 ColibriBackend::ColibriBackend(QObject *parent)
@@ -154,8 +151,8 @@ void ColibriBackend::startDiscovery()
 
 void ColibriBackend::stopDiscovery()
 {
-    if (m_discoveryTimer)
-        m_discoveryTimer->stop();
+    // La discovery è a colpo singolo: non c'è nulla da fermare, si torna solo
+    // a riposo se era in corso.
     if (!m_open && m_state == BackendState::Discovering)
         setState(BackendState::Idle);
 }

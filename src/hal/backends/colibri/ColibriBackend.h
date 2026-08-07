@@ -26,7 +26,6 @@
 #include <memory>
 
 class QThread;
-class QTimer;
 
 namespace dsdr::hal::colibri {
 
@@ -108,7 +107,6 @@ private:
     PanId m_nextPanId = 1;
 
     std::unique_ptr<SampleRing> m_iqRing;
-    QTimer *m_discoveryTimer = nullptr;
 
     /// Il segno della parte immaginaria dipende dalla convenzione del flusso:
     /// se le bande laterali risultano scambiate, si coniuga. Regolabile a
