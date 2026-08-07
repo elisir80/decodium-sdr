@@ -11,6 +11,10 @@
 #include "hal/backends/nettcp/NetTcpBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_SOAPY
+#include "hal/backends/soapy/SoapyBackend.h"
+#endif
+
 namespace dsdr::hal {
 
 BackendRegistry &BackendRegistry::instance()
@@ -107,6 +111,16 @@ void registerBuiltinBackends()
                                    "è il modo in cui una chiavetta RTL-SDR da 30 € diventa "
                                    "utilizzabile, anche da un'altra stanza.")},
         [](QObject *parent) -> IRadioBackend * { return new NetTcpBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_SOAPY
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("soapy"),
+                    QStringLiteral("SoapySDR (hardware locale)"),
+                    QStringLiteral("Un solo backend per decine di radio: RTL-SDR, Airspy, "
+                                   "HackRF, LimeSDR, PlutoSDR, USRP. Ogni device con un "
+                                   "driver SoapySDR funziona senza scrivere altro codice.")},
+        [](QObject *parent) -> IRadioBackend * { return new SoapyBackend(parent); });
 #endif
 
     // Gli altri backend si aggiungono qui, uno per fase (§9). Ogni blocco è

@@ -18,6 +18,7 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 |---|---|
 | Seam HAL `IRadioBackend` + descrittore di capability | ✅ |
 | Backend **demo**: banda sintetica con CW, SSB, AM, digitale, QSB | ✅ |
+| Backend **soapy**: RTL-SDR, Airspy, HackRF, LimeSDR, PlutoSDR, USRP… | ✅ |
 | Backend **nettcp**: RTL-SDR via rtl_tcp, locale o remoto | ✅ |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
@@ -31,15 +32,24 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 Gli altri backend (SoapySDR, HPSDR, DLINK, FlexRadio, TCI, KiwiSDR) arrivano
 nelle fasi successive: il seam è già lì ad aspettarli.
 
-### Usare una chiavetta RTL-SDR
+### Usare hardware vero
+
+**Collegato via USB** — serve SoapySDR con il driver del proprio device
+(`soapysdr-module-rtlsdr`, `-airspy`, `-hackrf`…):
 
 ```sh
-rtl_tcp -a 0.0.0.0 -p 1234          # sulla macchina con la chiavetta
+./build/bin/decodium-sdr --backend soapy
+```
+
+**Su un'altra macchina**, via rtl_tcp:
+
+```sh
+rtl_tcp -a 0.0.0.0 -p 1234          # dove c'è la chiavetta
 ./build/bin/decodium-sdr --backend nettcp
 ```
 
-Se il server è su un'altra macchina, l'indirizzo si aggiunge dalla finestra
-«Sorgente» oppure con `DSDR_NETTCP_HOSTS=192.168.1.20:1234`.
+L'indirizzo si aggiunge dalla finestra «Sorgente» oppure con
+`DSDR_NETTCP_HOSTS=192.168.1.20:1234`.
 
 ## Compilare
 

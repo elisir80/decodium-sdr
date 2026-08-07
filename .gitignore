@@ -39,6 +39,12 @@ compile_commands.json
 Thumbs.db
 desktop.ini
 
+# Dipendenze compilate a mano in locale quando il pacchetto di sistema non è
+# utilizzabile. NON è vendoring: il codice di terze parti vendorizzato va
+# versionato, con licenza e voce in THIRD_PARTY_LICENSES (CONSTITUTION §3).
+# Questi sono solo artefatti di build della macchina di sviluppo.
+/third_party/soapysdr/
+
 # Registrazioni IQ: pesano e non appartengono al repository
 *.wav
 *.sigmf-data

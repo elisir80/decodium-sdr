@@ -98,7 +98,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build libfftw3-dev \
+            ninja-build libfftw3-dev libsoapysdr-dev \
             libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev \
             libvulkan-dev libegl1-mesa-dev \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
@@ -118,7 +118,7 @@ jobs:
         shell: bash
         run: |
           brew update
-          brew install qt@6 fftw ninja
+          brew install qt@6 fftw ninja soapysdr
           echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
 
       - name: Dipendenze (Windows/MSYS2)
@@ -137,6 +137,7 @@ jobs:
             mingw-w64-x86_64-qt6-shadertools
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw
+            mingw-w64-x86_64-soapysdr
 
       # ── Build ───────────────────────────────────────────────────────────
       - name: Configura

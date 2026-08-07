@@ -6,6 +6,20 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ### Aggiunto — Fase 1
 
+- Backend **soapy** (RF-01): un solo backend per RTL-SDR, Airspy, SDRplay,
+  HackRF, LimeSDR, PlutoSDR, USRP e chiunque altro pubblichi un driver
+  SoapySDR. È il moltiplicatore di universalità previsto dalla spec.
+  - Le capability non sono costanti: si leggono dal driver all'apertura. TX
+    dichiarato solo con canali TX reali, copertura in frequenza presa dal
+    device, `coherentRx` solo con più canali hardware.
+  - Stream `CF32`: float interleaved, lo stesso formato del ring — dalla
+    scheda al DSP non c'è alcuna conversione.
+  - Il ciclo di lettura non gira su un event loop, perché `readStream()` è
+    bloccante: i comandi passano da atomiche applicate fra una lettura e
+    l'altra, che è anche l'unico modo corretto di toccare un device SoapySDR.
+  - Nove test verificano la traduzione profilo → capability senza hardware: è
+    la parte che guida la UI, e un errore qui fa comparire un PTT su una
+    chiavetta che non trasmette.
 - **Internazionalizzazione** (RF-18): pipeline completa per quattordici lingue
   con `lupdate`/`lrelease` integrati nel build, selettore in barra di stato,
   scelta ricordata fra un avvio e l'altro e cambio a caccia calda — i binding

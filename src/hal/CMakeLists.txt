@@ -42,6 +42,30 @@ if(DSDR_BACKEND_NETTCP)
     set(DSDR_HAL_NEEDS_NETWORK ON)
 endif()
 
+if(DSDR_BACKEND_SOAPY)
+    # SoapySDR è opzionale: se manca si spiega come installarlo invece di
+    # lasciare all'utente un errore di CMake da decifrare.
+    find_package(SoapySDR CONFIG QUIET)
+    if(NOT SoapySDR_FOUND)
+        message(FATAL_ERROR
+            "SoapySDR non trovato ma DSDR_BACKEND_SOAPY=ON.\n"
+            "  MSYS2 : pacman -S mingw-w64-x86_64-soapysdr\n"
+            "  Debian: apt install libsoapysdr-dev\n"
+            "  macOS : brew install soapysdr\n"
+            "Oppure disattiva il backend con -DDSDR_BACKEND_SOAPY=OFF.")
+    endif()
+
+    list(APPEND DSDR_HAL_SOURCES
+        backends/soapy/SoapyProfile.h
+        backends/soapy/SoapyProfile.cpp
+        backends/soapy/SoapyWorker.h
+        backends/soapy/SoapyWorker.cpp
+        backends/soapy/SoapyBackend.h
+        backends/soapy/SoapyBackend.cpp
+    )
+    list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_SOAPY)
+endif()
+
 add_library(dsdr_hal STATIC ${DSDR_HAL_SOURCES})
 
 target_compile_definitions(dsdr_hal PUBLIC ${DSDR_HAL_DEFINES})
@@ -49,6 +73,10 @@ target_link_libraries(dsdr_hal PUBLIC dsdr::common dsdr::dsp Qt6::Core)
 
 if(DSDR_HAL_NEEDS_NETWORK)
     target_link_libraries(dsdr_hal PUBLIC Qt6::Network)
+endif()
+
+if(DSDR_BACKEND_SOAPY)
+    target_link_libraries(dsdr_hal PRIVATE SoapySDR)
 endif()
 
 dsdr_apply_target_defaults(dsdr_hal)
