@@ -13,6 +13,7 @@
 #include <QElapsedTimer>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <atomic>
 #include <vector>
@@ -41,6 +42,10 @@ public:
     void requestFrequency(qint64 hz);
     void requestSampleRate(double rate);
     void requestGain(double db);        ///< NaN o valore negativo = automatico
+    /// Indice nell'elenco antenne del profilo; negativo = nessun cambiamento.
+    /// Si passa un indice e non un nome perché una stringa non può essere
+    /// scambiata fra thread con una semplice atomica.
+    void requestAntenna(int index);
     void requestStop();
 
 public slots:
@@ -68,6 +73,8 @@ private:
     std::atomic<double> m_pendingSampleRate{-1.0};
     std::atomic<double> m_pendingGain{-1.0};
     std::atomic<bool> m_gainAuto{true};
+    std::atomic<int> m_pendingAntenna{-1};
+    QStringList m_antennas;   ///< letto dal profilo, usato solo dal ciclo
 };
 
 } // namespace dsdr::hal::soapy

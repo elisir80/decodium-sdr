@@ -115,6 +115,10 @@ BackendCapabilities NetTcpBackend::capabilities() const
     caps.multiClient = false;      // rtl_tcp serve un client alla volta
     caps.supportsRecording = true;
 
+    // Guadagno, ppm e bias tee esistono solo per questo protocollo: vivono in
+    // un pannello proprio, non nell'interfaccia generale (§4.1).
+    caps.nativePanels.append(QStringLiteral("NetTcpDevicePanel"));
+
     return caps;
 }
 

@@ -56,8 +56,9 @@ BackendCapabilities capabilitiesFrom(const SoapyDeviceProfile &profile)
     caps.multiClient = false;
     caps.supportsRecording = true;
 
-    if (!profile.antennas.isEmpty())
-        caps.nativePanels.append(QStringLiteral("SoapyDevicePanel"));
+    // Il pannello del device serve sempre: guadagno e AGC hardware esistono
+    // su qualunque radio, l'antenna solo su alcune.
+    caps.nativePanels.append(QStringLiteral("SoapyDevicePanel"));
 
     return caps;
 }

@@ -430,6 +430,18 @@ QVariant SoapyBackend::nativeCommand(const QString &command, const QVariantMap &
     }
     if (command == QLatin1String("soapy.antennas"))
         return QVariant(m_profile.antennas);
+    if (command == QLatin1String("soapy.setAntenna")) {
+        const QString name = args.value(QStringLiteral("antenna")).toString();
+        const int index = m_profile.antennas.indexOf(name);
+        if (index < 0) {
+            reportError(BackendError::Unsupported,
+                        tr("Il device non ha un'antenna «%1».").arg(name));
+            return QVariant();
+        }
+        if (m_worker)
+            m_worker->requestAntenna(index);
+        return QVariant(name);
+    }
     if (command == QLatin1String("soapy.driver"))
         return QVariant(m_profile.driver);
 

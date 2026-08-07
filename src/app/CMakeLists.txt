@@ -19,6 +19,10 @@ set(DSDR_QML_FILES
     qml/PanadapterPane.qml
     qml/ChannelStrip.qml
     qml/DiscoveryPane.qml
+    qml/PanelFrame.qml
+    qml/BackendPanelHost.qml
+    qml/SoapyDevicePanel.qml
+    qml/NetTcpDevicePanel.qml
 )
 
 foreach(qml_file IN LISTS DSDR_QML_FILES)

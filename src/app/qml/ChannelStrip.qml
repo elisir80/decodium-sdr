@@ -44,6 +44,12 @@ Rectangle {
             }
         }
 
+        // Controlli del backend attivo, se ne dichiara.
+        BackendPanelHost {
+            Layout.fillWidth: true
+            visible: Session.connected && Session.capabilities.nativePanels.length > 0
+        }
+
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true

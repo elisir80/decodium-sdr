@@ -60,6 +60,11 @@ void SoapyWorker::requestGain(double db)
     }
 }
 
+void SoapyWorker::requestAntenna(int index)
+{
+    m_pendingAntenna.store(index, std::memory_order_release);
+}
+
 void SoapyWorker::requestStop()
 {
     m_running.store(false, std::memory_order_release);
@@ -172,6 +177,15 @@ void SoapyWorker::applyPendingCommands(SoapySDR::Device *device)
         }
     }
 
+    const int antenna = m_pendingAntenna.exchange(-1, std::memory_order_acq_rel);
+    if (antenna >= 0 && antenna < m_antennas.size()) {
+        try {
+            device->setAntenna(SOAPY_SDR_RX, 0, m_antennas.at(antenna).toStdString());
+        } catch (const std::exception &e) {
+            emit failed(tr("Antenna rifiutata: %1").arg(QString::fromUtf8(e.what())), false);
+        }
+    }
+
     if (m_gainAuto.load(std::memory_order_acquire)) {
         try {
             if (device->hasGainMode(SOAPY_SDR_RX, 0) && !device->getGainMode(SOAPY_SDR_RX, 0))
@@ -230,6 +244,8 @@ void SoapyWorker::openAndRun(const QString &deviceArgs, qint64 frequencyHz, doub
         emit finished();
         return;
     }
+    // L'elenco antenne serve al ciclo per tradurre gli indici richiesti.
+    m_antennas = profile.antennas;
     emit opened(profile);
 
     runLoop(device);
