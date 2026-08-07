@@ -7,8 +7,9 @@ scritta in C++17 e QML puro con Qt 6.8 LTS, capace di pilotare qualsiasi
 hardware SDR — da una chiavetta RTL-SDR da 30 € fino al DECODIUM SDR One a
 quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 
-> Stato: **Fase 1 in corso.** Le fondamenta sono complete e il primo hardware
-> reale è supportato via rtl_tcp. Vedi [ROADMAP.md](ROADMAP.md).
+> Stato: **Fase 1 quasi completa.** Le fondamenta sono chiuse e l'hardware
+> reale è supportato per tre vie: USB via SoapySDR, rete via rtl_tcp e
+> SpyServer. Vedi [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -19,18 +20,21 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Seam HAL `IRadioBackend` + descrittore di capability | ✅ |
 | Backend **demo**: banda sintetica con CW, SSB, AM, digitale, QSB | ✅ |
 | Backend **soapy**: RTL-SDR, Airspy, HackRF, LimeSDR, PlutoSDR, USRP… | ✅ |
-| Backend **nettcp**: RTL-SDR via rtl_tcp, locale o remoto | ✅ |
+| Backend **nettcp**: rtl_tcp e SpyServer, con riconoscimento automatico | ✅ |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |
 | Uscita audio a bassa latenza | ✅ |
 | Registrazione IQ (WAV float32 + sidecar JSON, RF64 oltre 4 GB) | ✅ |
 | i18n: pipeline a 14 lingue, italiano e inglese completi | ✅ |
+| Pannelli per i controlli specifici di ogni radio | ✅ |
+| Pacchetti AppImage, DMG e ZIP portable | ✅ |
 | Conformance suite HAL + unit test DSP + integration test headless | ✅ |
 | CI su Linux, macOS e Windows con verifica delle regole architetturali | ✅ |
 
-Gli altri backend (SoapySDR, HPSDR, DLINK, FlexRadio, TCI, KiwiSDR) arrivano
-nelle fasi successive: il seam è già lì ad aspettarli.
+I backend ancora da scrivere (HPSDR, DLINK, FlexRadio, TCI, KiwiSDR) arrivano
+nelle fasi successive: il seam è già lì ad aspettarli, e la conformance suite
+li validerà senza che sia necessario scrivere un test in più.
 
 ### Usare hardware vero
 
@@ -80,7 +84,8 @@ cmake -S . -B build -DDSDR_BACKEND_SOAPY=ON -DDSDR_GPU_SPECTRUM=ON
 | Opzione | Default | Effetto |
 |---|---|---|
 | `DSDR_BACKEND_DEMO` | ON | Backend sintetico; necessario per i test |
-| `DSDR_BACKEND_SOAPY` … `DSDR_BACKEND_HAMLIB` | OFF | Backend hardware, fase per fase |
+| `DSDR_BACKEND_SOAPY`, `DSDR_BACKEND_NETTCP` | ON | Hardware locale e di rete |
+| `DSDR_BACKEND_HPSDR` … `DSDR_BACKEND_HAMLIB` | OFF | Backend delle fasi successive |
 | `DSDR_GPU_SPECTRUM` | ON | Spettro su GPU; OFF compila il path CPU |
 | `DSDR_BUILD_TESTS` | ON | Suite di test |
 | `DSDR_WARNINGS_AS_ERRORS` | OFF | `-Werror` |

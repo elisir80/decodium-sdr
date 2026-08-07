@@ -6,6 +6,18 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ### Aggiunto — Fase 1
 
+- **SpyServer** dentro il backend `nettcp`: secondo protocollo dietro la
+  stessa facciata, come il backend era stato pensato per ospitare.
+  - Il protocollo si riconosce da come il server si comporta appena connesso:
+    rtl_tcp saluta per primo, SpyServer resta in silenzio finché non ti
+    presenti. L'ordine del sondaggio non è invertibile — mandare byte a un
+    rtl_tcp prima del saluto significherebbe spedirgli comandi a caso.
+  - Copertura, risoluzione e frequenze di campionamento arrivano dal messaggio
+    DeviceInfo; i rate non sono liberi ma sono il massimo diviso per potenze
+    di due.
+- **Pannelli backend-specifici** caricati da `nativePanels`: guadagno,
+  antenna, ppm e bias tee hanno finalmente un'interfaccia.
+- **Packaging** AppImage, DMG e ZIP portable con workflow di release su tag.
 - Backend **soapy** (RF-01): un solo backend per RTL-SDR, Airspy, SDRplay,
   HackRF, LimeSDR, PlutoSDR, USRP e chiunque altro pubblichi un driver
   SoapySDR. È il moltiplicatore di universalità previsto dalla spec.

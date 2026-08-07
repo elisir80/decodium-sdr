@@ -23,5 +23,7 @@ if(DSDR_BACKEND_NETTCP)
             tst_nettcp.cpp
             RtlTcpMockServer.h
             RtlTcpMockServer.cpp
+            SpyServerMockServer.h
+            SpyServerMockServer.cpp
         LIBRARIES dsdr::hal Qt6::Network)
 endif()

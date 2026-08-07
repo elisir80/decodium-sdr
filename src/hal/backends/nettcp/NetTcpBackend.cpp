@@ -3,6 +3,7 @@
 #include "hal/HalLog.h"
 #include "hal/backends/nettcp/EndpointProbe.h"
 #include "hal/backends/nettcp/RtlTcpClient.h"
+#include "hal/backends/nettcp/SpyServerClient.h"
 
 #include <QThread>
 
@@ -80,8 +81,48 @@ void NetTcpBackend::clearAddedEndpoints()
     addedEndpoints().clear();
 }
 
+QList<double> NetTcpBackend::spyServerSampleRates() const
+{
+    QList<double> rates;
+    if (!m_spyDeviceInfoValid || m_spyDeviceInfo.maximumSampleRate == 0)
+        return rates;
+
+    // Ogni stadio dimezza: il server non accetta un rate arbitrario, accetta
+    // uno stadio di decimazione fra quelli che ha dichiarato.
+    const quint32 stages = std::max(m_spyDeviceInfo.decimationStageCount, 1u);
+    for (quint32 stage = m_spyDeviceInfo.minimumIqDecimation; stage < stages; ++stage) {
+        const double rate = static_cast<double>(m_spyDeviceInfo.maximumSampleRate)
+            / static_cast<double>(1u << stage);
+        if (rate >= 48000.0)
+            rates.append(rate);
+    }
+    std::sort(rates.begin(), rates.end());
+    return rates;
+}
+
 BackendCapabilities NetTcpBackend::capabilities() const
 {
+    if (m_protocol == NetProtocol::SpyServer && m_spyDeviceInfoValid) {
+        BackendCapabilities caps;
+        caps.maxRxChannels = kMaxRxChannels;
+        caps.coherentRx = true;
+        caps.maxPanadapters = 4;
+        caps.tx = TxSupport::None;      // SpyServer è un servizio di sola ricezione
+        caps.demod = DspLocation::Client;
+        caps.spectrum = DspLocation::Client;
+        caps.agc = DspLocation::Client;
+        caps.sampleRates = spyServerSampleRates();
+        caps.defaultSampleRate = caps.sampleRates.isEmpty() ? 0.0 : caps.sampleRates.last();
+        caps.minFrequencyHz = m_spyDeviceInfo.minimumFrequency;
+        caps.maxFrequencyHz = m_spyDeviceInfo.maximumFrequency;
+        caps.adcBits = static_cast<int>(m_spyDeviceInfo.resolution);
+        caps.hasPreamp = m_spyDeviceInfo.gainStageCount > 0;
+        caps.remoteCapable = true;
+        caps.multiClient = true;        // un SpyServer serve più ascoltatori
+        caps.supportsRecording = true;
+        return caps;
+    }
+
     BackendCapabilities caps;
     caps.maxRxChannels = kMaxRxChannels;
     // I canali derivano tutti dallo stesso flusso IQ: sono coerenti per
@@ -166,25 +207,38 @@ void NetTcpBackend::startDiscovery()
         ++m_pendingProbes;
 
         connect(probe, &EndpointProbe::probed, this,
-                [this](EndpointProbe *finished, bool found, quint32 tuner, quint32 gains) {
-                    if (found) {
-                        const TunerCoverage coverage = coverageFor(static_cast<TunerType>(tuner));
-
+                [this](EndpointProbe *finished, NetProtocol protocol, quint32 detail) {
+                    if (protocol != NetProtocol::None) {
                         DeviceDescriptor device;
                         device.backendId = backendId();
                         device.deviceId = QStringLiteral("%1:%2")
                                               .arg(finished->host())
                                               .arg(finished->port());
-                        device.displayName = QStringLiteral("rtl_tcp %1 — %2")
-                                                 .arg(device.deviceId)
-                                                 .arg(QString::fromLatin1(coverage.name));
-                        device.model = QString::fromLatin1(coverage.name);
                         device.transport = QStringLiteral("tcp");
                         device.address = device.deviceId;
                         device.extra.insert(QStringLiteral("host"), finished->host());
                         device.extra.insert(QStringLiteral("port"), finished->port());
-                        device.extra.insert(QStringLiteral("tunerType"), tuner);
-                        device.extra.insert(QStringLiteral("gainSteps"), gains);
+
+                        if (protocol == NetProtocol::RtlTcp) {
+                            const TunerCoverage coverage =
+                                coverageFor(static_cast<TunerType>(detail));
+                            device.model = QString::fromLatin1(coverage.name);
+                            device.displayName = QStringLiteral("rtl_tcp %1 — %2")
+                                                     .arg(device.deviceId)
+                                                     .arg(device.model);
+                            device.extra.insert(QStringLiteral("protocol"),
+                                                QStringLiteral("rtl_tcp"));
+                            device.extra.insert(QStringLiteral("tunerType"), detail);
+                        } else {
+                            device.model =
+                                QString::fromLatin1(spyserver::deviceTypeName(detail));
+                            device.displayName = QStringLiteral("SpyServer %1 — %2")
+                                                     .arg(device.deviceId)
+                                                     .arg(device.model);
+                            device.extra.insert(QStringLiteral("protocol"),
+                                                QStringLiteral("spyserver"));
+                            device.extra.insert(QStringLiteral("deviceType"), detail);
+                        }
 
                         emit deviceFound(device);
                     }
@@ -249,23 +303,57 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
     if (!caps.coversFrequency(m_centerHz))
         m_centerHz = std::clamp<qint64>(m_centerHz, caps.minFrequencyHz, caps.maxFrequencyHz);
 
+    // Il protocollo è stato riconosciuto durante il sondaggio; dietro la
+    // stessa facciata cambia solo il client.
+    m_protocol = device.extra.value(QStringLiteral("protocol")).toString()
+                     == QLatin1String("spyserver")
+        ? NetProtocol::SpyServer
+        : NetProtocol::RtlTcp;
+
     setState(BackendState::Connecting);
     m_open = true;
     m_iqRing->clear();
     m_sequence = 0;
+    m_spyDeviceInfoValid = false;
 
-    auto *client = new RtlTcpClient(m_iqRing.get());
     m_thread = new QThread(this);
     m_thread->setObjectName(QStringLiteral("dsdr-nettcp-ingest"));
+
+    if (m_protocol == NetProtocol::SpyServer)
+        openSpyServer(host, port);
+    else
+        openRtlTcp(host, port);
+}
+
+/// Emette il descrittore del frame. Comune ai due protocolli: cambia chi
+/// produce i campioni, non che cosa se ne dice ai consumatori.
+#define DSDR_CONNECT_SAMPLES(clientPtr, ClientType)                                    \
+    connect(clientPtr, &ClientType::samplesProduced, this,                             \
+            [this](quint32 frames, quint32 dropped, quint64 timestampNs) {             \
+                if (frames == 0 && dropped == 0)                                       \
+                    return;                                                            \
+                IqFrame frame;                                                         \
+                frame.channel = kInvalidChannel;                                       \
+                frame.sequence = ++m_sequence;                                         \
+                frame.centerFrequencyHz = m_centerHz;                                  \
+                frame.sampleRate = m_sampleRate;                                       \
+                frame.frameCount = frames;                                             \
+                frame.droppedFrames = dropped;                                         \
+                frame.timestampNs = timestampNs;                                        \
+                emit iqFrameReady(frame);                                              \
+            },                                                                          \
+            Qt::DirectConnection)
+
+void NetTcpBackend::openRtlTcp(const QString &host, quint16 port)
+{
+    auto *client = new RtlTcpClient(m_iqRing.get());
     client->moveToThread(m_thread);
     connect(m_thread, &QThread::finished, client, &QObject::deleteLater);
 
     connect(client, &RtlTcpClient::connected, this, &NetTcpBackend::onClientConnected);
-
     connect(client, &RtlTcpClient::failed, this, [this](const QString &message, bool fatal) {
         reportError(BackendError::TransportError, message, fatal);
     });
-
     connect(client, &RtlTcpClient::disconnected, this, [this] {
         if (m_open)
             reportError(BackendError::TransportError,
@@ -274,21 +362,7 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
 
     // DirectConnection: il descrittore nasce nel thread di ingest e il signal
     // è riemesso da lì; i consumatori si collegano queued e leggono dal ring.
-    connect(client, &RtlTcpClient::samplesProduced, this,
-            [this](quint32 frames, quint32 dropped, quint64 timestampNs) {
-                if (frames == 0 && dropped == 0)
-                    return;
-                IqFrame frame;
-                frame.channel = kInvalidChannel;
-                frame.sequence = ++m_sequence;
-                frame.centerFrequencyHz = m_centerHz;
-                frame.sampleRate = m_sampleRate;
-                frame.frameCount = frames;
-                frame.droppedFrames = dropped;
-                frame.timestampNs = timestampNs;
-                emit iqFrameReady(frame);
-            },
-            Qt::DirectConnection);
+    DSDR_CONNECT_SAMPLES(client, RtlTcpClient);
 
     m_client = client;
     m_thread->start();
@@ -303,6 +377,35 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
                               Q_ARG(QString, host), Q_ARG(quint16, port));
 }
 
+void NetTcpBackend::openSpyServer(const QString &host, quint16 port)
+{
+    auto *client = new SpyServerClient(m_iqRing.get());
+    client->moveToThread(m_thread);
+    connect(m_thread, &QThread::finished, client, &QObject::deleteLater);
+
+    connect(client, &SpyServerClient::connected, this, &NetTcpBackend::onSpyServerConnected);
+    connect(client, &SpyServerClient::failed, this, [this](const QString &message, bool fatal) {
+        reportError(BackendError::TransportError, message, fatal);
+    });
+    connect(client, &SpyServerClient::disconnected, this, [this] {
+        if (m_open)
+            reportError(BackendError::TransportError,
+                        tr("Il server ha chiuso la connessione."), true);
+    });
+
+    DSDR_CONNECT_SAMPLES(client, SpyServerClient);
+
+    m_spyClient = client;
+    m_thread->start();
+
+    QMetaObject::invokeMethod(client, "setFrequency", Qt::QueuedConnection,
+                              Q_ARG(qint64, m_centerHz));
+    QMetaObject::invokeMethod(client, "connectToServer", Qt::QueuedConnection,
+                              Q_ARG(QString, host), Q_ARG(quint16, port));
+}
+
+#undef DSDR_CONNECT_SAMPLES
+
 void NetTcpBackend::onClientConnected(quint32 tunerType, quint32 gainStepCount)
 {
     m_tunerType = tunerType;
@@ -310,6 +413,29 @@ void NetTcpBackend::onClientConnected(quint32 tunerType, quint32 gainStepCount)
 
     setState(BackendState::Streaming);
     emit capabilitiesChanged();     // la copertura ora è quella del tuner vero
+    emit centerFrequencyChanged(m_centerHz);
+    emit sampleRateChanged(m_sampleRate);
+}
+
+void NetTcpBackend::onSpyServerConnected(const spyserver::DeviceInfo &info)
+{
+    m_spyDeviceInfo = info;
+    m_spyDeviceInfoValid = true;
+
+    // Ora si sa che device c'è dall'altra parte: frequenza e rate vanno
+    // riportati dentro ciò che il server accetta davvero.
+    const BackendCapabilities caps = capabilities();
+    if (!caps.coversFrequency(m_centerHz) && caps.maxFrequencyHz > caps.minFrequencyHz) {
+        m_centerHz = std::clamp(m_centerHz, caps.minFrequencyHz, caps.maxFrequencyHz);
+        if (m_spyClient)
+            QMetaObject::invokeMethod(m_spyClient, "setFrequency", Qt::QueuedConnection,
+                                      Q_ARG(qint64, m_centerHz));
+    }
+    if (!caps.sampleRates.contains(m_sampleRate) && caps.defaultSampleRate > 0.0)
+        m_sampleRate = caps.defaultSampleRate;
+
+    setState(BackendState::Streaming);
+    emit capabilitiesChanged();
     emit centerFrequencyChanged(m_centerHz);
     emit sampleRateChanged(m_sampleRate);
 }
@@ -324,15 +450,23 @@ void NetTcpBackend::close()
     m_open = false;
 
     if (m_thread) {
-        if (m_client && m_thread->isRunning())
-            QMetaObject::invokeMethod(m_client, "disconnectFromServer",
-                                      Qt::BlockingQueuedConnection);
+        if (m_thread->isRunning()) {
+            if (m_client)
+                QMetaObject::invokeMethod(m_client, "disconnectFromServer",
+                                          Qt::BlockingQueuedConnection);
+            if (m_spyClient)
+                QMetaObject::invokeMethod(m_spyClient, "disconnectFromServer",
+                                          Qt::BlockingQueuedConnection);
+        }
         m_thread->quit();
         m_thread->wait();
         delete m_thread;
         m_thread = nullptr;
         m_client = nullptr;
+        m_spyClient = nullptr;
     }
+
+    m_spyDeviceInfoValid = false;
 
     m_channels.clear();
     m_panadapters.clear();
@@ -355,6 +489,9 @@ void NetTcpBackend::setCenterFrequency(qint64 hz)
     if (m_client)
         QMetaObject::invokeMethod(m_client, "setFrequency", Qt::QueuedConnection,
                                   Q_ARG(qint64, hz));
+    if (m_spyClient)
+        QMetaObject::invokeMethod(m_spyClient, "setFrequency", Qt::QueuedConnection,
+                                  Q_ARG(qint64, hz));
     emit centerFrequencyChanged(hz);
 }
 
@@ -369,9 +506,17 @@ void NetTcpBackend::setSampleRate(double rate)
         return;
 
     m_sampleRate = rate;
-    if (m_client)
+    if (m_client) {
         QMetaObject::invokeMethod(m_client, "setSampleRate", Qt::QueuedConnection,
                                   Q_ARG(double, rate));
+    }
+    if (m_spyClient && m_spyDeviceInfoValid && m_spyDeviceInfo.maximumSampleRate > 0) {
+        // SpyServer non accetta un rate: accetta uno stadio di decimazione.
+        const double ratio = static_cast<double>(m_spyDeviceInfo.maximumSampleRate) / rate;
+        const int stage = static_cast<int>(std::lround(std::log2(std::max(ratio, 1.0))));
+        QMetaObject::invokeMethod(m_spyClient, "setDecimationStage", Qt::QueuedConnection,
+                                  Q_ARG(int, stage));
+    }
     emit sampleRateChanged(rate);
 }
 

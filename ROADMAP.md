@@ -28,14 +28,14 @@ out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
 | Voce | Stato |
 |---|---|
 | Backend nettcp — rtl_tcp | ✅ |
-| Backend nettcp — SpyServer | ⬜ secondo protocollo dietro la stessa facciata |
+| Backend nettcp — SpyServer | ✅ riconoscimento automatico del protocollo |
 | Backend soapy | ✅ capability lette dal driver, stream CF32 |
 | Multi-canale | ✅ dalla Fase 0 |
 | Registrazione IQ | ✅ WAV float32 + sidecar JSON, RF64 oltre i 4 GB |
 | Riproduzione da file IQ | ⬜ arriverà come backend `iqfile`, dietro lo stesso seam |
 | i18n — pipeline e selettore lingua | ✅ 14 lingue predisposte |
 | i18n — traduzioni complete | 🔄 italiano (sorgente) e inglese; le altre 12 attendono revisori madrelingua |
-| Pacchetti AppImage / DMG / ZIP | ⬜ |
+| Pacchetti AppImage / DMG / ZIP | ✅ workflow di release su tag |
 
 ## Fase 2 — Radio vere
 

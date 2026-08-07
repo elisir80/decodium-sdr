@@ -7,6 +7,7 @@
 // numeri giusti.
 
 #include "RtlTcpMockServer.h"
+#include "SpyServerMockServer.h"
 #include "hal/BackendRegistry.h"
 #include "hal/IRadioBackend.h"
 
@@ -38,8 +39,15 @@ private slots:
     void transmitIsAlwaysRefused();
     void nativeCommandsReachTheServer();
 
+    // ── SpyServer: secondo protocollo dietro la stessa facciata ──────────
+    void spyServerIsRecognisedByItsSilence();
+    void spyServerHandshakeStartsStreaming();
+    void spyServerCapabilitiesComeFromTheDevice();
+    void spyServerSamplesAreScaled();
+
 private:
     std::unique_ptr<dsdr::test::RtlTcpMockServer> m_server;
+    std::unique_ptr<dsdr::test::SpyServerMockServer> m_spyServer;
     std::unique_ptr<IRadioBackend> m_backend;
 
     bool waitFor(std::function<bool()> predicate, int timeoutMs = 5000)
@@ -52,6 +60,19 @@ private:
             QTest::qWait(20);
         }
         return predicate();
+    }
+
+    /// Sostituisce il mock rtl_tcp con uno SpyServer sullo stesso backend.
+    bool useSpyServerMock()
+    {
+        m_server.reset();   // libera l'endpoint rtl_tcp
+        m_spyServer = std::make_unique<dsdr::test::SpyServerMockServer>();
+        if (!m_spyServer->listen())
+            return false;
+        qputenv("DSDR_NETTCP_HOSTS", m_spyServer->endpoint().toUtf8());
+
+        m_backend.reset(BackendRegistry::instance().create(QStringLiteral("nettcp")));
+        return m_backend != nullptr;
     }
 
     /// Avvia il mock, fa discovery e apre il device trovato.
@@ -92,6 +113,7 @@ void TestNetTcp::cleanup()
         m_backend.reset();
     }
     m_server.reset();
+    m_spyServer.reset();
     qunsetenv("DSDR_NETTCP_HOSTS");
 }
 
@@ -233,6 +255,97 @@ void TestNetTcp::nativeCommandsReachTheServer()
 
     // Un comando sconosciuto degrada senza lanciare (§4.1).
     QVERIFY(!m_backend->nativeCommand(QStringLiteral("nettcp.inesistente"), {}).isValid());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpyServer
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TestNetTcp::spyServerIsRecognisedByItsSilence()
+{
+    QVERIFY(useSpyServerMock());
+
+    QSignalSpy found(m_backend.get(), &IRadioBackend::deviceFound);
+    QSignalSpy finished(m_backend.get(), &IRadioBackend::discoveryFinished);
+
+    m_backend->startDiscovery();
+    QVERIFY2(finished.wait(6000), "la discovery non è terminata");
+    QCOMPARE(found.count(), 1);
+
+    // Il riconoscimento si regge su una differenza di comportamento: rtl_tcp
+    // saluta per primo, SpyServer aspetta di essere salutato.
+    const auto device = found.first().first().value<DeviceDescriptor>();
+    QCOMPARE(device.extra.value(QStringLiteral("protocol")).toString(),
+             QStringLiteral("spyserver"));
+    QVERIFY2(device.displayName.contains(QStringLiteral("SpyServer")),
+             qPrintable(device.displayName));
+    QVERIFY2(m_spyServer->helloReceived(),
+             "il client non si è presentato: senza handshake un SpyServer resta muto");
+}
+
+void TestNetTcp::spyServerHandshakeStartsStreaming()
+{
+    QVERIFY(useSpyServerMock());
+    QVERIFY(connectToMock());
+
+    // Lo streaming non parte da solo: va chiesto, dopo aver detto che cosa si
+    // vuole ricevere.
+    QVERIFY2(waitFor([this] { return m_spyServer->streamingEnabled(); }),
+             "lo streaming non è stato abilitato");
+    QVERIFY2(m_spyServer->settingCount() >= 4,
+             "troppe poche impostazioni inviate prima di accendere il flusso");
+    QVERIFY2(waitFor([this] { return m_spyServer->lastFrequencyHz() > 0; }),
+             "nessuna frequenza comunicata al server");
+}
+
+void TestNetTcp::spyServerCapabilitiesComeFromTheDevice()
+{
+    QVERIFY(useSpyServerMock());
+    QVERIFY(connectToMock());
+    QVERIFY(waitFor([this] { return m_backend->capabilities().maxFrequencyHz > 0; }));
+
+    const BackendCapabilities caps = m_backend->capabilities();
+
+    // Copertura e risoluzione arrivano dal messaggio DeviceInfo.
+    QCOMPARE(caps.minFrequencyHz, 24'000'000);
+    QCOMPARE(caps.maxFrequencyHz, 1'800'000'000);
+    QCOMPARE(caps.adcBits, 12);
+    QVERIFY2(!caps.canTransmit(), "SpyServer è un servizio di sola ricezione");
+    QVERIFY2(caps.multiClient, "un SpyServer serve più ascoltatori insieme");
+
+    // I rate non sono liberi: sono il massimo diviso per potenze di due.
+    QVERIFY2(!caps.sampleRates.isEmpty(), "nessuna frequenza di campionamento offerta");
+    for (double rate : caps.sampleRates) {
+        const double ratio = 10'000'000.0 / rate;
+        const double stage = std::log2(ratio);
+        QVERIFY2(std::abs(stage - std::round(stage)) < 1e-6,
+                 qPrintable(QStringLiteral("rate non ottenibile per decimazione: %1").arg(rate)));
+    }
+}
+
+void TestNetTcp::spyServerSamplesAreScaled()
+{
+    QVERIFY(useSpyServerMock());
+    QVERIFY(connectToMock());
+
+    SampleRing *ring = m_backend->iqStream();
+    QVERIFY(ring);
+    QVERIFY2(waitFor([ring] { return ring->available() >= 4096; }, 6000),
+             "nessun campione ricevuto dal SpyServer");
+
+    std::vector<float> samples(4096);
+    const std::size_t got = ring->read(samples.data(), samples.size());
+    QVERIFY(got > 1000);
+
+    // Il mock manda int16 al ~37% del fondo scala: dopo la conversione i
+    // campioni devono restare in [-1, 1] e non essere silenzio.
+    double peak = 0.0;
+    for (std::size_t i = 0; i < got; ++i) {
+        QVERIFY2(std::isfinite(samples[i]), "campione non finito");
+        peak = std::max(peak, std::abs(static_cast<double>(samples[i])));
+    }
+    QVERIFY2(peak > 0.2 && peak <= 1.0,
+             qPrintable(QStringLiteral("ampiezza fuori scala: %1").arg(peak)));
 }
 
 QTEST_MAIN(TestNetTcp)

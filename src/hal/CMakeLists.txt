@@ -35,6 +35,9 @@ if(DSDR_BACKEND_NETTCP)
         backends/nettcp/EndpointProbe.cpp
         backends/nettcp/RtlTcpClient.h
         backends/nettcp/RtlTcpClient.cpp
+        backends/nettcp/SpyServerProtocol.h
+        backends/nettcp/SpyServerClient.h
+        backends/nettcp/SpyServerClient.cpp
         backends/nettcp/NetTcpBackend.h
         backends/nettcp/NetTcpBackend.cpp
     )

@@ -1,8 +1,12 @@
 # Backend `nettcp`
 
-Sorgenti IQ raggiungibili via TCP (RF-07). Oggi parla **rtl_tcp**: è ciò che
-rende utilizzabile una chiavetta RTL-SDR da 30 €, anche montata su un Raspberry
-in giardino con l'antenna lontana dai disturbi di casa.
+Sorgenti IQ raggiungibili via TCP (RF-07). Parla **rtl_tcp** e **SpyServer**:
+il primo rende utilizzabile una chiavetta RTL-SDR anche montata su un Raspberry
+in giardino, il secondo apre agli Airspy condivisi in rete.
+
+I due protocolli si riconoscono da come si comportano appena connessi —
+rtl_tcp saluta per primo, SpyServer aspetta di essere salutato — quindi
+l'utente non deve dichiarare che cosa ci sia dall'altra parte.
 
 Classe **raw-IQ**: il server consegna solo campioni, tutto il resto lo fa il
 DSP client.
@@ -38,9 +42,17 @@ Da dove vengono gli endpoint, in ordine:
 3. `127.0.0.1:1234`, il default di rtl_tcp.
 
 Connettersi non basta come prova: qualunque servizio in ascolto accetta la
-connessione. Un endpoint entra in lista solo se risponde con il saluto `RTL0`
-entro 900 ms. È il caso coperto dal test
-`discoveryIgnoresServersWithoutGreeting`.
+connessione.
+
+Il sondaggio procede in due tempi, e l'ordine non è invertibile:
+
+1. **Si aspetta in silenzio** per ~450 ms. Se arriva `RTL0`, è un rtl_tcp.
+2. Se non arriva nulla, si manda l'handshake SpyServer. Se risponde con un
+   `DeviceInfo`, è un SpyServer.
+
+Mandare l'handshake per primo significherebbe spedire a un eventuale rtl_tcp
+una manciata di byte che lui interpreterebbe come comandi, cambiandogli
+frequenza durante una semplice ricerca.
 
 ## Capability
 
@@ -86,14 +98,11 @@ backend-specifici.
 
 ## Limiti noti
 
-- **SpyServer non è ancora implementato.** La spec RF-07 lo prevede e il
-  backend è nato per ospitarlo come secondo protocollo dietro la stessa
-  facciata, ma oggi `nettcp` parla solo rtl_tcp.
+- **SpyServer: solo IQ.** Il canale FFT del protocollo non è usato — lo
+  spettro lo calcola comunque il DSP client — e i formati compressi non sono
+  supportati: si richiede int16, che ogni server offre.
 - **Nessuna riconnessione automatica.** Se il server cade, la sessione si
   chiude con un errore e tocca all'utente riconnettersi.
-- **Il guadagno non è ancora esposto in UI**: si imposta solo via comando
-  nativo. Serve il caricamento dei pannelli backend-specifici dichiarati in
-  `capabilities().nativePanels`, previsto più avanti.
 - La correzione in ppm non è persistente: si perde alla chiusura, in attesa
   del SettingsStore.
 

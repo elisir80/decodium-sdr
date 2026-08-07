@@ -15,6 +15,8 @@
 #pragma once
 
 #include "hal/IRadioBackend.h"
+#include "hal/backends/nettcp/EndpointProbe.h"
+#include "hal/backends/nettcp/SpyServerProtocol.h"
 
 #include <QHash>
 #include <QPointer>
@@ -27,7 +29,7 @@ class QThread;
 namespace dsdr::hal::nettcp {
 
 class RtlTcpClient;
-class EndpointProbe;
+class SpyServerClient;
 
 class NetTcpBackend : public IRadioBackend
 {
@@ -84,6 +86,13 @@ private:
     void setState(BackendState state);
     void reportError(BackendError::Code code, const QString &message, bool fatal = false);
     void onClientConnected(quint32 tunerType, quint32 gainStepCount);
+    void onSpyServerConnected(const spyserver::DeviceInfo &info);
+    void openRtlTcp(const QString &host, quint16 port);
+    void openSpyServer(const QString &host, quint16 port);
+
+    /// Frequenze di campionamento offerte da un SpyServer: il rate non è
+    /// libero, si sceglie uno stadio di decimazione fra quelli dichiarati.
+    QList<double> spyServerSampleRates() const;
 
     BackendState m_state = BackendState::Idle;
     bool m_open = false;
@@ -96,6 +105,10 @@ private:
     quint32 m_tunerType = 0;
     quint32 m_gainStepCount = 0;
 
+    NetProtocol m_protocol = NetProtocol::RtlTcp;
+    spyserver::DeviceInfo m_spyDeviceInfo;
+    bool m_spyDeviceInfoValid = false;
+
     QHash<ChannelId, RxChannelConfig> m_channels;
     QHash<PanId, PanConfig> m_panadapters;
     ChannelId m_nextChannelId = 1;
@@ -103,7 +116,10 @@ private:
 
     std::unique_ptr<SampleRing> m_iqRing;
     QThread *m_thread = nullptr;
+    // Un puntatore per protocollo invece di una classe base: i due client
+    // condividono il ring e il ciclo di vita, non l'interfaccia.
     QPointer<RtlTcpClient> m_client;
+    QPointer<SpyServerClient> m_spyClient;
     QList<EndpointProbe *> m_probes;
     int m_pendingProbes = 0;
     quint64 m_sequence = 0;
