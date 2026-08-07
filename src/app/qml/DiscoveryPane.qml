@@ -57,6 +57,46 @@ Rectangle {
             }
         }
 
+        // Compare solo per le sorgenti che stanno dietro una rete: è una
+        // capability, non un ramo sul tipo di backend (CONSTITUTION §7).
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacing
+            visible: Session.capabilities.remoteCapable
+
+            TextField {
+                id: endpointField
+
+                Layout.fillWidth: true
+                placeholderText: qsTr("indirizzo:porta  (es. 192.168.1.20:1234)")
+                color: Theme.textPrimary
+                placeholderTextColor: Theme.textDisabled
+                font.pixelSize: Theme.fontNormal
+                selectByMouse: true
+
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: Theme.surfaceSunken
+                    border.width: 1
+                    border.color: endpointField.activeFocus ? Theme.accent : Theme.border
+                }
+
+                onAccepted: addEndpointButton.clicked()
+            }
+
+            DsdrButton {
+                id: addEndpointButton
+                text: qsTr("Aggiungi")
+                enabled: endpointField.text.trim().length > 0
+                onClicked: {
+                    if (Session.addRemoteEndpoint(endpointField.text)) {
+                        endpointField.clear()
+                        Session.startDiscovery()
+                    }
+                }
+            }
+        }
+
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true

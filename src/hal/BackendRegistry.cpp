@@ -7,6 +7,10 @@
 #include "hal/backends/demo/DemoBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_NETTCP
+#include "hal/backends/nettcp/NetTcpBackend.h"
+#endif
+
 namespace dsdr::hal {
 
 BackendRegistry &BackendRegistry::instance()
@@ -93,6 +97,16 @@ void registerBuiltinBackends()
                     QStringLiteral("Banda simulata con stazioni CW, SSB e AM: "
                                    "l'applicazione è pienamente operativa senza hardware.")},
         [](QObject *parent) -> IRadioBackend * { return new DemoBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_NETTCP
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("nettcp"),
+                    QStringLiteral("Sorgente IQ di rete (rtl_tcp)"),
+                    QStringLiteral("Riceve campioni IQ da un server rtl_tcp, locale o remoto: "
+                                   "è il modo in cui una chiavetta RTL-SDR da 30 € diventa "
+                                   "utilizzabile, anche da un'altra stanza.")},
+        [](QObject *parent) -> IRadioBackend * { return new NetTcpBackend(parent); });
 #endif
 
     // Gli altri backend si aggiungono qui, uno per fase (§9). Ogni blocco è

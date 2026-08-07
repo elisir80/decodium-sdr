@@ -15,18 +15,25 @@ waterfall su QRhi in QML, channel strip, DSP full-chain (SSB/CW/AM/SAM/FM),
 tema DECODIUM.
 
 **Criterio d'uscita:** l'app gira in CI sulle tre piattaforme, il demo mode è
-pienamente operativo, la conformance suite è verde.
+pienamente operativo, la conformance suite è verde. **Raggiunto.**
 
-Stato: demo mode operativo, 5 suite di test verdi in locale.
-Resta da fare: workflow CI sulle tre piattaforme.
-
-## Fase 1 — Universale subito
+## Fase 1 — Universale subito 🔄
 
 Backend **soapy** e **nettcp** (rtl_tcp / SpyServer), multi-canale,
 registrazione IQ, i18n a 14 lingue.
 
 **Criterio d'uscita:** un RTL-SDR da 30 € e un Airspy funzionano
 out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
+
+| Voce | Stato |
+|---|---|
+| Backend nettcp — rtl_tcp | ✅ |
+| Backend nettcp — SpyServer | ⬜ secondo protocollo dietro la stessa facciata |
+| Backend soapy | ⬜ richiede SoapySDR fra le dipendenze |
+| Multi-canale | ✅ dalla Fase 0 |
+| Registrazione IQ | ⬜ |
+| i18n a 14 lingue | ⬜ |
+| Pacchetti AppImage / DMG / ZIP | ⬜ |
 
 ## Fase 2 — Radio vere
 

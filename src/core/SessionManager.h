@@ -97,6 +97,12 @@ public:
 
     Q_INVOKABLE void setPtt(bool transmit);
 
+    /// Aggiunge un indirizzo da sondare alla prossima discovery, per i backend
+    /// che dichiarano `remoteCapable`. Il core non sa quale protocollo ci sia
+    /// dietro: usa la convenzione "net.addEndpoint" (CONSTITUTION §7).
+    Q_INVOKABLE bool addRemoteEndpoint(const QString &endpoint);
+    Q_INVOKABLE QStringList remoteEndpoints() const;
+
     /// Nomi dei modi, per popolare i selettori senza duplicare la tabella in QML.
     Q_INVOKABLE QStringList modeNames() const;
     Q_INVOKABLE QStringList agcModeNames() const;

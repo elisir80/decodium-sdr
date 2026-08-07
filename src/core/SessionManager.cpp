@@ -514,6 +514,35 @@ void SessionManager::setPtt(bool transmit)
     m_backend->setPtt(transmit);
 }
 
+bool SessionManager::addRemoteEndpoint(const QString &endpoint)
+{
+    const QString trimmed = endpoint.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    if (!m_backend || !m_capabilities.remoteCapable()) {
+        setStatus(tr("Questa sorgente non accetta indirizzi di rete."));
+        return false;
+    }
+
+    const QVariant result = m_backend->nativeCommand(
+        QStringLiteral("net.addEndpoint"), {{QStringLiteral("endpoint"), trimmed}});
+    if (!result.isValid()) {
+        setStatus(tr("Il backend non ha accettato l'indirizzo %1.").arg(trimmed));
+        return false;
+    }
+
+    setStatus(tr("Indirizzo %1 aggiunto: avvia la ricerca.").arg(trimmed));
+    return true;
+}
+
+QStringList SessionManager::remoteEndpoints() const
+{
+    if (!m_backend || !m_capabilities.remoteCapable())
+        return {};
+    return m_backend->nativeCommand(QStringLiteral("net.endpoints"), {}).toStringList();
+}
+
 QStringList SessionManager::modeNames() const
 {
     static const QList<DemodMode> order = {

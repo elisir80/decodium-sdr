@@ -4,6 +4,27 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+### Aggiunto — Fase 1
+
+- Backend **nettcp** (RF-07): client rtl_tcp completo. Una chiavetta RTL-SDR
+  diventa utilizzabile, anche remota — è il primo hardware reale supportato.
+  - Discovery per sondaggio: rtl_tcp non si annuncia, e accettare una
+    connessione non è prova sufficiente; entra in lista solo chi risponde con
+    il saluto `RTL0`.
+  - La copertura in frequenza dichiarata segue il tuner riportato
+    dall'handshake, invece di promettere sempre la stessa banda.
+  - Conversione da uint8 centrata e verificata: una deriva di mezzo LSB
+    produrrebbe una riga fantasma a centro banda.
+  - Comandi nativi per guadagno, correzione in ppm e bias tee.
+- Server rtl_tcp finto nei test: il backend passa l'intera conformance suite
+  in CI senza hardware, senza che sia stato scritto un test di conformità in
+  più — è il seam a essere data-driven sui backend registrati.
+- Convenzione `net.addEndpoint` per i backend che dichiarano `remoteCapable`:
+  la UI mostra il campo «indirizzo:porta» in base alla capability, non al nome
+  del backend.
+- CI su Linux, macOS e Windows, con un job che verifica meccanicamente le
+  regole della CONSTITUTION (seam, capability, tema, vendoring).
+
 ### Aggiunto — Fase 0
 
 - Seam HAL `IRadioBackend` con descrittore di capability: la UI si genera dalle

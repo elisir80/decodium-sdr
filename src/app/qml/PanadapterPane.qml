@@ -43,6 +43,9 @@ Item {
         spanHz: root.spanHz
         centerHz: root.centerHz
         spectrumRatio: root.spectrumRatio
+        // Senza sorgente non c'è banda da graduare: una scala di zeri
+        // sarebbe solo rumore visivo.
+        visible: Session.connected
     }
 
     // ── Flag VFO, uno per canale ─────────────────────────────────────────

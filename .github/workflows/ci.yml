@@ -90,18 +90,28 @@ jobs:
       - uses: actions/checkout@v4
 
       # ── Dipendenze ──────────────────────────────────────────────────────
-      - name: Dipendenze (Linux)
+      # Ubuntu 24.04 si ferma a Qt 6.4, sotto il floor 6.8 di RNF-01:
+      # QQuickRhiItem esiste solo da 6.7. Si installa un Qt aggiornato.
+      - name: Dipendenze di sistema (Linux)
         if: matrix.os == 'ubuntu-24.04'
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build \
-            qt6-base-dev qt6-base-private-dev \
-            qt6-declarative-dev qt6-declarative-private-dev \
-            qt6-multimedia-dev qt6-shadertools-dev \
-            libgl1-mesa-dev libfftw3-dev \
-            libxkbcommon-dev libvulkan-dev
+            ninja-build libfftw3-dev \
+            libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libvulkan-dev libegl1-mesa-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxcb-xkb1 libpulse-dev
+
+      - name: Qt 6.8 (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
 
       - name: Dipendenze (macOS)
         if: matrix.os == 'macos-14'

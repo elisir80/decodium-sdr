@@ -7,8 +7,8 @@ scritta in C++17 e QML puro con Qt 6.8 LTS, capace di pilotare qualsiasi
 hardware SDR — da una chiavetta RTL-SDR da 30 € fino al DECODIUM SDR One a
 quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 
-> Stato: **Fase 0 — Fondamenta.** Il backend demo è completo e l'applicazione
-> è pienamente operativa senza hardware. Vedi [ROADMAP.md](ROADMAP.md).
+> Stato: **Fase 1 in corso.** Le fondamenta sono complete e il primo hardware
+> reale è supportato via rtl_tcp. Vedi [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -18,14 +18,26 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 |---|---|
 | Seam HAL `IRadioBackend` + descrittore di capability | ✅ |
 | Backend **demo**: banda sintetica con CW, SSB, AM, digitale, QSB | ✅ |
+| Backend **nettcp**: RTL-SDR via rtl_tcp, locale o remoto | ✅ |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |
 | Uscita audio a bassa latenza | ✅ |
 | Conformance suite HAL + unit test DSP + integration test headless | ✅ |
+| CI su Linux, macOS e Windows con verifica delle regole architetturali | ✅ |
 
-I backend per hardware reale (SoapySDR, rtl_tcp, HPSDR, DLINK, FlexRadio, TCI,
-KiwiSDR) arrivano nelle fasi successive: il seam è già lì ad aspettarli.
+Gli altri backend (SoapySDR, HPSDR, DLINK, FlexRadio, TCI, KiwiSDR) arrivano
+nelle fasi successive: il seam è già lì ad aspettarli.
+
+### Usare una chiavetta RTL-SDR
+
+```sh
+rtl_tcp -a 0.0.0.0 -p 1234          # sulla macchina con la chiavetta
+./build/bin/decodium-sdr --backend nettcp
+```
+
+Se il server è su un'altra macchina, l'indirizzo si aggiunge dalla finestra
+«Sorgente» oppure con `DSDR_NETTCP_HOSTS=192.168.1.20:1234`.
 
 ## Compilare
 

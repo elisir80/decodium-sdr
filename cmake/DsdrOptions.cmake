@@ -5,7 +5,7 @@
 
 option(DSDR_BACKEND_DEMO    "Backend sintetico (RF-09) — sempre consigliato ON" ON)
 option(DSDR_BACKEND_SOAPY   "Backend SoapySDR (RF-01)"                          OFF)
-option(DSDR_BACKEND_NETTCP  "Backend rtl_tcp / SpyServer (RF-07)"               OFF)
+option(DSDR_BACKEND_NETTCP  "Backend rtl_tcp / SpyServer (RF-07)"               ON)
 option(DSDR_BACKEND_HPSDR   "Backend OpenHPSDR P1/P2 (RF-02)"                   OFF)
 option(DSDR_BACKEND_DLINK   "Backend DLINK / DECODIUM SDR One (RF-03)"          OFF)
 option(DSDR_BACKEND_FLEX    "Backend FlexRadio SmartSDR (RF-04)"                OFF)

@@ -6,9 +6,11 @@
 // scrivere una riga di test in più. Se un backend richiede hardware assente,
 // il test si dichiara skipped — mai passato per finta.
 
+#include "RtlTcpMockServer.h"
 #include "hal/BackendRegistry.h"
 #include "hal/IRadioBackend.h"
 
+#include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -62,14 +64,52 @@ private:
     static void addBackendRows();
 
     /// Crea il backend e apre il primo device trovato dalla discovery.
-    /// Restituisce nullptr (con QSKIP già chiamato) se non c'è hardware.
+    /// Restituisce nullptr se non c'è nessun device (il chiamante fa QSKIP).
     std::unique_ptr<IRadioBackend> openFirstDevice(const QString &backendId);
+
+    /// I backend di rete si aprono in modo asincrono: `open()` ritorna prima
+    /// che l'handshake sia finito.
+    static bool waitUntilReady(IRadioBackend *backend, int timeoutMs = 5000);
+
+    std::unique_ptr<dsdr::test::RtlTcpMockServer> m_mockRtlTcp;
 };
 
 void TestHalConformance::initTestCase()
 {
     qRegisterMetaType<dsdr::BackendState>("dsdr::BackendState");
+
+    // Un server rtl_tcp finto rende il backend di rete verificabile senza
+    // hardware, esattamente come il backend demo lo è per costruzione: la
+    // conformance deve poter dire "passato", non "saltato".
+    //
+    // L'endpoint passa dalla variabile d'ambiente e non da una chiamata
+    // diretta, così questo test non include l'header di un backend concreto.
+    m_mockRtlTcp = std::make_unique<dsdr::test::RtlTcpMockServer>();
+    if (m_mockRtlTcp->listen()) {
+        qputenv("DSDR_NETTCP_HOSTS", m_mockRtlTcp->endpoint().toUtf8());
+        qInfo() << "mock rtl_tcp in ascolto su" << m_mockRtlTcp->endpoint();
+    } else {
+        m_mockRtlTcp.reset();
+        qWarning("impossibile aprire il mock rtl_tcp: i test di rete verranno saltati");
+    }
+
     registerBuiltinBackends();
+}
+
+bool TestHalConformance::waitUntilReady(IRadioBackend *backend, int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeoutMs) {
+        const BackendState state = backend->state();
+        if (state == BackendState::Ready || state == BackendState::Streaming)
+            return true;
+        if (state == BackendState::Error)
+            return false;
+        QTest::qWait(20);
+    }
+    return backend->state() == BackendState::Ready
+        || backend->state() == BackendState::Streaming;
 }
 
 void TestHalConformance::addBackendRows()
@@ -95,6 +135,8 @@ std::unique_ptr<IRadioBackend> TestHalConformance::openFirstDevice(const QString
 
     const auto device = found.first().first().value<DeviceDescriptor>();
     backend->open(device);
+    if (!waitUntilReady(backend.get()))
+        return nullptr;
     return backend;
 }
 
