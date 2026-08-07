@@ -22,7 +22,7 @@ include(DsdrOptions)
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core Gui Network Qml Quick QuickControls2 Multimedia Concurrent
-    ShaderTools Test QuickTest)
+    ShaderTools Test QuickTest LinguistTools)
 
 # QRhi è API pubblica di Qt Quick ma vive negli header privati di Qt Gui, e non
 # tutte le distribuzioni espongono il componente CMake "GuiPrivate". Se manca,

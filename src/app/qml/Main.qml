@@ -229,6 +229,30 @@ ApplicationWindow {
                 font.pixelSize: Theme.fontSmall
                 color: Theme.textDisabled
             }
+
+            // Selettore lingua: elenca solo le lingue che hanno davvero una
+            // traduzione compilata, così sceglierne una cambia sempre qualcosa.
+            DsdrComboBox {
+                implicitWidth: 132
+                implicitHeight: 20
+
+                model: Session.language.availableLanguages.filter(l => l.available)
+                textRole: "name"
+                valueRole: "code"
+
+                Component.onCompleted: currentIndex = indexOfValue(Session.language.currentLanguage)
+
+                onActivated: Session.language.setLanguage(currentValue)
+
+                Connections {
+                    target: Session.language
+                    function onLanguageChanged() {
+                        // La lingua può cambiare anche da fuori (ripristino
+                        // all'avvio): il selettore deve restare allineato.
+                        parent.currentIndex = parent.indexOfValue(Session.language.currentLanguage)
+                    }
+                }
+            }
         }
     }
 

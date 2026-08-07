@@ -79,3 +79,30 @@ target_compile_definitions(dsdr_app PRIVATE DSDR_VERSION="${PROJECT_VERSION}")
 target_link_libraries(dsdr_app PRIVATE dsdr_qml dsdr_qmlplugin)
 
 dsdr_apply_target_defaults(dsdr_app)
+
+# ── Traduzioni (RF-18) ───────────────────────────────────────────────────────
+#
+# L'italiano è la lingua sorgente delle stringhe e non ha un file .ts: le
+# altre tredici lo hanno. La migrazione della lingua sorgente all'inglese è
+# una decisione aperta, tracciata in ROADMAP.md, e non cambierebbe questa
+# configurazione.
+#
+# `cmake --build build --target update_translations` riestrae le stringhe dai
+# sorgenti; i .qm vengono compilati a ogni build e incorporati nelle risorse.
+
+set(DSDR_LANGUAGES cs de en es fr ja lv nl pl pt ru uk zh_CN)
+
+set(DSDR_TS_FILES)
+foreach(lang IN LISTS DSDR_LANGUAGES)
+    list(APPEND DSDR_TS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/translations/decodium_sdr_${lang}.ts")
+endforeach()
+
+# Le risorse vanno nella libreria del modulo QML, non nell'eseguibile: così le
+# traduzioni sono disponibili anche ai test, che linkano la libreria ma non
+# hanno un main() dell'applicazione.
+qt_add_translations(dsdr_qml
+    SOURCE_TARGETS dsdr_qml dsdr_core dsdr_hal
+    TS_FILES ${DSDR_TS_FILES}
+    RESOURCE_PREFIX "/i18n"
+    LUPDATE_OPTIONS -no-obsolete -locations none
+)

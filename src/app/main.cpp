@@ -69,6 +69,11 @@ int main(int argc, char *argv[])
 
     QQmlApplicationEngine engine;
 
+    // La lingua va scelta prima di caricare il QML: altrimenti la prima
+    // schermata comparirebbe nella lingua sorgente e cambierebbe subito dopo.
+    session.language()->attachEngine(&engine);
+    session.language()->restoreSavedLanguage();
+
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         [] { QCoreApplication::exit(-1); }, Qt::QueuedConnection);

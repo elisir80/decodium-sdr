@@ -13,6 +13,7 @@
 #include "core/ChannelModel.h"
 #include "core/DeviceListModel.h"
 #include "core/IqRecorder.h"
+#include "core/LanguageManager.h"
 #include "core/SpectrumFeed.h"
 #include "hal/Frames.h"
 
@@ -43,6 +44,7 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
     Q_PROPERTY(dsdr::audio::AudioRouter *audio READ audio CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *recorder READ recorder CONSTANT)
+    Q_PROPERTY(dsdr::core::LanguageManager *language READ language CONSTANT)
 
     Q_PROPERTY(bool connected READ isConnected NOTIFY connectionChanged)
     Q_PROPERTY(bool discovering READ isDiscovering NOTIFY discoveringChanged)
@@ -68,6 +70,7 @@ public:
     SpectrumFeed *spectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
     IqRecorder *recorder() { return &m_recorder; }
+    LanguageManager *language() { return &m_language; }
 
     bool isConnected() const { return m_connected; }
     bool isDiscovering() const { return m_discovering; }
@@ -144,6 +147,7 @@ private:
     ChannelModel m_channels;
     CapabilitiesInfo m_capabilities;
     IqRecorder m_recorder;
+    LanguageManager m_language;
 
     DspEngine *m_engine = nullptr;
     QThread *m_dspThread = nullptr;

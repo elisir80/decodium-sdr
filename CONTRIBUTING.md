@@ -44,6 +44,25 @@ dentro il proprio `#ifdef`, capability dichiarate con onestà, e
 La conformance suite gira automaticamente sul backend nuovo: è data-driven sui
 backend registrati. Se non passa, il problema è nel backend, non nel test.
 
+## Tradurre l'interfaccia
+
+Le stringhe sorgente sono **in italiano**; l'inglese è la prima traduzione. I
+file stanno in `src/app/translations/decodium_sdr_<lingua>.ts` e si aprono con
+Qt Linguist.
+
+```sh
+cmake --build build --target update_translations   # riestrae le stringhe
+# ... traduci con Qt Linguist ...
+cmake --build build                                # ricompila i .qm
+```
+
+Una lingua compare nel selettore solo quando il suo `.qm` esiste: finché un
+file `.ts` è vuoto, quella lingua resta nascosta invece di mostrare
+un'interfaccia mezza tradotta.
+
+Cerchiamo revisori madrelingua per tutte le lingue diverse da italiano e
+inglese: preferiamo una lingua assente a una tradotta male.
+
 ## Stile
 
 Segui il codice che hai intorno: stessa densità di commenti, stessi nomi,

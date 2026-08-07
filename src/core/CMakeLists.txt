@@ -12,12 +12,16 @@ add_library(dsdr_core STATIC
     IqRecorder.cpp
     IqRecorderWriter.h
     IqRecorderWriter.cpp
+    LanguageManager.h
+    LanguageManager.cpp
     SessionManager.h
     SessionManager.cpp
 )
 
+# Qt6::Qml serve solo a LanguageManager, per rivalutare i binding qsTr() al
+# cambio di lingua senza riavviare l'applicazione.
 target_link_libraries(dsdr_core
-    PUBLIC dsdr::common dsdr::dsp dsdr::hal dsdr::audio Qt6::Core Qt6::Gui)
+    PUBLIC dsdr::common dsdr::dsp dsdr::hal dsdr::audio Qt6::Core Qt6::Gui Qt6::Qml)
 
 dsdr_apply_target_defaults(dsdr_core)
 add_library(dsdr::core ALIAS dsdr_core)

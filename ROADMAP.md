@@ -33,7 +33,8 @@ out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
 | Multi-canale | ✅ dalla Fase 0 |
 | Registrazione IQ | ✅ WAV float32 + sidecar JSON, RF64 oltre i 4 GB |
 | Riproduzione da file IQ | ⬜ arriverà come backend `iqfile`, dietro lo stesso seam |
-| i18n a 14 lingue | ⬜ |
+| i18n — pipeline e selettore lingua | ✅ 14 lingue predisposte |
+| i18n — traduzioni complete | 🔄 italiano (sorgente) e inglese; le altre 12 attendono revisori madrelingua |
 | Pacchetti AppImage / DMG / ZIP | ⬜ |
 
 ## Fase 2 — Radio vere
@@ -70,8 +71,9 @@ Backend **hamlib**, raffinamenti, Flathub, feature dalla community.
 
 | Voce | Impatto | Quando |
 |---|---|---|
-| Workflow CI per Linux/macOS/Windows | Il merge gate non è ancora automatizzato | Fase 0 |
-| Firma GPG dei commit non ancora attiva | CONSTITUTION §2 non applicata | Fase 0 |
+| Firma GPG dei commit non ancora attiva | CONSTITUTION §2 non applicata: manca una chiave sulla macchina di sviluppo | Fase 0 |
+| Branch protection su `main` non attiva | CODEOWNERS indica i revisori ma la review non è ancora bloccante | Fase 1 |
+| Lingua sorgente delle stringhe: italiano | **Decisione aperta.** Lo standard open source è l'inglese come sorgente, così chi traduce in lettone o giapponese non deve conoscere l'italiano. La migrazione è meccanica (~90 stringhe) e non tocca la pipeline | Fase 1 |
 | Persistenza impostazioni (SettingsStore SQLite) | Le impostazioni non sopravvivono al riavvio | Fase 1 |
 | Resampler frazionario per rate non multipli di 48 kHz | Alcuni device Soapy | Fase 1 |
 | Zoom e pan orizzontale del panadattatore | Lo shader ha già `uMin`/`uMax`: manca il controllo in UI | Fase 1 |

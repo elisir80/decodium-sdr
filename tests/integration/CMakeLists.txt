@@ -8,3 +8,9 @@ dsdr_add_test(tst_session_demo
 dsdr_add_test(tst_iq_recorder
     SOURCES tst_iq_recorder.cpp
     LIBRARIES dsdr::core)
+
+# Le traduzioni sono incorporate nelle risorse dell'eseguibile dell'app: il
+# test le raggiunge attraverso il target che le porta con sé.
+dsdr_add_test(tst_language
+    SOURCES tst_language.cpp
+    LIBRARIES dsdr::core dsdr_qml dsdr_qmlplugin)

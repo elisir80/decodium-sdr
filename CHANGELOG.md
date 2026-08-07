@@ -6,6 +6,16 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ### Aggiunto — Fase 1
 
+- **Internazionalizzazione** (RF-18): pipeline completa per quattordici lingue
+  con `lupdate`/`lrelease` integrati nel build, selettore in barra di stato,
+  scelta ricordata fra un avvio e l'altro e cambio a caccia calda — i binding
+  QML si rivalutano senza riavviare.
+  - Le stringhe sorgente sono in italiano; l'**inglese** è tradotto per intero.
+  - Le altre dodici lingue sono predisposte ma vuote: una lingua compare nel
+    selettore solo quando la sua traduzione esiste davvero, invece di mostrare
+    un'interfaccia mezza tradotta.
+  - I nomi delle lingue sono scritti nella lingua stessa: in un elenco è
+    l'unica forma che chi la parla riconosce a colpo d'occhio.
 - **Registrazione IQ** (RF-17): WAV con campioni float32 su due canali,
   leggibile da SDR#, SDRuno e GNU Radio, più un sidecar JSON con frequenza,
   frequenza di campionamento, sorgente e istante d'inizio — senza il quale una
