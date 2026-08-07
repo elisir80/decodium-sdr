@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // DECODIUM SDR — finestra principale.
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -8,13 +9,24 @@ import DecodiumSdr
 ApplicationWindow {
     id: window
 
-    // Su schermi con fattore di scala elevato una finestra da 1440×860 punti
-    // esce dal desktop: partiamo dalla dimensione desiderata ma restando
-    // dentro l'area disponibile.
-    width: Math.min(1440, Screen.desktopAvailableWidth - 100)
-    height: Math.min(860, Screen.desktopAvailableHeight - 100)
-    minimumWidth: 900
-    minimumHeight: 560
+    // Dimensione desiderata, ridotta a ciò che lo schermo concede davvero.
+    //
+    // Il fattore di scala del sistema cambia tutto: un monitor da 1966×823
+    // fisici al 175% offre appena 1123×443 punti, e una finestra "normale" da
+    // 1440×860 non ci sta nemmeno lontanamente. Qui si parte dalla dimensione
+    // comoda e si scende a quella possibile, lasciando un margine.
+    readonly property int availableWidth: Screen.desktopAvailableWidth
+    readonly property int availableHeight: Screen.desktopAvailableHeight
+
+    width: Math.min(1440, availableWidth - 60)
+    height: Math.min(860, availableHeight - 60)
+
+    // I minimi devono stare dentro lo schermo più piccolo su cui vogliamo
+    // girare, altrimenti sono loro a spingere la finestra fuori dal bordo:
+    // è esattamente ciò che accadeva con un minimo di 560 punti su un
+    // desktop che ne offre 443.
+    minimumWidth: Math.min(720, availableWidth - 40)
+    minimumHeight: Math.min(480, availableHeight - 40)
     visible: true
     color: Theme.background
     title: Session.connected
@@ -279,9 +291,60 @@ ApplicationWindow {
         }
     }
 
+    // Posizione e dimensione sopravvivono alla chiusura: chi opera dispone le
+    // finestre come gli servono e non vuole rifarlo a ogni avvio.
+    Settings {
+        id: windowGeometry
+        category: "window"
+        property int x: -1
+        property int y: -1
+        property int width: 0
+        property int height: 0
+    }
+
+    /// Riporta la finestra dentro l'area utile.
+    ///
+    /// Serve in due casi concreti: una geometria salvata su un monitor che
+    /// ora non c'è più, e un cambio di risoluzione o di scala mentre
+    /// l'applicazione era chiusa. In entrambi la finestra si ritroverebbe
+    /// fuori schermo, dove non la si può nemmeno afferrare per riportarla
+    /// indietro.
+    function clampToScreen() {
+        width = Math.max(minimumWidth, Math.min(width, availableWidth))
+        height = Math.max(minimumHeight, Math.min(height, availableHeight))
+        x = Math.max(0, Math.min(x, availableWidth - width))
+        y = Math.max(0, Math.min(y, availableHeight - height))
+    }
+
+    onClosing: {
+        windowGeometry.x = window.x
+        windowGeometry.y = window.y
+        windowGeometry.width = window.width
+        windowGeometry.height = window.height
+    }
+
+    // Se lo schermo cambia mentre l'applicazione è aperta — un monitor
+    // scollegato, una scala modificata — la finestra va riportata dentro.
+    onAvailableWidthChanged: clampToScreen()
+    onAvailableHeightChanged: clampToScreen()
+
     // All'avvio si parte dalla scelta della sorgente: senza device non c'è
     // nulla di sensato da mostrare.
     Component.onCompleted: {
+        if (windowGeometry.width > 0 && windowGeometry.height > 0) {
+            width = windowGeometry.width
+            height = windowGeometry.height
+        }
+        if (windowGeometry.x >= 0 && windowGeometry.y >= 0) {
+            x = windowGeometry.x
+            y = windowGeometry.y
+        } else {
+            // Primo avvio: al centro dell'area utile.
+            x = Math.max(0, (availableWidth - width) / 2)
+            y = Math.max(0, (availableHeight - height) / 2)
+        }
+        clampToScreen()
+
         if (Session.connected || Session.discovering)
             return
         Session.startDiscovery()

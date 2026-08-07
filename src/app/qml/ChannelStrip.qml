@@ -26,6 +26,10 @@ Rectangle {
                 font.bold: true
                 color: Theme.textPrimary
                 Layout.fillWidth: true
+                // Su una strip stretta il titolo si riduceva a una lettera
+                // sola: meglio troncarlo con i puntini che lasciare una "C".
+                elide: Text.ElideRight
+                Layout.minimumWidth: 0
             }
 
             Text {

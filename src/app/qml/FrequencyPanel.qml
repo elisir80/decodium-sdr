@@ -150,9 +150,18 @@ PanelFrame {
     }
 
     // ── Riferimenti ──────────────────────────────────────────────────────
-    Flow {
+    // Le emissioni campione servono a capire se antenna e catena di ricezione
+    // funzionano davvero, prima di dare la colpa al software.
+    //
+    // Griglia a colonne fisse e non Flow: un Flow con figli che si
+    // dimensionano sul proprio testo entra in un ciclo di polish — il
+    // contenitore misura i figli, i figli chiedono di rimisurare il
+    // contenitore — e Qt lo segnala centinaia di volte al secondo.
+    GridLayout {
         Layout.fillWidth: true
-        spacing: Theme.spacingTight
+        columns: 3
+        columnSpacing: Theme.spacingTight
+        rowSpacing: Theme.spacingTight
 
         Repeater {
             model: BandPlan.references
@@ -160,19 +169,12 @@ PanelFrame {
             delegate: DsdrButton {
                 required property var modelData
 
-                implicitWidth: refText.implicitWidth + 2 * Theme.spacing
+                Layout.fillWidth: true
+                implicitWidth: 0
                 implicitHeight: 22
                 text: modelData.name
                 enabled: Session.connected && root.reachable(modelData.frequency)
                 onClicked: root.goTo(modelData.frequency)
-
-                // Le emissioni campione servono a capire se l'antenna e la
-                // catena funzionano davvero, prima di dare la colpa al software.
-                TextMetrics {
-                    id: refText
-                    font.pixelSize: Theme.fontSmall
-                    text: modelData.name
-                }
             }
         }
     }
