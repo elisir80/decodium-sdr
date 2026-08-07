@@ -61,6 +61,11 @@ void DspEngine::setCenterFrequency(qint64 hz)
     m_centerHz.store(hz, std::memory_order_release);
 }
 
+void DspEngine::setRecorder(IqRecorder *recorder)
+{
+    m_recorder.store(recorder, std::memory_order_release);
+}
+
 void DspEngine::setFftSize(int size)
 {
     if (size < 256 || (size & (size - 1)) != 0) {
@@ -170,6 +175,12 @@ void DspEngine::processAvailable()
         const std::size_t count = got / 2;
         if (count == 0)
             break;
+
+        // Tap di registrazione prima di qualunque elaborazione: su disco
+        // finisce ciò che la radio ha consegnato, non ciò che il DSP ne ha
+        // fatto. `feed()` non blocca e non alloca.
+        if (IqRecorder *recorder = m_recorder.load(std::memory_order_acquire))
+            recorder->feed(m_interleaved.data(), got);
 
         for (std::size_t i = 0; i < count; ++i)
             m_iq[i] = Complex(m_interleaved[i * 2], m_interleaved[i * 2 + 1]);

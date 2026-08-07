@@ -31,7 +31,8 @@ out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
 | Backend nettcp — SpyServer | ⬜ secondo protocollo dietro la stessa facciata |
 | Backend soapy | ⬜ richiede SoapySDR fra le dipendenze |
 | Multi-canale | ✅ dalla Fase 0 |
-| Registrazione IQ | ⬜ |
+| Registrazione IQ | ✅ WAV float32 + sidecar JSON, RF64 oltre i 4 GB |
+| Riproduzione da file IQ | ⬜ arriverà come backend `iqfile`, dietro lo stesso seam |
 | i18n a 14 lingue | ⬜ |
 | Pacchetti AppImage / DMG / ZIP | ⬜ |
 

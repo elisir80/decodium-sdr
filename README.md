@@ -23,6 +23,7 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |
 | Uscita audio a bassa latenza | ✅ |
+| Registrazione IQ (WAV float32 + sidecar JSON, RF64 oltre 4 GB) | ✅ |
 | Conformance suite HAL + unit test DSP + integration test headless | ✅ |
 | CI su Linux, macOS e Windows con verifica delle regole architetturali | ✅ |
 

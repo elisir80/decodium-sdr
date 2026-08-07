@@ -6,6 +6,18 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ### Aggiunto — Fase 1
 
+- **Registrazione IQ** (RF-17): WAV con campioni float32 su due canali,
+  leggibile da SDR#, SDRuno e GNU Radio, più un sidecar JSON con frequenza,
+  frequenza di campionamento, sorgente e istante d'inizio — senza il quale una
+  registrazione IQ è una sequenza di numeri senza significato.
+  - Il tap è preso prima di qualunque elaborazione: su disco finisce ciò che la
+    radio ha consegnato, non ciò che il DSP ne ha fatto.
+  - Il thread DSP scrive solo in un ring lock-free; il disco lo tocca un
+    thread dedicato.
+  - Le sessioni oltre i 4 GB non vengono troncate: un chunk JUNK riservato in
+    testa diventa il `ds64` di RF64 alla chiusura.
+  - Disconnettersi con la registrazione aperta la chiude correttamente, invece
+    di lasciare un file con l'intestazione incompleta.
 - Backend **nettcp** (RF-07): client rtl_tcp completo. Una chiavetta RTL-SDR
   diventa utilizzabile, anche remota — è il primo hardware reale supportato.
   - Discovery per sondaggio: rtl_tcp non si annuncia, e accettare una

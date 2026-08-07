@@ -9,6 +9,7 @@
 // in `reconfigure()`, fuori dallo streaming.
 #pragma once
 
+#include "core/IqRecorder.h"
 #include "core/SpectrumFeed.h"
 #include "dsp/ChannelProcessor.h"
 #include "dsp/SpectrumAnalyzer.h"
@@ -46,6 +47,11 @@ public:
     /// Aggiorna la frequenza centrale (l'offset dei canali è relativo a essa).
     void setCenterFrequency(qint64 hz);
 
+    /// Collega un registratore al flusso IQ del device. Il tap è preso prima
+    /// di qualsiasi elaborazione: si registra ciò che la radio ha consegnato,
+    /// non ciò che il DSP ne ha fatto. Thread-safe.
+    void setRecorder(IqRecorder *recorder);
+
 public slots:
     void onIqFrameReady(const dsdr::hal::IqFrame &frame);
     void addChannel(dsdr::ChannelId id, const dsdr::dsp::ChannelSettings &settings);
@@ -76,6 +82,7 @@ private:
     std::atomic<double> m_sourceRate{0.0};
     std::atomic<qint64> m_centerHz{0};
     std::atomic<bool> m_needsReconfigure{true};
+    std::atomic<IqRecorder *> m_recorder{nullptr};
 
     double m_activeRate = 0.0;
 

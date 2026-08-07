@@ -43,6 +43,42 @@ function(dsdr_apply_target_defaults tgt)
     endif()
 endfunction()
 
+# dsdr_link_qt_rhi(<target>)
+#   Dà accesso a <rhi/qrhi.h>, necessario a QQuickRhiItem.
+#
+#   QRhi è documentata come parte dell'API di Qt Quick, ma i suoi header
+#   stanno fra i privati di Qt Gui. Il componente CMake "GuiPrivate" è la via
+#   pulita e c'è nella maggior parte delle distribuzioni; quando manca — capita
+#   con alcuni pacchetti binari — si aggiunge a mano il percorso versionato,
+#   che Qt organizza sempre allo stesso modo.
+function(dsdr_link_qt_rhi tgt)
+    if(TARGET Qt6::GuiPrivate)
+        target_link_libraries(${tgt} PUBLIC Qt6::GuiPrivate)
+        return()
+    endif()
+
+    get_target_property(qt_gui_includes Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
+    set(private_dirs)
+    foreach(dir IN LISTS qt_gui_includes)
+        if(EXISTS "${dir}/${Qt6_VERSION}/QtGui/rhi/qrhi.h")
+            list(APPEND private_dirs "${dir}/${Qt6_VERSION}" "${dir}/${Qt6_VERSION}/QtGui")
+        endif()
+    endforeach()
+
+    if(NOT private_dirs)
+        message(FATAL_ERROR
+            "Header privati di Qt Gui non trovati: QQuickRhiItem non può essere "
+            "compilato.\n"
+            "  Installare gli header privati di Qt (pacchetto qt6-base-private-dev "
+            "su Debian/Ubuntu) oppure usare una distribuzione Qt che esponga il "
+            "componente GuiPrivate.")
+    endif()
+
+    list(REMOVE_DUPLICATES private_dirs)
+    target_include_directories(${tgt} PUBLIC ${private_dirs})
+    message(STATUS "QRhi: header privati aggiunti a mano (${private_dirs})")
+endfunction()
+
 function(dsdr_print_configuration)
     message(STATUS "")
     message(STATUS "── DECODIUM SDR ${PROJECT_VERSION} ──────────────────────")

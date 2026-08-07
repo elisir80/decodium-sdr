@@ -12,6 +12,7 @@
 #include "core/CapabilitiesInfo.h"
 #include "core/ChannelModel.h"
 #include "core/DeviceListModel.h"
+#include "core/IqRecorder.h"
 #include "core/SpectrumFeed.h"
 #include "hal/Frames.h"
 
@@ -41,6 +42,7 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::CapabilitiesInfo *capabilities READ capabilities CONSTANT)
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
     Q_PROPERTY(dsdr::audio::AudioRouter *audio READ audio CONSTANT)
+    Q_PROPERTY(dsdr::core::IqRecorder *recorder READ recorder CONSTANT)
 
     Q_PROPERTY(bool connected READ isConnected NOTIFY connectionChanged)
     Q_PROPERTY(bool discovering READ isDiscovering NOTIFY discoveringChanged)
@@ -65,6 +67,7 @@ public:
     CapabilitiesInfo *capabilities() { return &m_capabilities; }
     SpectrumFeed *spectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
+    IqRecorder *recorder() { return &m_recorder; }
 
     bool isConnected() const { return m_connected; }
     bool isDiscovering() const { return m_discovering; }
@@ -103,6 +106,12 @@ public:
     Q_INVOKABLE bool addRemoteEndpoint(const QString &endpoint);
     Q_INVOKABLE QStringList remoteEndpoints() const;
 
+    /// Avvia la registrazione del flusso IQ (RF-17). Con `path` vuoto il nome
+    /// viene generato da data e frequenza nella cartella predefinita.
+    Q_INVOKABLE bool startRecording(const QString &path = QString());
+    Q_INVOKABLE void stopRecording();
+    Q_INVOKABLE bool toggleRecording();
+
     /// Nomi dei modi, per popolare i selettori senza duplicare la tabella in QML.
     Q_INVOKABLE QStringList modeNames() const;
     Q_INVOKABLE QStringList agcModeNames() const;
@@ -134,6 +143,7 @@ private:
     DeviceListModel m_devices;
     ChannelModel m_channels;
     CapabilitiesInfo m_capabilities;
+    IqRecorder m_recorder;
 
     DspEngine *m_engine = nullptr;
     QThread *m_dspThread = nullptr;

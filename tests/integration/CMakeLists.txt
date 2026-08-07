@@ -4,3 +4,7 @@
 dsdr_add_test(tst_session_demo
     SOURCES tst_session_demo.cpp
     LIBRARIES dsdr::core)
+
+dsdr_add_test(tst_iq_recorder
+    SOURCES tst_iq_recorder.cpp
+    LIBRARIES dsdr::core)

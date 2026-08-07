@@ -123,6 +123,20 @@ ApplicationWindow {
                 }
             }
 
+            // Registrazione IQ: compare solo se la sorgente la consente.
+            DsdrButton {
+                visible: Session.capabilities.supportsRecording
+                text: Session.recorder.recording
+                      ? qsTr("■ %1").arg(Qt.formatTime(new Date(Session.recorder.durationMs), "mm:ss"))
+                      : qsTr("● REC")
+                checkable: true
+                checked: Session.recorder.recording
+                danger: Session.recorder.recording
+                implicitWidth: 96
+                enabled: Session.connected
+                onToggled: Session.toggleRecording()
+            }
+
             // §4.2: se il backend non trasmette, il PTT non esiste — non è
             // disabilitato, proprio non viene creato.
             DsdrButton {

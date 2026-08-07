@@ -8,6 +8,10 @@ add_library(dsdr_core STATIC
     DeviceListModel.h
     DeviceListModel.cpp
     CapabilitiesInfo.h
+    IqRecorder.h
+    IqRecorder.cpp
+    IqRecorderWriter.h
+    IqRecorderWriter.cpp
     SessionManager.h
     SessionManager.cpp
 )

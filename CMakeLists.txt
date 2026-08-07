@@ -22,8 +22,12 @@ include(DsdrOptions)
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core Gui Network Qml Quick QuickControls2 Multimedia Concurrent
-    ShaderTools Test QuickTest
-    GuiPrivate) # QRhi: API pubblica di Qt Quick ma header privati di Qt Gui
+    ShaderTools Test QuickTest)
+
+# QRhi è API pubblica di Qt Quick ma vive negli header privati di Qt Gui, e non
+# tutte le distribuzioni espongono il componente CMake "GuiPrivate". Se manca,
+# gli header si raggiungono per percorso: vedi dsdr_link_qt_rhi().
+find_package(Qt6 6.8 QUIET OPTIONAL_COMPONENTS GuiPrivate)
 
 qt_standard_project_setup(REQUIRES 6.8)
 

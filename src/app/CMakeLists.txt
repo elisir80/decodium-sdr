@@ -63,9 +63,9 @@ target_link_libraries(dsdr_qml PUBLIC
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Gui
-    Qt6::GuiPrivate   # rhi/qrhi.h per il panadattatore
 )
 
+dsdr_link_qt_rhi(dsdr_qml)   # rhi/qrhi.h per il panadattatore
 dsdr_apply_target_defaults(dsdr_qml)
 add_library(dsdr::qml ALIAS dsdr_qml)
 

@@ -74,6 +74,11 @@ SessionManager::SessionManager(QObject *parent)
         setStatus(tr("Campioni persi: %1 — il DSP non sta al passo.").arg(lost));
     });
 
+    connect(&m_recorder, &IqRecorder::failed, this, [this](const QString &message) {
+        setStatus(message);
+        emit errorReported(message, false);
+    });
+
     const QStringList ids = hal::BackendRegistry::instance().backendIds();
     if (!ids.isEmpty())
         selectBackend(ids.first());
@@ -265,6 +270,10 @@ void SessionManager::disconnectDevice()
 {
     if (!m_connected)
         return;
+
+    // Una registrazione aperta va chiusa correttamente: il file resterebbe
+    // senza dimensioni valide nell'intestazione.
+    stopRecording();
 
     m_audio->stop();
     if (m_engine)
@@ -512,6 +521,59 @@ void SessionManager::setPtt(bool transmit)
         return;
     }
     m_backend->setPtt(transmit);
+}
+
+bool SessionManager::startRecording(const QString &path)
+{
+    if (!m_connected) {
+        setStatus(tr("Nessuna sorgente connessa da registrare."));
+        return false;
+    }
+    if (!m_capabilities.supportsRecording()) {
+        setStatus(tr("Questa sorgente non consente la registrazione."));
+        return false;
+    }
+
+    IqRecordingInfo info;
+    info.centerFrequencyHz = m_centerFrequency;
+    info.sampleRate = m_sampleRate;
+    info.backendId = m_backendId;
+    info.deviceName = m_deviceName;
+    info.startedAt = QDateTime::currentDateTime();
+
+    if (!m_recorder.start(info, path))
+        return false;
+
+    // Il tap si attacca solo a registrazione avviata: prima il writer non
+    // sarebbe pronto e il thread DSP riempirebbe il ring nel vuoto.
+    if (m_engine)
+        m_engine->setRecorder(&m_recorder);
+
+    setStatus(tr("Registrazione in corso: %1").arg(m_recorder.currentFile()));
+    return true;
+}
+
+void SessionManager::stopRecording()
+{
+    if (!m_recorder.isRecording())
+        return;
+
+    // Prima si stacca il tap, poi si chiude: al contrario il writer potrebbe
+    // ricevere campioni a file già chiuso.
+    if (m_engine)
+        m_engine->setRecorder(nullptr);
+    m_recorder.stop();
+
+    setStatus(tr("Registrazione salvata: %1").arg(m_recorder.currentFile()));
+}
+
+bool SessionManager::toggleRecording()
+{
+    if (m_recorder.isRecording()) {
+        stopRecording();
+        return false;
+    }
+    return startRecording();
 }
 
 bool SessionManager::addRemoteEndpoint(const QString &endpoint)
