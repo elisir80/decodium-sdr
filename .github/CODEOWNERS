@@ -1,0 +1,14 @@
+# CONSTITUTION §1: la review umana è bloccante, per chiunque — umano o agente.
+#
+# Perché diventi davvero bloccante serve la branch protection su `main` con
+# "Require review from Code Owners" attiva; questo file da solo indica solo
+# chi va richiesto in review.
+
+*                       @iu8lmc
+
+# Aree che toccano decisioni non delegabili: il seam, i principi, le licenze.
+/CONSTITUTION.md        @iu8lmc
+/THIRD_PARTY_LICENSES   @iu8lmc
+/LICENSE                @iu8lmc
+/src/hal/IRadioBackend.h        @iu8lmc
+/src/hal/BackendCapabilities.h  @iu8lmc

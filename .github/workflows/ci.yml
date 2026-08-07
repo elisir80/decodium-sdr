@@ -1,0 +1,155 @@
+# CI di DECODIUM SDR — merge gate di CONSTITUTION §1.
+#
+# Verde su Linux, macOS e Windows è condizione necessaria per il merge. Non è
+# sufficiente: serve anche la review umana, che GitHub applica via CODEOWNERS.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Regole architetturali verificabili meccanicamente ─────────────────────
+  # Girano per prime e in pochi secondi: se il seam è stato violato non ha
+  # senso spendere venti minuti di build su tre piattaforme.
+  architecture:
+    name: Regole architetturali
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nessun backend incluso sopra la HAL (CONSTITUTION §4)
+        run: |
+          if grep -rn "hal/backends/" src/core src/audio src/app; then
+            echo "::error::Un modulo sopra la HAL include un backend concreto."
+            exit 1
+          fi
+          echo "OK: il seam è rispettato."
+
+      - name: Nessun ramo sul tipo di backend in QML (CONSTITUTION §7)
+        run: |
+          if grep -rnE 'backendId *[=!]==' src/app/qml; then
+            echo "::error::La UI ramifica sul backend invece che sulle capability."
+            exit 1
+          fi
+          echo "OK: la UI si genera dalle capability."
+
+      - name: Nessun colore letterale in QML (CONSTITUTION §6)
+        run: |
+          # Theme.qml è la sola sede legittima dei valori di colore.
+          if grep -rnE '"#[0-9a-fA-F]{3,8}"' src/app/qml --exclude=Theme.qml; then
+            echo "::error::Colore hardcoded fuori dal singleton Theme."
+            exit 1
+          fi
+          echo "OK: i colori vengono tutti da Theme."
+
+      - name: third_party/ solo con licenze dichiarate (CONSTITUTION §3)
+        run: |
+          for dir in third_party/*/; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            if [ ! -f "$dir/LICENSE" ] && [ ! -f "$dir/COPYING" ]; then
+              echo "::error::$name è vendorizzato senza file di licenza."
+              exit 1
+            fi
+            if ! grep -q "$name" THIRD_PARTY_LICENSES; then
+              echo "::error::$name non è registrato in THIRD_PARTY_LICENSES."
+              exit 1
+            fi
+          done
+          echo "OK: nessun vendoring non dichiarato."
+
+  # ── Build e test ──────────────────────────────────────────────────────────
+  build:
+    name: ${{ matrix.name }}
+    needs: architecture
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux (x86-64)
+            os: ubuntu-24.04
+          - name: macOS (Apple Silicon)
+            os: macos-14
+          - name: Windows (MSYS2 / MinGW)
+            os: windows-latest
+
+    defaults:
+      run:
+        shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Dipendenze ──────────────────────────────────────────────────────
+      - name: Dipendenze (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build \
+            qt6-base-dev qt6-base-private-dev \
+            qt6-declarative-dev qt6-declarative-private-dev \
+            qt6-multimedia-dev qt6-shadertools-dev \
+            libgl1-mesa-dev libfftw3-dev \
+            libxkbcommon-dev libvulkan-dev
+
+      - name: Dipendenze (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          brew update
+          brew install qt@6 fftw ninja
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+
+      - name: Dipendenze (Windows/MSYS2)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-qt6-base
+            mingw-w64-x86_64-qt6-declarative
+            mingw-w64-x86_64-qt6-multimedia
+            mingw-w64-x86_64-qt6-shadertools
+            mingw-w64-x86_64-fftw
+
+      # ── Build ───────────────────────────────────────────────────────────
+      - name: Configura
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DDSDR_WARNINGS_AS_ERRORS=ON
+
+      - name: Compila
+        run: cmake --build build
+
+      # ── Test ────────────────────────────────────────────────────────────
+      # Headless ovunque: la conformance suite e gli integration test girano
+      # contro il backend demo, che non richiede hardware (CONSTITUTION §9).
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QSG_RHI_BACKEND: null
+        run: ctest --test-dir build --output-on-failure --timeout 180
+
+      - name: Diagnostica in caso di fallimento
+        if: failure()
+        run: |
+          echo "--- CMakeConfigureLog ---"
+          tail -n 120 build/CMakeFiles/CMakeConfigureLog.yaml 2>/dev/null || true
+          echo "--- LastTest.log ---"
+          tail -n 200 build/Testing/Temporary/LastTest.log 2>/dev/null || true
