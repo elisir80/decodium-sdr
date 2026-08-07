@@ -44,6 +44,12 @@ Rectangle {
             }
         }
 
+        // Scegliere dove andare viene prima di regolare il canale.
+        FrequencyPanel {
+            Layout.fillWidth: true
+            visible: Session.connected
+        }
+
         // Controlli del backend attivo, se ne dichiara.
         BackendPanelHost {
             Layout.fillWidth: true

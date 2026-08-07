@@ -15,6 +15,8 @@ set(DSDR_QML_FILES
     qml/DsdrComboBox.qml
     qml/SignalMeter.qml
     qml/FrequencyDisplay.qml
+    qml/BandPlan.qml
+    qml/FrequencyPanel.qml
     qml/FrequencyGrid.qml
     qml/VfoFlag.qml
     qml/PanadapterPane.qml
@@ -33,6 +35,7 @@ foreach(qml_file IN LISTS DSDR_QML_FILES)
 endforeach()
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/BandPlan.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(dsdr_qml
     URI DecodiumSdr
