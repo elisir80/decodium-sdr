@@ -21,6 +21,7 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Backend **demo**: banda sintetica con CW, SSB, AM, digitale, QSB | ✅ |
 | Backend **soapy**: RTL-SDR, Airspy, HackRF, LimeSDR, PlutoSDR, USRP… | ✅ |
 | Backend **nettcp**: rtl_tcp e SpyServer, con riconoscimento automatico | ✅ |
+| Backend **colibri**: ColibriNANO USB, 0,1–55 MHz | ✅ |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |

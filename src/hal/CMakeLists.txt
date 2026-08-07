@@ -45,6 +45,18 @@ if(DSDR_BACKEND_NETTCP)
     set(DSDR_HAL_NEEDS_NETWORK ON)
 endif()
 
+if(DSDR_BACKEND_COLIBRI)
+    # Nessuna dipendenza da trovare: colibrinano_lib si carica a runtime, e se
+    # manca il backend semplicemente non trova device.
+    list(APPEND DSDR_HAL_SOURCES
+        backends/colibri/ColibriLibrary.h
+        backends/colibri/ColibriLibrary.cpp
+        backends/colibri/ColibriBackend.h
+        backends/colibri/ColibriBackend.cpp
+    )
+    list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_COLIBRI)
+endif()
+
 if(DSDR_BACKEND_SOAPY)
     # SoapySDR è opzionale: se manca si spiega come installarlo invece di
     # lasciare all'utente un errore di CMake da decifrare.
@@ -76,6 +88,18 @@ target_link_libraries(dsdr_hal PUBLIC dsdr::common dsdr::dsp Qt6::Core)
 
 if(DSDR_HAL_NEEDS_NETWORK)
     target_link_libraries(dsdr_hal PUBLIC Qt6::Network)
+endif()
+
+if(DSDR_BACKEND_COLIBRI)
+    # Nessuna dipendenza da trovare: colibrinano_lib si carica a runtime, e se
+    # manca il backend semplicemente non trova device.
+    list(APPEND DSDR_HAL_SOURCES
+        backends/colibri/ColibriLibrary.h
+        backends/colibri/ColibriLibrary.cpp
+        backends/colibri/ColibriBackend.h
+        backends/colibri/ColibriBackend.cpp
+    )
+    list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_COLIBRI)
 endif()
 
 if(DSDR_BACKEND_SOAPY)

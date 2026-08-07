@@ -23,6 +23,7 @@ set(DSDR_QML_FILES
     qml/BackendPanelHost.qml
     qml/SoapyDevicePanel.qml
     qml/NetTcpDevicePanel.qml
+    qml/ColibriDevicePanel.qml
 )
 
 foreach(qml_file IN LISTS DSDR_QML_FILES)

@@ -18,10 +18,35 @@ QuickTest)
     Note    : compatibile con GPL-3.0. Il collegamento dinamico preserva il
               diritto dell'utente di sostituire la libreria.
 
+colibrinano_lib (Expert Electronics, tramite maksimus1210/ColibriNANO_lib)
+    Licenza : Unlicense (pubblico dominio)
+    Sito    : https://github.com/maksimus1210/ColibriNANO_lib
+    Note    : NON vendorizzata e NON collegata in fase di build. Il backend
+              `colibri` la carica a runtime con QLibrary; se manca, il backend
+              semplicemente non trova device. Nel repository non entra alcun
+              header di terze parti: le firme sono ridichiarate in
+              src/hal/backends/colibri/ColibriLibrary.h a partire dall'API
+              pubblicata, che per il ColibriNANO è l'autorità del protocollo.
+
 FFTW3 (single precision, fftw3f)
     Licenza : GPL-2.0-or-later
     Sito    : https://www.fftw.org
     Note    : "or later" rende la combinazione con GPL-3.0 lecita.
+
+
+CODICE PROPRIO RIUSATO DA ALTRI PROGETTI
+-----------------------------------------
+
+Backend ColibriNANO
+    Il porting in src/hal/backends/colibri/ parte dal backend ColibriNANO che
+    Martino (IU8LMC) ha scritto per AetherSDR (branch `colibri-nano-backend`),
+    di cui è titolare del copyright: la specifica del protocollo e le scelte di
+    threading vengono da lì.
+
+    AetherSDR nel suo insieme è di Jeremy Fielder (KK7GWY) e altri
+    contributori, GPL-3.0 — https://github.com/aethersdr/AetherSDR. Nessuna
+    riga di quel progetto è stata copiata: il codice qui è riscritto sul seam
+    IRadioBackend, che ha una forma diversa.
 
 
 MATERIALE DI SOLO STUDIO — NESSUN CODICE RIUSATO

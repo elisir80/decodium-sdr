@@ -15,6 +15,10 @@
 #include "hal/backends/soapy/SoapyBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_COLIBRI
+#include "hal/backends/colibri/ColibriBackend.h"
+#endif
+
 namespace dsdr::hal {
 
 BackendRegistry &BackendRegistry::instance()
@@ -121,6 +125,15 @@ void registerBuiltinBackends()
                                    "HackRF, LimeSDR, PlutoSDR, USRP. Ogni device con un "
                                    "driver SoapySDR funziona senza scrivere altro codice.")},
         [](QObject *parent) -> IRadioBackend * { return new SoapyBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_COLIBRI
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("colibri"),
+                    QStringLiteral("ColibriNANO"),
+                    QStringLiteral("Ricevitore USB a campionamento diretto di Expert "
+                                   "Electronics: 0,1–55 MHz, ADC a 14 bit. Sola ricezione.")},
+        [](QObject *parent) -> IRadioBackend * { return new ColibriBackend(parent); });
 #endif
 
     // Gli altri backend si aggiungono qui, uno per fase (§9). Ogni blocco è

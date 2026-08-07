@@ -6,6 +6,21 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ### Aggiunto — Fase 1
 
+- Backend **colibri**: ColibriNANO di Expert Electronics, ricevitore USB a
+  campionamento diretto (0,1–55 MHz, ADC 14 bit). **Primo hardware reale
+  verificato sul ferro**, non solo contro un mock.
+  - `colibrinano_lib` si carica a runtime con QLibrary: nel repository non
+    entra alcun header di terze parti, e se la libreria manca il backend non
+    trova device invece di impedire l'avvio.
+  - La callback della libreria scrive **direttamente nel ring SPSC**: essendo
+    lock-free a produttore singolo, non serve rimbalzare il blocco su un altro
+    thread prima di consumarlo.
+  - `ColibriComplex` è già float interleaved come il ring: nel caso normale il
+    percorso dei campioni è un solo memcpy.
+  - Il preamplificatore è un'unica manopola fra −31,5 e +6 dB, e il flag di
+    sovraccarico dell'ADC — l'unica telemetria del device — arriva in UI.
+  - Il segno della parte immaginaria è calibrabile a runtime: se le bande
+    laterali risultano scambiate si coniuga, senza ricompilare.
 - **SpyServer** dentro il backend `nettcp`: secondo protocollo dietro la
   stessa facciata, come il backend era stato pensato per ospitare.
   - Il protocollo si riconosce da come il server si comporta appena connesso:
