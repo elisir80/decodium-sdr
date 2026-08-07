@@ -1,0 +1,66 @@
+DECODIUM SDR — dipendenze di terze parti
+========================================
+
+Il progetto è distribuito sotto GPL-3.0-or-later. Ogni dipendenza elencata qui
+è stata verificata compatibile con quella licenza.
+
+Nessun codice di terze parti è vendorizzato in questo repository: la directory
+`third_party/` è vuota. Le dipendenze sono collegate come librerie di sistema.
+
+
+DIPENDENZE COLLEGATE
+--------------------
+
+Qt 6 (Core, Gui, Qml, Quick, QuickControls2, Multimedia, ShaderTools, Test,
+QuickTest)
+    Licenza : LGPL-3.0 (edizione open source)
+    Sito    : https://www.qt.io
+    Note    : compatibile con GPL-3.0. Il collegamento dinamico preserva il
+              diritto dell'utente di sostituire la libreria.
+
+FFTW3 (single precision, fftw3f)
+    Licenza : GPL-2.0-or-later
+    Sito    : https://www.fftw.org
+    Note    : "or later" rende la combinazione con GPL-3.0 lecita.
+
+
+MATERIALE DI SOLO STUDIO — NESSUN CODICE RIUSATO
+-------------------------------------------------
+
+I progetti seguenti sono stati letti come riferimento teorico o di protocollo.
+Nessuna riga di codice ne è stata copiata o adattata.
+
+WDSP / wcpAGC.c (Warren Pratt, NR0V)
+    Riferimento teorico per il comportamento dell'AGC con soglia (AGC-T).
+    La questione di compatibilità GPLv2/v3 è aperta: finché non è risolta,
+    questo materiale resta di sola lettura. L'implementazione in
+    `src/dsp/Agc.cpp` è originale.
+
+piHPSDR / linHPSDR
+    Comprensione del protocollo OpenHPSDR (fase 2 della roadmap).
+
+AetherSDR
+    Ispirazione architetturale per il seam di backend e per il workflow
+    multi-agente. Nessun codice condiviso.
+
+Lyons, "Understanding Digital Signal Processing"
+    Base teorica del progetto dei filtri (metodo windowed-sinc, finestra di
+    Kaiser) implementato in `src/dsp/FirDesign.cpp`.
+
+
+MARCHI
+------
+
+FlexRadio, SmartSDR, SunSDR, ExpertSDR, KiwiSDR, Airspy, HackRF, LimeSDR,
+PlutoSDR, RTL-SDR, Hermes, ANAN, Red Pitaya e gli altri nomi citati
+appartengono ai rispettivi titolari. Sono nominati esclusivamente a fini di
+interoperabilità. DECODIUM SDR non è affiliato con nessuna di queste entità né
+da esse approvato.
+
+
+AGGIORNARE QUESTO FILE
+----------------------
+
+Una dipendenza nuova entra solo con: licenza verificata, compatibilità
+motivata, e una voce in questo file. È un requisito bloccante
+(CONSTITUTION §3), non una formalità.

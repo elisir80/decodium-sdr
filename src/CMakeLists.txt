@@ -1,0 +1,6 @@
+add_subdirectory(common)
+add_subdirectory(dsp)
+add_subdirectory(hal)
+add_subdirectory(audio)
+add_subdirectory(core)
+add_subdirectory(app)

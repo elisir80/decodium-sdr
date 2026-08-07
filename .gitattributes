@@ -1,0 +1,30 @@
+# Il progetto si compila su Linux, macOS e Windows: i fine riga vivono nel
+# repository come LF e vengono adattati alla piattaforma solo nella working copy.
+* text=auto eol=lf
+
+# Sorgenti e documenti
+*.cpp   text
+*.h     text
+*.qml   text
+*.js    text
+*.vert  text
+*.frag  text
+*.md    text
+*.txt   text
+*.cmake text
+*.ts    text
+*.yml   text
+*.yaml  text
+*.json  text
+
+# Script che devono restare LF anche su Windows
+*.sh    text eol=lf
+
+# Binari: mai toccati
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.icns  binary
+*.qm    binary
+*.qsb   binary
+*.wav   binary

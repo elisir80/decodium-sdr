@@ -1,0 +1,45 @@
+# Build
+build/
+build-*/
+cmake-build-*/
+*.user
+*.user.*
+CMakeUserPresets.json
+
+# Artefatti Qt
+*.qmlc
+*.jsc
+.qmlls.ini
+*_qmltyperegistrations.cpp
+*.qsb
+
+# Compilazione
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+
+# Editor / IDE
+.vscode/
+.idea/
+.cache/
+compile_commands.json
+*.swp
+*~
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Registrazioni IQ: pesano e non appartengono al repository
+*.wav
+*.sigmf-data
+*.sigmf-meta
