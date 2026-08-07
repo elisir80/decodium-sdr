@@ -8,6 +8,7 @@
 
 #include "dsp/DspTypes.h"
 
+#include <cstdint>
 #include <vector>
 
 struct fftwf_plan_s;
