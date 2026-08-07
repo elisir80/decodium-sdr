@@ -68,6 +68,31 @@ void PanadapterView::setSpectrumRatio(qreal ratio)
     update();
 }
 
+void PanadapterView::setViewStart(qreal value)
+{
+    // Il bordo sinistro non può portare la finestra fuori dalla banda.
+    value = qBound(0.0, value, 1.0 - m_viewSpan);
+    if (qFuzzyCompare(m_viewStart, value))
+        return;
+    m_viewStart = value;
+    emit viewChanged();
+    update();
+}
+
+void PanadapterView::setViewSpan(qreal value)
+{
+    // Sotto lo 0,5% di banda non si guadagna leggibilità: i bin dello spettro
+    // finiscono per essere meno dei pixel.
+    value = qBound(0.005, value, 1.0);
+    if (qFuzzyCompare(m_viewSpan, value))
+        return;
+    m_viewSpan = value;
+    if (m_viewStart + m_viewSpan > 1.0)
+        m_viewStart = 1.0 - m_viewSpan;
+    emit viewChanged();
+    update();
+}
+
 void PanadapterView::setTraceColor(const QColor &color)
 {
     if (m_traceColor == color)

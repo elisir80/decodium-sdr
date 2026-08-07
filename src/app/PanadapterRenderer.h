@@ -68,6 +68,8 @@ private:
     float m_floorDb = -130.0f;
     float m_ceilingDb = -20.0f;
     float m_spectrumRatio = 0.42f;
+    float m_viewStart = 0.0f;
+    float m_viewSpan = 1.0f;
     QColor m_traceColor;
     QColor m_fillColor;
     QColor m_backgroundColor;

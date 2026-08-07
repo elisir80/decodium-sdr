@@ -245,6 +245,8 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
     m_floorDb = static_cast<float>(item->floorDb());
     m_ceilingDb = static_cast<float>(item->ceilingDb());
     m_spectrumRatio = static_cast<float>(item->spectrumRatio());
+    m_viewStart = static_cast<float>(item->viewStart());
+    m_viewSpan = static_cast<float>(item->viewSpan());
     m_traceColor = item->traceColor();
     m_fillColor = item->fillColor();
     m_backgroundColor = item->backgroundColor();
@@ -430,8 +432,9 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
 
     if (ready) {
         const float rowOffset = static_cast<float>(m_writeRow) / kWaterfallRows;
-        const float uMin = 0.0f;
-        const float uMax = 1.0f;
+        // Zoom: waterfall e traccia mostrano la stessa porzione di banda.
+        const float uMin = m_viewStart;
+        const float uMax = m_viewStart + m_viewSpan;
         const float unused = 0.0f;
         batch->updateDynamicBuffer(m_waterfallUbuf.get(), 0, 64, mvp.constData());
         batch->updateDynamicBuffer(m_waterfallUbuf.get(), 64, 4, &rowOffset);
@@ -451,10 +454,14 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
         batch->updateDynamicBuffer(m_traceUbuf.get(), 0, 64, mvp.constData());
         batch->updateDynamicBuffer(m_traceUbuf.get(), 64, 16, traceRgba);
         batch->updateDynamicBuffer(m_traceUbuf.get(), 80, 4, &noGradient);
+        batch->updateDynamicBuffer(m_traceUbuf.get(), 84, 4, &m_viewStart);
+        batch->updateDynamicBuffer(m_traceUbuf.get(), 88, 4, &m_viewSpan);
 
         batch->updateDynamicBuffer(m_fillUbuf.get(), 0, 64, mvp.constData());
         batch->updateDynamicBuffer(m_fillUbuf.get(), 64, 16, fillRgba);
         batch->updateDynamicBuffer(m_fillUbuf.get(), 80, 4, &withGradient);
+        batch->updateDynamicBuffer(m_fillUbuf.get(), 84, 4, &m_viewStart);
+        batch->updateDynamicBuffer(m_fillUbuf.get(), 88, 4, &m_viewSpan);
     }
 
     cb->beginPass(renderTarget(), m_backgroundColor, {1.0f, 0}, batch);

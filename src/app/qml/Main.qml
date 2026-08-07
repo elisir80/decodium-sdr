@@ -65,21 +65,14 @@ ApplicationWindow {
                     color: Theme.textSecondary
                 }
 
-                Text {
-                    text: (Session.centerFrequency / 1e6).toFixed(4) + " MHz"
-                    font.pixelSize: Theme.fontLarge
-                    font.family: Theme.monoFamily
-                    color: Theme.textPrimary
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.SizeVerCursor
-                        enabled: Session.connected
-                        onWheel: (wheel) => {
-                            const step = wheel.modifiers & Qt.ControlModifier ? 1000000 : 100000
-                            Session.centerFrequency += wheel.angleDelta.y > 0 ? step : -step
-                        }
-                    }
+                FrequencyDisplay {
+                    frequencyHz: Session.centerFrequency
+                    minimumHz: Session.capabilities.minFrequency
+                    maximumHz: Session.capabilities.maxFrequency > 0
+                               ? Session.capabilities.maxFrequency : 30000000
+                    editable: Session.connected
+                    digitSize: Theme.fontLarge
+                    onTuneRequested: (hz) => Session.centerFrequency = hz
                 }
             }
 

@@ -31,6 +31,8 @@ class PanadapterView : public QQuickRhiItem
     Q_PROPERTY(QColor traceColor READ traceColor WRITE setTraceColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor fillColor READ fillColor WRITE setFillColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY colorsChanged)
+    Q_PROPERTY(qreal viewStart READ viewStart WRITE setViewStart NOTIFY viewChanged)
+    Q_PROPERTY(qreal viewSpan READ viewSpan WRITE setViewSpan NOTIFY viewChanged)
 
 public:
     explicit PanadapterView(QQuickItem *parent = nullptr);
@@ -55,8 +57,16 @@ public:
     QColor backgroundColor() const { return m_backgroundColor; }
     void setBackgroundColor(const QColor &color);
 
+    /// Porzione di banda mostrata, come frazioni di 0..1. `viewStart` è il
+    /// bordo sinistro, `viewSpan` la larghezza: insieme sono lo zoom.
+    qreal viewStart() const { return m_viewStart; }
+    void setViewStart(qreal value);
+    qreal viewSpan() const { return m_viewSpan; }
+    void setViewSpan(qreal value);
+
 signals:
     void feedChanged();
+    void viewChanged();
     void levelRangeChanged();
     void spectrumRatioChanged();
     void colorsChanged();
@@ -71,6 +81,8 @@ private:
     QColor m_traceColor{0x6E, 0xE7, 0xFF};
     QColor m_fillColor{0x1E, 0x88, 0xC7};
     QColor m_backgroundColor{0x07, 0x0B, 0x11};
+    qreal m_viewStart = 0.0;
+    qreal m_viewSpan = 1.0;
 };
 
 } // namespace dsdr::app
