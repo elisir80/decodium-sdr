@@ -143,10 +143,13 @@ install(TARGETS dsdr_app
     LIBRARY DESTINATION lib
 )
 
+# Niente MACOS_BUNDLE_POST_BUILD: farebbe girare macdeployqt sul bundle appena
+# linkato, dove i plugin QML non sono ancora stati installati, e riempirebbe il
+# log di `install_name_tool: can't open file` senza far fallire nulla. Il
+# deploy che conta è quello dell'install, sul bundle completo.
 qt_generate_deploy_qml_app_script(
     TARGET dsdr_app
     OUTPUT_SCRIPT DSDR_DEPLOY_SCRIPT
-    MACOS_BUNDLE_POST_BUILD
     NO_UNSUPPORTED_PLATFORM_ERROR
     DEPLOY_USER_QML_MODULES_ON_UNSUPPORTED_PLATFORM
 )

@@ -159,10 +159,13 @@ jobs:
         if: matrix.os == 'macos-14'
         shell: bash
         run: |
-          # Il bundle .app viene prodotto dal deploy di Qt in fase di build.
-          APP=$(find build staging -name "decodium-sdr.app" -maxdepth 4 | head -1)
+          # Solo `staging`: nella build tree c'è un secondo bundle, quello
+          # appena linkato, in cui le librerie Qt non sono ancora entrate.
+          # Prenderlo darebbe un DMG che si apre, mostra l'icona e non parte su
+          # nessuna macchina che non abbia già Qt installato.
+          APP=$(find staging -name "decodium-sdr.app" -maxdepth 3 | head -1)
           if [ -z "$APP" ]; then
-            echo "::error::bundle .app non trovato"; exit 1
+            echo "::error::bundle .app non trovato in staging/"; exit 1
           fi
 
           mkdir -p dmgroot
@@ -184,11 +187,24 @@ jobs:
           zip -qr "${{ matrix.artifact }}" decodium-sdr
 
       # ── Verifica minima del pacchetto ───────────────────────────────────
-      - name: Il pacchetto contiene l'eseguibile
+      - name: Il pacchetto ha una dimensione plausibile
         shell: bash
         run: |
           ls -lh "${{ matrix.artifact }}"
-          test -s "${{ matrix.artifact }}" || { echo "::error::pacchetto vuoto"; exit 1; }
+
+          # `test -s` verificava solo che il file non fosse vuoto, e un DMG da
+          # 900 kB — bundle senza una sola libreria Qt dentro — passava il
+          # controllo per poi non partire su nessuna macchina. Un pacchetto che
+          # si porta dietro Qt non può stare sotto i venti megabyte: la soglia
+          # non dice che il contenuto è giusto, ma coglie il caso in cui manca
+          # tutto, che è esattamente come falliscono questi passaggi.
+          BYTES=$(wc -c < "${{ matrix.artifact }}")
+          MIN=$((20 * 1024 * 1024))
+          if [ "$BYTES" -lt "$MIN" ]; then
+            echo "::error::pacchetto di soli $((BYTES / 1024)) kB: le librerie non ci sono"
+            exit 1
+          fi
+          echo "$((BYTES / 1024 / 1024)) MB"
 
       - uses: actions/upload-artifact@v4
         with:
