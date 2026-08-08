@@ -77,6 +77,6 @@ Backend **hamlib**, raffinamenti, Flathub, feature dalla community.
 | Lingua sorgente delle stringhe: italiano | **Decisione aperta.** Lo standard open source è l'inglese come sorgente, così chi traduce in lettone o giapponese non deve conoscere l'italiano. La migrazione è meccanica (~90 stringhe) e non tocca la pipeline | Fase 1 |
 | Persistenza impostazioni (SettingsStore SQLite) | Le impostazioni non sopravvivono al riavvio | Fase 1 |
 | Resampler frazionario per rate non multipli di 48 kHz | Alcuni device Soapy | Fase 1 |
-| Zoom e pan orizzontale del panadattatore | Lo shader ha già `uMin`/`uMax`: manca il controllo in UI | Fase 1 |
-| i18n: le stringhe usano `qsTr()` ma mancano i file `.ts` | Nessuna traduzione disponibile | Fase 1 |
+| `tst_nettcp` crashato una volta in CI su Windows senza produrre output | **Non riproducibile:** 44 esecuzioni locali pulite (12 in sequenza, 32 in parallelo sotto contesa) e verde al rilancio in CI. Non è un'asserzione fallita ma una morte silenziosa del processo dopo 9 s, quindi il sospetto è una race nel mock server sotto un runner lento — lo stesso punto che ha già avuto uno use-after-free, dove `abort()` emetteva `disconnected` in modo sincrono. Se ricapita, è lì che va guardato invece di rilanciare | Fase 1 |
+| i18n: i tredici `.ts` esistono ma le traduzioni sono vuote | Servono revisori madrelingua; le stringhe si riestraggono con `update_translations` | Fase 1 |
 | Path CPU dello spettro (`DSDR_GPU_SPECTRUM=OFF`) non implementato | Hardware grafico antico | Fase 2 |
