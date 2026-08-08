@@ -8,6 +8,12 @@ import DecodiumSdr
 Rectangle {
     id: root
 
+    /// Il panadattatore da comandare dal pannello «Waterfall».
+    ///
+    /// Arriva da fuori invece di essere cercato: la colonna non sa dove viva
+    /// lo spettro, e non deve saperlo.
+    property PanadapterView panadapter: null
+
     color: Theme.surface
     border.width: 0
 
@@ -58,6 +64,20 @@ Rectangle {
         BackendPanelHost {
             Layout.fillWidth: true
             visible: Session.connected && Session.capabilities.nativePanels.length > 0
+        }
+
+        // Resa dello spettro. Chiuso di fabbrica: si tocca quando l'immagine
+        // non convince, non a ogni sessione.
+        PanelFrame {
+            Layout.fillWidth: true
+            title: qsTr("Waterfall")
+            collapsed: true
+            visible: root.panadapter !== null
+
+            WaterfallControls {
+                Layout.fillWidth: true
+                panadapter: root.panadapter
+            }
         }
 
         ListView {

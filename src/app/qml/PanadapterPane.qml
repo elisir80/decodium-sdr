@@ -48,6 +48,13 @@ Item {
     /// Quota di altezza occupata dallo spettro; il resto è waterfall.
     readonly property real spectrumRatio: 0.45
 
+    /// Il panadattatore, per chi deve comandarne la resa da fuori.
+    ///
+    /// I comandi del waterfall vivono nella colonna dei pannelli, che è un
+    /// altro ramo dell'albero: senza questo appiglio dovrebbero cercarsi
+    /// l'oggetto per conto proprio, e un giorno non lo troverebbero più.
+    readonly property alias panadapterView: panadapter
+
     PanadapterView {
         id: panadapter
         anchors.fill: parent
@@ -80,6 +87,19 @@ Item {
         visible: Session.connected
     }
 
+    // ── Scala di ampiezza ────────────────────────────────────────────────
+    //
+    // Legge gli estremi dal panadattatore invece di tenerne una copia: con la
+    // scala automatica quei due valori si muovono da soli, e una scala
+    // graduata su numeri diversi da quelli del rendering mentirebbe.
+    LevelScale {
+        anchors.fill: parent
+        floorDb: panadapter.floorDb
+        ceilingDb: panadapter.ceilingDb
+        spectrumRatio: root.spectrumRatio
+        visible: Session.connected
+    }
+
     // ── Flag VFO, uno per canale ─────────────────────────────────────────
     Repeater {
         model: Session.channels
@@ -104,6 +124,40 @@ Item {
 
             xForFrequency: root.xForFrequency
             frequencyAt: root.frequencyAt
+        }
+    }
+
+    // ── Piano bande e asse dei tempi ─────────────────────────────────────
+    BandSegments {
+        anchors.fill: parent
+        startHz: root.visibleStartHz
+        endHz: root.visibleStartHz + root.visibleSpanHz
+        spectrumRatio: root.spectrumRatio
+        visible: Session.connected
+    }
+
+    TimeScale {
+        anchors.fill: parent
+        historySeconds: panadapter.historySeconds
+        spectrumRatio: root.spectrumRatio
+        visible: Session.connected
+    }
+
+    // ── Targa del canale attivo ──────────────────────────────────────────
+    //
+    // Un Repeater su tutto il modello, con visibile solo il canale corrente:
+    // è il modo di leggere le proprietà di una riga restando reattivi ai suoi
+    // cambiamenti, senza aggiungere al modello una copia delle stesse
+    // proprietà da tenere allineata a mano.
+    Repeater {
+        model: Session.channels
+
+        delegate: VfoPlate {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Theme.spacing
+            z: 5
+            visible: Session.channels.currentIndex === index
         }
     }
 
@@ -165,19 +219,14 @@ Item {
         }
     }
 
-    // ── Comandi della resa del waterfall ─────────────────────────────────
-    WaterfallControls {
-        panadapter: panadapter
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: Theme.spacing
-    }
-
     // ── Indicatore di zoom ───────────────────────────────────────────────
     Rectangle {
         anchors.left: parent.left
         anchors.top: parent.top
-        anchors.margins: Theme.spacing
+        anchors.topMargin: Theme.spacing
+        // Rientrato oltre la colonna delle etichette in dB: la prima tacca
+        // della scala cade proprio qui, e le due scritte si coprirebbero.
+        anchors.leftMargin: 42
         width: zoomLabel.implicitWidth + 2 * Theme.spacing
         height: 22
         radius: Theme.radiusSmall

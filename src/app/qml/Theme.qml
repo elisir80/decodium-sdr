@@ -35,6 +35,18 @@ QtObject {
     readonly property color spectrumFill: "#1E88C7"
     readonly property color spectrumGrid: "#16202C"
 
+    // ── Segmenti del piano bande ─────────────────────────────────────────
+    //
+    // Tinte tenute basse di proposito: la striscia sta sotto lo spettro e deve
+    // farsi leggere con la coda dell'occhio, non competere con i segnali.
+    readonly property color segmentCw: "#1E88C7"
+    readonly property color segmentDigi: "#FFB34D"
+    readonly property color segmentBeacon: "#B388FF"
+    readonly property color segmentPhone: "#81C784"
+
+    /// Opacità con cui le tinte dei segmenti vengono stese.
+    readonly property real segmentOpacity: 0.22
+
     // ── Metriche ─────────────────────────────────────────────────────────
     readonly property int spacingTight: 4
     readonly property int spacing: 8

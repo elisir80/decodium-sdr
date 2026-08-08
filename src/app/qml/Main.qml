@@ -33,6 +33,17 @@ ApplicationWindow {
            ? qsTr("DECODIUM SDR — %1").arg(Session.deviceName)
            : qsTr("DECODIUM SDR")
 
+    // ── Barra dei menu ───────────────────────────────────────────────────
+    menuBar: MainMenu {
+        panadapter: scope.panadapterView
+        onSourceRequested: {
+            if (!Session.discovering)
+                Session.startDiscovery()
+            discoveryPopup.open()
+        }
+        onAboutRequested: aboutPopup.open()
+    }
+
     // ── Barra superiore ──────────────────────────────────────────────────
     header: Rectangle {
         implicitHeight: Theme.headerHeight
@@ -168,25 +179,43 @@ ApplicationWindow {
     }
 
     // ── Corpo ────────────────────────────────────────────────────────────
-    SplitView {
+    //
+    // Il rail sta fuori dallo SplitView: è largo quanto è largo e non si
+    // trascina. Dentro lo SplitView finirebbe fra le maniglie, e prima o poi
+    // qualcuno lo ridurrebbe a una striscia inservibile.
+    RowLayout {
         anchors.fill: parent
-        orientation: Qt.Horizontal
+        spacing: 0
 
-        handle: Rectangle {
-            implicitWidth: 4
-            color: SplitHandle.pressed ? Theme.accent
-                 : SplitHandle.hovered ? Theme.borderStrong : Theme.border
+        CommandRail {
+            Layout.fillHeight: true
+            panadapter: scope.panadapterView
+            scope: scope
         }
 
-        PanadapterPane {
-            SplitView.fillWidth: true
-            SplitView.minimumWidth: 420
-        }
+        SplitView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            orientation: Qt.Horizontal
 
-        ChannelStrip {
-            SplitView.preferredWidth: 340
-            SplitView.minimumWidth: 300
-            SplitView.maximumWidth: 520
+            handle: Rectangle {
+                implicitWidth: 4
+                color: SplitHandle.pressed ? Theme.accent
+                     : SplitHandle.hovered ? Theme.borderStrong : Theme.border
+            }
+
+            PanadapterPane {
+                id: scope
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 420
+            }
+
+            ChannelStrip {
+                SplitView.preferredWidth: 340
+                SplitView.minimumWidth: 300
+                SplitView.maximumWidth: 520
+                panadapter: scope.panadapterView
+            }
         }
     }
 
@@ -235,27 +264,29 @@ ApplicationWindow {
                 color: Theme.textDisabled
             }
 
-            // Selettore lingua: elenca solo le lingue che hanno davvero una
-            // traduzione compilata, così sceglierne una cambia sempre qualcosa.
-            DsdrComboBox {
-                implicitWidth: 132
-                implicitHeight: 20
+            // L'ora UTC: è quella con cui si scrive un log e si dà un
+            // appuntamento in banda, e nessuno vuole calcolarsela a mente.
+            // Il selettore della lingua se n'è andato nel menu Strumenti, dove
+            // stanno le cose che si scelgono una volta.
+            Text {
+                text: utcClock.stamp
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: Theme.textSecondary
 
-                model: Session.language.availableLanguages.filter(l => l.available)
-                textRole: "name"
-                valueRole: "code"
+                Timer {
+                    id: utcClock
 
-                Component.onCompleted: currentIndex = indexOfValue(Session.language.currentLanguage)
+                    property string stamp: ""
 
-                onActivated: Session.language.setLanguage(currentValue)
-
-                Connections {
-                    target: Session.language
-                    function onLanguageChanged() {
-                        // La lingua può cambiare anche da fuori (ripristino
-                        // all'avvio): il selettore deve restare allineato.
-                        parent.currentIndex = parent.indexOfValue(Session.language.currentLanguage)
-                    }
+                    // Un secondo di risoluzione basta a un orologio da parete,
+                    // e a un timer che gira per tutta la sessione conviene
+                    // chiedere il minimo indispensabile.
+                    interval: 1000
+                    running: true
+                    repeat: true
+                    triggeredOnStart: true
+                    onTriggered: stamp = new Date().toISOString().substring(11, 19) + " UTC"
                 }
             }
         }
@@ -287,6 +318,64 @@ ApplicationWindow {
             function onConnectionChanged() {
                 if (Session.connected)
                     discoveryPopup.close()
+            }
+        }
+    }
+
+    // ── Informazioni ─────────────────────────────────────────────────────
+    Popup {
+        id: aboutPopup
+
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        focus: true
+        padding: Theme.spacingLoose
+
+        background: Rectangle {
+            color: Theme.surfaceRaised
+            border.width: 1
+            border.color: Theme.borderStrong
+            radius: Theme.radius
+        }
+
+        Overlay.modal: Rectangle {
+            color: Qt.rgba(0, 0, 0, 0.6)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: Theme.spacing
+
+            Text {
+                text: "DECODIUM SDR"
+                font.pixelSize: Theme.fontLarge
+                font.bold: true
+                font.letterSpacing: 1.5
+                color: Theme.accent
+            }
+
+            Text {
+                text: qsTr("Client SDR universale dell'ecosistema DECODIUM.")
+                font.pixelSize: Theme.fontNormal
+                color: Theme.textPrimary
+            }
+
+            Text {
+                text: qsTr("Backend attivo: %1").arg(Session.backendName)
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: Theme.textSecondary
+            }
+
+            Text {
+                text: "GPL-3.0-or-later · decodium.it"
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textDisabled
+            }
+
+            DsdrButton {
+                Layout.alignment: Qt.AlignRight
+                text: qsTr("Chiudi")
+                onClicked: aboutPopup.close()
             }
         }
     }

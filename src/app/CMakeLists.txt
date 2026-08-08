@@ -9,6 +9,8 @@ qt_add_library(dsdr_qml STATIC)
 # sta nella radice: l'alias di risorsa riconcilia le due cose.
 set(DSDR_QML_FILES
     qml/Main.qml
+    qml/MainMenu.qml
+    qml/CommandRail.qml
     qml/Theme.qml
     qml/DsdrButton.qml
     qml/DsdrSlider.qml
@@ -18,7 +20,11 @@ set(DSDR_QML_FILES
     qml/BandPlan.qml
     qml/FrequencyPanel.qml
     qml/FrequencyGrid.qml
+    qml/LevelScale.qml
+    qml/TimeScale.qml
+    qml/BandSegments.qml
     qml/VfoFlag.qml
+    qml/VfoPlate.qml
     qml/PanadapterPane.qml
     qml/WaterfallControls.qml
     qml/ChannelStrip.qml
@@ -201,6 +207,21 @@ if(WIN32)
             message(WARNING \"dipendenza non risolta: \${dsdr_missing}\")
         endforeach()
     ")
+endif()
+
+# La libreria del ColibriNANO, se chi costruisce il pacchetto l'ha indicata.
+# Va accanto all'eseguibile perché è lì che il backend la cerca per prima.
+if(DSDR_COLIBRI_LIB)
+    if(EXISTS "${DSDR_COLIBRI_LIB}")
+        install(FILES "${DSDR_COLIBRI_LIB}" DESTINATION bin)
+        message(STATUS "ColibriNANO: la libreria verrà inclusa nel pacchetto "
+                       "(${DSDR_COLIBRI_LIB})")
+    else()
+        # Meglio fermarsi in configurazione che scoprire il pacchetto monco
+        # quando qualcuno ci attacca la radio.
+        message(FATAL_ERROR
+            "DSDR_COLIBRI_LIB punta a un file che non esiste: ${DSDR_COLIBRI_LIB}")
+    endif()
 endif()
 
 qt_add_translations(dsdr_qml
