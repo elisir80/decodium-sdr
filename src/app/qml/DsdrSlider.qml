@@ -10,6 +10,12 @@ Slider {
 
     implicitHeight: 22
 
+    // Un cursore disabilitato deve *sembrare* disabilitato. Attenuare il solo
+    // riempimento non bastava: la maniglia restava accesa come le altre, e con
+    // la scala automatica attiva i cursori del fondo e della vetta sembravano
+    // manovrabili mentre non lo erano.
+    opacity: enabled ? 1.0 : 0.4
+
     background: Rectangle {
         x: control.leftPadding
         y: control.topPadding + control.availableHeight / 2 - height / 2
