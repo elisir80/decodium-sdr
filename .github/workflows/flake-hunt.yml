@@ -22,6 +22,10 @@ on:
         description: "address oppure thread"
         required: false
         default: "address"
+      tests:
+        description: "Quali test ciclare, separati da spazi"
+        required: false
+        default: "tst_nettcp tst_hal_conformance"
 
 jobs:
   hunt:
@@ -66,7 +70,7 @@ jobs:
           set +e
           FAILURES=0
 
-          for test in tst_nettcp tst_hal_conformance; do
+          for test in ${{ inputs.tests }}; do
             echo "::group::$test"
             for i in $(seq 1 ${{ inputs.iterations }}); do
               OUT=$(./build/bin/$test 2>&1)
@@ -82,7 +86,7 @@ jobs:
           done
 
           if [ $FAILURES -gt 0 ]; then
-            echo "Riprodotto: $FAILURES test su 2"
+            echo "Riprodotto in $FAILURES test"
             exit 1
           fi
           echo "Nessun fallimento in ${{ inputs.iterations }} giri per test."
