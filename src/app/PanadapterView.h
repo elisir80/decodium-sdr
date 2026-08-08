@@ -13,6 +13,7 @@
 #include "core/SpectrumFeed.h"
 
 #include <QColor>
+#include <QElapsedTimer>
 #include <QQuickRhiItem>
 
 #include <vector>
@@ -44,6 +45,7 @@ class PanadapterView : public QQuickRhiItem
     Q_PROPERTY(bool autoRange READ autoRange WRITE setAutoRange NOTIFY autoRangeChanged)
     Q_PROPERTY(qreal noiseFloorDb READ noiseFloorDb NOTIFY measuredLevelsChanged)
     Q_PROPERTY(qreal peakLevelDb READ peakLevelDb NOTIFY measuredLevelsChanged)
+    Q_PROPERTY(qreal historySeconds READ historySeconds NOTIFY historySecondsChanged)
 
 public:
     /// Come si disegna la storia dello spettro.
@@ -58,6 +60,35 @@ public:
     Q_ENUM(WaterfallMode)
 
     explicit PanadapterView(QQuickItem *parent = nullptr);
+
+    /// Quanto sopra il fondo misurato si posa il fondo della scala.
+    ///
+    /// Il verso di questo margine decide se il waterfall si legge. Con il fondo
+    /// della scala *sotto* il rumore — come faceva questa classe con −6 dB —
+    /// ogni bin di rumore riceve un colore; siccome il rumore occupa quasi
+    /// tutta la banda, l'immagine risulta uniformemente accesa e i segnali non
+    /// staccano più. Mettendolo *sopra*, il rumore ricade nella zona nera e il
+    /// colore torna a significare «qui c'è qualcosa».
+    ///
+    /// Il valore va letto insieme al percentile su cui si misura il fondo (il
+    /// 30°, circa una deviazione standard sotto la mediana del rumore): tre
+    /// decibel sopra quel percentile cadono attorno alla mediana, ed è lì che
+    /// vogliamo il nero.
+    ///
+    /// Il prezzo è dichiarato: un segnale che sta meno di tre decibel sopra il
+    /// rumore viene tagliato via. Chi cerca proprio quello abbassa il cursore
+    /// del fondo — è il mestiere di quel cursore — mentre il valore di fabbrica
+    /// deve dare un'immagine leggibile a chi apre l'applicazione.
+    static constexpr qreal kFloorAboveNoiseDb = 3.0;
+
+    /// Quanti decibel di respiro del rumore devono restare neri.
+    ///
+    /// Il rumore di una FFT non mediata oscilla di parecchi decibel da una riga
+    /// all'altra. Fino a questa quota sopra il fondo misurato non deve accendere
+    /// nulla, altrimenti il waterfall pulsa. È il contratto che il test
+    /// verifica: alla scala scelta, un livello di `kNoiseHeadroomDb` sopra il
+    /// fondo misurato deve normalizzarsi sotto la soglia di nero.
+    static constexpr qreal kNoiseHeadroomDb = 6.0;
 
     QQuickRhiItemRenderer *createRenderer() override;
 
@@ -121,9 +152,25 @@ public:
     qreal noiseFloorDb() const { return m_noiseFloorDb; }
     qreal peakLevelDb() const { return m_peakLevelDb; }
 
+    /// Quanti secondi di storia mostra il waterfall, o 0 se non lo sappiamo
+    /// ancora.
+    ///
+    /// Il waterfall tiene un numero fisso di righe; quanto tempo coprano
+    /// dipende da quante ne arrivano al secondo, che a sua volta dipende dalla
+    /// banda, dalla dimensione della FFT e dal ritmo del rendering. È una
+    /// misura, non una costante: un asse dei tempi ricavato da un valore
+    /// supposto direbbe numeri sbagliati con la stessa sicurezza di quelli
+    /// giusti.
+    qreal historySeconds() const;
+
     /// Chiamata dal thread di rendering dentro `synchronize()`, l'unico punto
     /// in cui il thread GUI è fermo. Non emette nulla direttamente: accoda.
     void reportMeasuredLevels(const std::vector<float> &row);
+
+    /// Quante righe di waterfall sono state consumate in questo frame.
+    /// Stesso contratto di `reportMeasuredLevels`: render thread, niente
+    /// signal emessi da qui.
+    void reportRowsConsumed(int rows, int historyRows);
 
 signals:
     void feedChanged();
@@ -137,10 +184,12 @@ signals:
     void colorsChanged();
     void autoRangeChanged();
     void measuredLevelsChanged();
+    void historySecondsChanged();
 
 private:
     /// Pubblica sul thread GUI le misure raccolte dal render thread.
     Q_INVOKABLE void publishMeasuredLevels();
+    Q_INVOKABLE void publishHistorySeconds();
 
     core::SpectrumFeed *m_feed = nullptr;
     QMetaObject::Connection m_feedConnection;
@@ -168,6 +217,13 @@ private:
     bool m_levelsSeeded = false;
     bool m_publishPending = false;
     std::vector<float> m_levelScratch;  ///< copia ordinabile della riga
+
+    // ── Misura del ritmo delle righe ─────────────────────────────────────
+    QElapsedTimer m_rowClock;
+    int m_rowsSinceTick = 0;
+    int m_historyRows = 0;
+    qreal m_rowsPerSecond = 0.0;
+    bool m_ratePublishPending = false;
 };
 
 } // namespace dsdr::app

@@ -34,6 +34,20 @@ constexpr qreal kPeakRelease = 0.03;
 /// Sotto questa variazione non vale la pena svegliare il thread GUI.
 constexpr qreal kPublishThresholdDb = 0.25;
 
+/// Il minimo intervallo utile della scala, quando fondo e picco coincidono.
+constexpr qreal kMinimumSpanDb = 25.0;
+
+/// Margine sopra il picco misurato: un segnale in arrivo non deve saturare
+/// prima che la scala abbia il tempo di aprirsi.
+constexpr qreal kCeilingAbovePeakDb = 10.0;
+
+/// Finestra su cui si contano le righe per ricavarne il ritmo.
+constexpr qint64 kRateWindowMs = 1000;
+
+/// Il ritmo si muove piano: cambia solo quando cambia la banda o la FFT, e un
+/// asse dei tempi che oscilla a ogni frame è illeggibile.
+constexpr qreal kRateSmoothing = 0.25;
+
 } // namespace
 
 PanadapterView::PanadapterView(QQuickItem *parent)
@@ -192,15 +206,66 @@ void PanadapterView::publishMeasuredLevels()
     if (!m_autoRange)
         return;
 
-    // Margini attorno alla misura: sotto il fondo perché il rumore respira,
-    // sopra il picco perché un segnale in arrivo non deve saturare subito.
-    const qreal floor = m_noiseFloorDb - 6.0;
-    const qreal ceiling = std::max(m_peakLevelDb + 10.0, floor + 25.0);
+    // Il fondo della scala sta *sopra* il fondo misurato: vedi
+    // kFloorAboveNoiseDb nell'header per il perché — è la differenza fra un
+    // waterfall in cui i segnali staccano e un muro di colore uniforme.
+    const qreal floor = m_noiseFloorDb + kFloorAboveNoiseDb;
+    const qreal ceiling = std::max(m_peakLevelDb + kCeilingAbovePeakDb, floor + kMinimumSpanDb);
 
     if (std::abs(floor - m_floorDb) > kPublishThresholdDb)
         setFloorDb(floor);
     if (std::abs(ceiling - m_ceilingDb) > kPublishThresholdDb)
         setCeilingDb(ceiling);
+}
+
+qreal PanadapterView::historySeconds() const
+{
+    if (m_rowsPerSecond <= 0.0 || m_historyRows <= 0)
+        return 0.0;
+    return m_historyRows / m_rowsPerSecond;
+}
+
+void PanadapterView::reportRowsConsumed(int rows, int historyRows)
+{
+    if (rows <= 0)
+        return;
+
+    m_historyRows = historyRows;
+    m_rowsSinceTick += rows;
+
+    if (!m_rowClock.isValid()) {
+        m_rowClock.start();
+        return;
+    }
+
+    // Una misura al secondo circa: più spesso si conterebbe soprattutto il
+    // rumore del ritmo di rendering, e l'asse dei tempi ballerebbe sotto gli
+    // occhi mentre lo si legge.
+    const qint64 elapsed = m_rowClock.elapsed();
+    if (elapsed < kRateWindowMs)
+        return;
+
+    const qreal rate = m_rowsSinceTick * 1000.0 / static_cast<qreal>(elapsed);
+    m_rowsSinceTick = 0;
+    m_rowClock.restart();
+
+    if (m_rowsPerSecond <= 0.0)
+        m_rowsPerSecond = rate;
+    else
+        m_rowsPerSecond += (rate - m_rowsPerSecond) * kRateSmoothing;
+
+    if (m_ratePublishPending)
+        return;
+    m_ratePublishPending = true;
+    // Siamo sul render thread: i segnali si emettono di là, non da qui.
+    QMetaObject::invokeMethod(this, &PanadapterView::publishHistorySeconds,
+                              Qt::QueuedConnection);
+}
+
+void PanadapterView::publishHistorySeconds()
+{
+    m_ratePublishPending = false;
+    emit historySecondsChanged();
 }
 
 QStringList PanadapterView::paletteNames() const

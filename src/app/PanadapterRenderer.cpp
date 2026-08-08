@@ -265,6 +265,11 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
         // livelli all'item: `synchronize()` è l'unico punto in cui il thread
         // GUI è fermo e lo scambio è sicuro in entrambe le direzioni.
         item->reportMeasuredLevels(m_latestRow);
+
+        // E quante righe sono passate: da qui l'item ricava quanti secondi di
+        // storia stia mostrando il waterfall, che è l'unico modo onesto di
+        // graduarne l'asse dei tempi.
+        item->reportRowsConsumed(m_pendingRows, kWaterfallRows);
     }
 }
 

@@ -17,6 +17,18 @@ struct ColorStop
     float r, g, b;
 };
 
+/// Il colore del livello «niente»: lo stesso fondo dello spettro nel tema.
+constexpr ColorStop kFloorStop{0.00f, 0.02f, 0.03f, 0.06f};
+
+/// Dove finisce la sfumatura dal fondo al primo colore della palette. Breve:
+/// deve bastare a evitare uno scalino, non a mangiarsi la scala.
+constexpr float kFloorFadeEnd = 0.05f;
+
+/// Sopra questa somma di componenti un primo stop è considerato "acceso", e
+/// gli si antepone il fondo. Il nero puro e il quasi-nero di DECODIUM restano
+/// sotto; il viola di Turbo sta sopra.
+constexpr float kFloorBrightness = 0.25f;
+
 /// Le palette, nell'ordine in cui la UI le elenca.
 ///
 /// Tutte crescono in intensità percepita, ma non tutte in pura luminanza: nel
@@ -77,8 +89,24 @@ QStringList waterfallPaletteNames()
 QByteArray buildWaterfallColorMap(int paletteIndex)
 {
     const auto &all = palettes();
-    const auto &stops = all[static_cast<std::size_t>(
+    const auto &table = all[static_cast<std::size_t>(
         std::clamp(paletteIndex, 0, static_cast<int>(all.size()) - 1))];
+
+    // Il livello più basso di un waterfall significa «qui non c'è niente», e
+    // deve avere il colore del fondo. Quasi tutte le palette partono già dal
+    // nero; Turbo no — nasce come scala per mappe di calore, dove ogni punto è
+    // un dato valido, e il suo primo colore è un viola pieno. Su un waterfall,
+    // dove il livello minimo copre quasi tutta l'immagine, quel viola diventa
+    // un velo steso sullo schermo: è il difetto che si vedeva prima ancora
+    // della taratura della scala.
+    //
+    // Gli si antepone il fondo su un tratto breve, senza toccare il resto della
+    // rampa: chi sceglie Turbo continua a vedere Turbo dove ci sono segnali.
+    std::vector<ColorStop> stops = table;
+    if (!stops.empty() && stops.front().r + stops.front().g + stops.front().b > kFloorBrightness) {
+        stops.front().position = kFloorFadeEnd;
+        stops.insert(stops.begin(), kFloorStop);
+    }
 
     QByteArray data;
     data.resize(kColorMapSize * 4);
