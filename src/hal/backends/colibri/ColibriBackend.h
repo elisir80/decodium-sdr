@@ -94,6 +94,11 @@ private:
     bool m_open = false;
     bool m_streaming = false;
 
+    /// Ultimo errore di caricamento della libreria già segnalato: la discovery
+    /// si ripete a ogni apertura del pannello sorgenti, e senza questo il log
+    /// si riempirebbe della stessa riga.
+    QString m_lastLoadError;
+
     DeviceDescriptor m_device;
     ColibriDescriptor m_handle = nullptr;
 

@@ -18,6 +18,17 @@ option(DSDR_BACKEND_HAMLIB  "Bridge CAT Hamlib (RF-08)"                         
 # §6.1: il path CPU dello spettro è una decisione di build, non un fallback runtime.
 option(DSDR_GPU_SPECTRUM    "Spettro/waterfall su GPU via QQuickRhiItem"         ON)
 
+# La libreria del ColibriNANO è del costruttore e si carica a runtime: non è
+# linkata, quindi `file(GET_RUNTIME_DEPENDENCIES)` non la vede e il pacchetto
+# esce senza. Il risultato è un backend che compare nell'elenco e poi non trova
+# nessun device — che è esattamente il modo peggiore di fallire.
+#
+# Non la si include d'ufficio perché non è nostra da ridistribuire: chi
+# confeziona un pacchetto per sé indica qui il percorso, chi pubblica una
+# release lo lascia vuoto e la libreria resta a carico di chi ha la radio.
+set(DSDR_COLIBRI_LIB "" CACHE FILEPATH
+    "Percorso di colibrinano_lib da includere nel pacchetto (vuoto: non inclusa)")
+
 option(DSDR_BUILD_TESTS        "Compila la suite di test (RNF-07)"              ON)
 option(DSDR_WARNINGS_AS_ERRORS "Tratta i warning del compilatore come errori"   OFF)
 

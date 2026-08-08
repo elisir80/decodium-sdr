@@ -114,7 +114,17 @@ void ColibriBackend::startDiscovery()
         if (!ColibriLibrary::instance().ensureLoaded(QString(), &error)) {
             // Non è un errore fatale: significa solo che su questa macchina
             // non c'è la libreria, quindi non ci sono device da offrire.
-            qCInfo(dsdrHal) << "colibri:" << error;
+            //
+            // Lo si dice una volta sola. La discovery si rilancia a ogni
+            // apertura del pannello delle sorgenti, e ripetere lo stesso
+            // messaggio a ogni giro riempie il log di righe identiche fino a
+            // nascondere quelle che contano davvero. Il confronto è sul testo:
+            // se un giorno la libreria comparisse, o fallisse per un motivo
+            // diverso, il messaggio cambia e torna a farsi vedere.
+            if (error != m_lastLoadError) {
+                m_lastLoadError = error;
+                qCInfo(dsdrHal) << "colibri:" << error;
+            }
             if (!m_open)
                 setState(BackendState::Idle);
             emit discoveryFinished();

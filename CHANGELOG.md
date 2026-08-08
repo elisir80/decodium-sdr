@@ -4,6 +4,62 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+### Cambiato — Impianto dell'interfaccia
+
+- **I comandi del waterfall smettono di galleggiare.** Erano un riquadro
+  semitrasparente steso sopra il panadattatore: copriva la porzione di spettro
+  che si stava cercando di rendere leggibile, e il rumore che passava dietro
+  rendeva illeggibili le etichette proprio mentre le si regolava. Ora sono un
+  pannello richiudibile nella colonna destra, come gli altri.
+- **La targa del canale attivo sopra lo spettro.** Frequenza sintonizzabile a
+  cifre, S-meter, modo, filtro e AGC in una riga sola, dove si guarda mentre si
+  sintonizza — non in fondo alla colonna laterale. È il delegate del canale
+  corrente, non una copia dei suoi dati.
+- **Barra dei menu.** Le impostazioni non avevano una casa: la lingua stava in
+  fondo alla barra di stato. Ora c'è File / Vista / Strumenti / Aiuto, con
+  dentro solo comandi che fanno qualcosa.
+- **Colonna dei comandi rapidi** a sinistra dello spettro: aggiungi un
+  ricevitore, torna a piena banda, scegli la vista del waterfall.
+- La barra di stato mostra l'**ora UTC**.
+
+### Aggiunto — Lettura dello spettro
+
+- **Scala delle ampiezze** (`LevelScale`): lo spettro mostrava le frequenze ma
+  non i livelli, e i cursori del fondo e della vetta si regolavano alla cieca.
+- **Piano bande sullo spettro** (`BandSegments`): la striscia CW / dati / fari
+  / fonia sul confine con il waterfall, dai segmenti IARU Regione 1 aggiunti a
+  `BandPlan`. È una guida alla lettura, non una licenza: i limiti che contano
+  restano quelli della propria amministrazione.
+- **Asse dei tempi del waterfall** (`TimeScale`), ricavato da una misura e non
+  da una costante: `PanadapterView` conta le righe consumate e ne pubblica il
+  ritmo. Finché la misura non c'è, l'asse non si disegna — meglio nessuna scala
+  di una inventata.
+
+### Corretto
+
+- **Il waterfall era un muro di colore.** La scala automatica posava il fondo
+  sei decibel *sotto* il rumore misurato: siccome il rumore occupa quasi tutta
+  la banda, ogni bin riceveva un colore e i segnali non staccavano più. Ora il
+  fondo si posa sopra il rumore, che torna nero.
+- **La soglia di nero non produceva nero.** Sotto soglia si prendeva il primo
+  colore della palette, e Turbo — che nasce per le mappe di calore — parte da
+  un viola pieno: il livello «niente», che copre la maggior parte
+  dell'immagine, stendeva un velo viola su tutto. Le palette accese ricevono
+  ora il fondo davanti.
+- **L'S-meter mentiva sul livello.** Il gradiente era applicato alla barra e si
+  comprimeva con essa: un S3 mostrava comunque la punta rossa. La barra è ora
+  una finestra su un gradiente fermo.
+- **Le preferenze del waterfall non venivano mai salvate**, nonostante il
+  commento dicesse il contrario: si leggevano all'avvio e basta.
+- Un cursore disabilitato non sembrava disabilitato: con la scala automatica
+  attiva, fondo e vetta parevano manovrabili.
+- Il backend ColibriNANO ripeteva a ogni discovery lo stesso messaggio di
+  libreria mancante, fino a nascondere le righe che contano.
+- Il pacchetto Windows usciva **senza la libreria del ColibriNANO**: si carica
+  a runtime, quindi `file(GET_RUNTIME_DEPENDENCIES)` non la vedeva. La nuova
+  opzione `DSDR_COLIBRI_LIB` la include quando chi confeziona il pacchetto
+  indica dove sta — non d'ufficio, perché non è nostra da ridistribuire.
+
 ### Aggiunto — Fase 1
 
 - Backend **iqfile**: le registrazioni tornano ascoltabili. Chiude il cerchio
