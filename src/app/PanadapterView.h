@@ -33,8 +33,30 @@ class PanadapterView : public QQuickRhiItem
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY colorsChanged)
     Q_PROPERTY(qreal viewStart READ viewStart WRITE setViewStart NOTIFY viewChanged)
     Q_PROPERTY(qreal viewSpan READ viewSpan WRITE setViewSpan NOTIFY viewChanged)
+    Q_PROPERTY(WaterfallMode waterfallMode READ waterfallMode WRITE setWaterfallMode NOTIFY waterfallModeChanged)
+    Q_PROPERTY(int paletteIndex READ paletteIndex WRITE setPaletteIndex NOTIFY paletteChanged)
+    Q_PROPERTY(QStringList paletteNames READ paletteNames CONSTANT)
+    Q_PROPERTY(qreal gamma READ gamma WRITE setGamma NOTIFY toneChanged)
+    Q_PROPERTY(qreal blackThreshold READ blackThreshold WRITE setBlackThreshold NOTIFY toneChanged)
+    Q_PROPERTY(qreal tilt READ tilt WRITE setTilt NOTIFY sceneChanged)
+    Q_PROPERTY(qreal rotation3d READ rotation3d WRITE setRotation3d NOTIFY sceneChanged)
+    Q_PROPERTY(qreal reliefScale READ reliefScale WRITE setReliefScale NOTIFY sceneChanged)
+    Q_PROPERTY(bool autoRange READ autoRange WRITE setAutoRange NOTIFY autoRangeChanged)
+    Q_PROPERTY(qreal noiseFloorDb READ noiseFloorDb NOTIFY measuredLevelsChanged)
+    Q_PROPERTY(qreal peakLevelDb READ peakLevelDb NOTIFY measuredLevelsChanged)
 
 public:
+    /// Come si disegna la storia dello spettro.
+    ///
+    /// Non è una preferenza estetica: la vista piatta legge meglio le
+    /// frequenze e la densità del traffico, quella in rilievo legge meglio
+    /// l'andamento nel tempo di un singolo segnale.
+    enum WaterfallMode {
+        Flat = 0,       ///< Waterfall classico, visto dall'alto
+        Relief = 1,     ///< Superficie in prospettiva: il tempo si allontana
+    };
+    Q_ENUM(WaterfallMode)
+
     explicit PanadapterView(QQuickItem *parent = nullptr);
 
     QQuickRhiItemRenderer *createRenderer() override;
@@ -64,14 +86,62 @@ public:
     qreal viewSpan() const { return m_viewSpan; }
     void setViewSpan(qreal value);
 
+    WaterfallMode waterfallMode() const { return m_waterfallMode; }
+    void setWaterfallMode(WaterfallMode mode);
+
+    int paletteIndex() const { return m_paletteIndex; }
+    void setPaletteIndex(int index);
+    QStringList paletteNames() const;
+
+    /// Sotto 1 fa emergere i segnali deboli senza spostare la soglia.
+    qreal gamma() const { return m_gamma; }
+    void setGamma(qreal value);
+
+    /// Livello sotto il quale tutto resta fondo, in frazione della scala.
+    qreal blackThreshold() const { return m_blackThreshold; }
+    void setBlackThreshold(qreal value);
+
+    // ── Solo per la vista in rilievo ─────────────────────────────────────
+    qreal tilt() const { return m_tilt; }
+    void setTilt(qreal degrees);
+    qreal rotation3d() const { return m_rotation3d; }
+    void setRotation3d(qreal degrees);
+    qreal reliefScale() const { return m_reliefScale; }
+    void setReliefScale(qreal value);
+
+    /// Con l'auto-range attivo, `floorDb` e `ceilingDb` smettono di essere
+    /// comandi e diventano il risultato della misura: la UI continua a
+    /// leggerli allo stesso modo, ma non li scrive più.
+    bool autoRange() const { return m_autoRange; }
+    void setAutoRange(bool enabled);
+
+    /// Livello del rumore di fondo e del segnale più forte, in dB, misurati
+    /// sull'ultima riga di spettro. Sempre aggiornati, anche a auto-range
+    /// spento: servono a mostrare all'utente dove starebbe la scala.
+    qreal noiseFloorDb() const { return m_noiseFloorDb; }
+    qreal peakLevelDb() const { return m_peakLevelDb; }
+
+    /// Chiamata dal thread di rendering dentro `synchronize()`, l'unico punto
+    /// in cui il thread GUI è fermo. Non emette nulla direttamente: accoda.
+    void reportMeasuredLevels(const std::vector<float> &row);
+
 signals:
     void feedChanged();
     void viewChanged();
+    void waterfallModeChanged();
+    void paletteChanged();
+    void toneChanged();
+    void sceneChanged();
     void levelRangeChanged();
     void spectrumRatioChanged();
     void colorsChanged();
+    void autoRangeChanged();
+    void measuredLevelsChanged();
 
 private:
+    /// Pubblica sul thread GUI le misure raccolte dal render thread.
+    Q_INVOKABLE void publishMeasuredLevels();
+
     core::SpectrumFeed *m_feed = nullptr;
     QMetaObject::Connection m_feedConnection;
 
@@ -83,6 +153,21 @@ private:
     QColor m_backgroundColor{0x07, 0x0B, 0x11};
     qreal m_viewStart = 0.0;
     qreal m_viewSpan = 1.0;
+
+    WaterfallMode m_waterfallMode = Flat;
+    int m_paletteIndex = 0;
+    qreal m_gamma = 0.85;
+    qreal m_blackThreshold = 0.06;
+    qreal m_tilt = 58.0;
+    qreal m_rotation3d = 0.0;
+    qreal m_reliefScale = 0.45;
+
+    bool m_autoRange = false;
+    qreal m_noiseFloorDb = -130.0;
+    qreal m_peakLevelDb = -20.0;
+    bool m_levelsSeeded = false;
+    bool m_publishPending = false;
+    std::vector<float> m_levelScratch;  ///< copia ordinabile della riga
 };
 
 } // namespace dsdr::app

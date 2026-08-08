@@ -10,7 +10,10 @@ layout(std140, binding = 0) uniform buf {
     float rowOffset;
     float uMin;
     float uMax;
-    float unused;
+    float blackThreshold;
+    float gamma;
+    float unused0;
+    float unused1;
 } ubuf;
 
 void main()

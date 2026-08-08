@@ -14,6 +14,7 @@ function(dsdr_add_test name)
         TIMEOUT 120)
 endfunction()
 
+add_subdirectory(app)
 add_subdirectory(dsp)
 add_subdirectory(hal)
 add_subdirectory(integration)

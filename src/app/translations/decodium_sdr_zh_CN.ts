@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>ColibriDevicePanel</name>
+    <message>
+        <source>COLIBRINANO</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Guadagno</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sotto lo zero attenua, sopra amplifica: è un&apos;unica manopola.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ADC in sovraccarico — riduci il guadagno</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bande laterali invertite</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bande laterali normali</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Se in USB il parlato suona rovesciato, inverti.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>DiscoveryPane</name>
     <message>
         <source>Sorgente</source>
@@ -100,6 +131,25 @@
     </message>
 </context>
 <context>
+    <name>FrequencyPanel</name>
+    <message>
+        <source>SINTONIA</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>14.225   ·   14225   ·   7.100.000</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Vai</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Frequenza non valida o fuori dalla copertura del ricevitore.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>DECODIUM SDR — %1</source>
@@ -151,7 +201,115 @@
     </message>
 </context>
 <context>
+    <name>NetTcpDevicePanel</name>
+    <message>
+        <source>RTL_TCP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Guadagno</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Auto</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>auto</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Correzione</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bias tee acceso</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bias tee spento</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Tensione presente sul connettore d&apos;antenna.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>PanadapterPane</name>
+    <message>
+        <source>Nessun device connesso</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>QObject</name>
+    <message>
+        <source>DECODIUM</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Raptor</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Turbo</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Fuoco</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Scala di grigi</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>SoapyDevicePanel</name>
+    <message>
+        <source>DEVICE  ·  %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Guadagno</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Auto</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>auto</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Antenna</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>WaterfallControls</name>
+    <message>
+        <source>Rilievo</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Piatto</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Waterfall</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Scala automatica</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Fondo %1 · picco %2 dB</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
         <source>Fondo %1 dB</source>
         <translation type="unfinished"></translation>
@@ -161,7 +319,23 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Nessun device connesso</source>
+        <source>Contrasto %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Soglia %1%</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Inclinazione %1°</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rotazione %1°</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rilievo %1</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -307,6 +481,49 @@
     </message>
 </context>
 <context>
+    <name>dsdr::hal::colibri::ColibriBackend</name>
+    <message>
+        <source>Il device %1 non appartiene al backend ColibriNANO.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Apertura del ColibriNANO fallita. È già in uso da un altro programma?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Frequenza di campionamento %1 non offerta dal device.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Avvio del flusso IQ fallito.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il ColibriNANO riceve da %1 a %2 MHz.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Device non aperto.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Massimo %1 canali RX su questo device.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Canale %1 inesistente.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il ColibriNANO offre un solo panadattatore.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il ColibriNANO è un ricevitore: non ha trasmettitore.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>dsdr::hal::demo::DemoBackend</name>
     <message>
         <source>Il device %1 non appartiene al backend demo.</source>
@@ -384,6 +601,99 @@
     <name>dsdr::hal::nettcp::RtlTcpClient</name>
     <message>
         <source>Il server non parla il protocollo rtl_tcp.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>dsdr::hal::nettcp::SpyServerClient</name>
+    <message>
+        <source>Messaggio non valido dal server SpyServer.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>dsdr::hal::soapy::SoapyBackend</name>
+    <message>
+        <source>Enumerazione dei device fallita: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il device %1 non appartiene al backend SoapySDR.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Argomenti del device mancanti.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il device non copre %1 Hz.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Frequenza di campionamento %1 non supportata dal device.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Device non aperto.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Massimo %1 canali RX su questo device.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Canale %1 inesistente.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Troppi panadattatori aperti.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Questo device è solo in ricezione.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il device non ha un&apos;antenna «%1».</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>dsdr::hal::soapy::SoapyWorker</name>
+    <message>
+        <source>Sintonia rifiutata dal device: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Frequenza di campionamento rifiutata: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Antenna rifiutata: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Guadagno rifiutato: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Apertura del device fallita: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il driver non ha restituito alcun device.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il device non offre canali in ricezione.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Avvio dello stream fallito: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Lettura interrotta: %1</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

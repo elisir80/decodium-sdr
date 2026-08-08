@@ -1,8 +1,40 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/PanadapterView.h"
 #include "app/PanadapterRenderer.h"
+#include "app/WaterfallPalette.h"
+
+#include <algorithm>
+#include <cmath>
 
 namespace dsdr::app {
+
+namespace {
+
+/// Percentile che consideriamo "fondo". Non la mediana: con la banda piena di
+/// portanti la mediana sale con il traffico, e la scala si chiuderebbe proprio
+/// quando c'è più da vedere.
+constexpr float kNoisePercentile = 0.30f;
+
+/// Percentile del picco. Non il massimo: un singolo bin sporco — uno spurio,
+/// un impulso — allargherebbe la scala schiacciando tutto il resto. In cambio,
+/// un segnale strettissimo su banda vuota non apre la scala da solo e satura
+/// in cima: è il verso giusto in cui sbagliare, perché resta comunque visibile.
+constexpr float kPeakPercentile = 0.995f;
+
+/// Il fondo si muove piano in entrambe le direzioni: è una proprietà del sito
+/// di ricezione, non del segnale, e non deve inseguire il traffico.
+constexpr qreal kNoiseSmoothing = 0.08;
+
+/// Il picco si apre in fretta e si richiude piano: un segnale forte deve
+/// entrare subito nella scala, ma una pausa nel traffico non deve far
+/// respirare l'immagine.
+constexpr qreal kPeakAttack = 0.50;
+constexpr qreal kPeakRelease = 0.03;
+
+/// Sotto questa variazione non vale la pena svegliare il thread GUI.
+constexpr qreal kPublishThresholdDb = 0.25;
+
+} // namespace
 
 PanadapterView::PanadapterView(QQuickItem *parent)
     : QQuickRhiItem(parent)
@@ -90,6 +122,162 @@ void PanadapterView::setViewSpan(qreal value)
     if (m_viewStart + m_viewSpan > 1.0)
         m_viewStart = 1.0 - m_viewSpan;
     emit viewChanged();
+    update();
+}
+
+void PanadapterView::setAutoRange(bool enabled)
+{
+    if (m_autoRange == enabled)
+        return;
+    m_autoRange = enabled;
+    emit autoRangeChanged();
+    if (m_autoRange) {
+        // Ripartiamo dalla misura corrente invece di inseguire da dove
+        // l'utente aveva lasciato i cursori a mano.
+        m_levelsSeeded = false;
+    }
+    update();
+}
+
+void PanadapterView::reportMeasuredLevels(const std::vector<float> &row)
+{
+    if (row.empty())
+        return;
+
+    m_levelScratch = row;
+    const auto count = m_levelScratch.size();
+
+    const auto noiseAt = static_cast<std::size_t>(
+        std::clamp<float>(kNoisePercentile * static_cast<float>(count - 1), 0.0f,
+                          static_cast<float>(count - 1)));
+    const auto peakAt = static_cast<std::size_t>(
+        std::clamp<float>(kPeakPercentile * static_cast<float>(count - 1), 0.0f,
+                          static_cast<float>(count - 1)));
+
+    std::nth_element(m_levelScratch.begin(), m_levelScratch.begin() + noiseAt, m_levelScratch.end());
+    const auto noise = static_cast<qreal>(m_levelScratch[noiseAt]);
+
+    // Il secondo nth_element lavora solo sulla coda alta: la prima chiamata ha
+    // già separato i due gruppi.
+    std::nth_element(m_levelScratch.begin() + noiseAt, m_levelScratch.begin() + peakAt,
+                     m_levelScratch.end());
+    const auto peak = static_cast<qreal>(m_levelScratch[peakAt]);
+
+    if (!std::isfinite(noise) || !std::isfinite(peak))
+        return;
+
+    if (!m_levelsSeeded) {
+        m_noiseFloorDb = noise;
+        m_peakLevelDb = peak;
+        m_levelsSeeded = true;
+    } else {
+        m_noiseFloorDb += (noise - m_noiseFloorDb) * kNoiseSmoothing;
+        const qreal peakRate = (peak > m_peakLevelDb) ? kPeakAttack : kPeakRelease;
+        m_peakLevelDb += (peak - m_peakLevelDb) * peakRate;
+    }
+
+    if (m_publishPending)
+        return;
+    m_publishPending = true;
+    // Siamo sul render thread: i segnali si emettono di là, non da qui.
+    QMetaObject::invokeMethod(this, &PanadapterView::publishMeasuredLevels,
+                              Qt::QueuedConnection);
+}
+
+void PanadapterView::publishMeasuredLevels()
+{
+    m_publishPending = false;
+    emit measuredLevelsChanged();
+
+    if (!m_autoRange)
+        return;
+
+    // Margini attorno alla misura: sotto il fondo perché il rumore respira,
+    // sopra il picco perché un segnale in arrivo non deve saturare subito.
+    const qreal floor = m_noiseFloorDb - 6.0;
+    const qreal ceiling = std::max(m_peakLevelDb + 10.0, floor + 25.0);
+
+    if (std::abs(floor - m_floorDb) > kPublishThresholdDb)
+        setFloorDb(floor);
+    if (std::abs(ceiling - m_ceilingDb) > kPublishThresholdDb)
+        setCeilingDb(ceiling);
+}
+
+QStringList PanadapterView::paletteNames() const
+{
+    return waterfallPaletteNames();
+}
+
+void PanadapterView::setWaterfallMode(WaterfallMode mode)
+{
+    if (m_waterfallMode == mode)
+        return;
+    m_waterfallMode = mode;
+    emit waterfallModeChanged();
+    update();
+}
+
+void PanadapterView::setPaletteIndex(int index)
+{
+    index = qBound(0, index, paletteNames().size() - 1);
+    if (m_paletteIndex == index)
+        return;
+    m_paletteIndex = index;
+    emit paletteChanged();
+    update();
+}
+
+void PanadapterView::setGamma(qreal value)
+{
+    // Sotto 0,2 l'immagine diventa una macchia bianca, sopra 3 sparisce tutto.
+    value = qBound(0.2, value, 3.0);
+    if (qFuzzyCompare(m_gamma, value))
+        return;
+    m_gamma = value;
+    emit toneChanged();
+    update();
+}
+
+void PanadapterView::setBlackThreshold(qreal value)
+{
+    // Oltre il 90% si taglierebbe anche il segnale, non solo il rumore.
+    value = qBound(0.0, value, 0.9);
+    if (qFuzzyCompare(m_blackThreshold, value))
+        return;
+    m_blackThreshold = value;
+    emit toneChanged();
+    update();
+}
+
+void PanadapterView::setTilt(qreal degrees)
+{
+    // A zero si guarderebbe la superficie di taglio, a novanta dall'alto:
+    // fuori da questo intervallo la vista in rilievo non dice più nulla.
+    degrees = qBound(15.0, degrees, 85.0);
+    if (qFuzzyCompare(m_tilt, degrees))
+        return;
+    m_tilt = degrees;
+    emit sceneChanged();
+    update();
+}
+
+void PanadapterView::setRotation3d(qreal degrees)
+{
+    degrees = qBound(-45.0, degrees, 45.0);
+    if (qFuzzyCompare(m_rotation3d, degrees))
+        return;
+    m_rotation3d = degrees;
+    emit sceneChanged();
+    update();
+}
+
+void PanadapterView::setReliefScale(qreal value)
+{
+    value = qBound(0.05, value, 1.5);
+    if (qFuzzyCompare(m_reliefScale, value))
+        return;
+    m_reliefScale = value;
+    emit sceneChanged();
     update();
 }
 

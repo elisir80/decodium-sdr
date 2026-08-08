@@ -20,6 +20,7 @@ set(DSDR_QML_FILES
     qml/FrequencyGrid.qml
     qml/VfoFlag.qml
     qml/PanadapterPane.qml
+    qml/WaterfallControls.qml
     qml/ChannelStrip.qml
     qml/DiscoveryPane.qml
     qml/PanelFrame.qml
@@ -49,6 +50,8 @@ qt_add_qml_module(dsdr_qml
         PanadapterView.cpp
         PanadapterRenderer.h
         PanadapterRenderer.cpp
+        WaterfallPalette.h
+        WaterfallPalette.cpp
     # La scansione degli import serve solo per linkare staticamente i plugin
     # QML. Con un Qt dinamico non aggiunge nulla, e toglierla ci rende
     # indipendenti da qmlimportscanner, che in alcune distribuzioni (MSYS2)
@@ -63,6 +66,8 @@ qt_add_shaders(dsdr_qml "dsdr_panadapter_shaders"
     FILES
         shaders/waterfall.vert
         shaders/waterfall.frag
+        shaders/waterfall3d.vert
+        shaders/waterfall3d.frag
         shaders/trace.vert
         shaders/trace.frag
 )

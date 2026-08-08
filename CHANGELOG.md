@@ -6,6 +6,32 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ### Aggiunto — Fase 1
 
+- **Waterfall completo**, con vista in rilievo opzionale.
+  - Cinque palette (DECODIUM, Raptor, Turbo, Fuoco, scala di grigi): la
+    tabella è una texture 1D che si ricarica solo quando l'utente cambia
+    scelta, non a ogni fotogramma.
+  - **Contrasto e soglia** applicati nel fragment shader. La soglia lascia al
+    fondo quello che sta sotto — senza, un waterfall affollato diventa un
+    tappeto colorato uniforme — e il contrasto fa emergere i segnali deboli
+    senza spostarla.
+  - **Scala automatica**: fondo e vetta si misurano sull'ultima riga di
+    spettro, per percentili anziché per minimo e massimo, così uno spurio
+    isolato non spalanca la scala. Il fondo si muove piano, il picco si apre
+    in fretta e si richiude piano. La misura si fa dove i campioni già ci
+    sono — nel thread di rendering — e viene pubblicata alla UI attraverso il
+    ciclo eventi, non emessa da lì.
+  - **Vista in rilievo**: la stessa texture ad anello, letta però nel *vertex*
+    shader per costruire la superficie. La storia sta già in memoria video,
+    quindi non serve rimandare i campioni alla CPU a ogni fotogramma. La
+    scena si adatta da sé al riquadro disponibile: inclinazione e rotazione
+    cambiano l'ingombro, e un riquadro fisso funzionerebbe per una sola
+    combinazione. Se l'hardware non regge il campionamento nel vertex stage,
+    si resta sulla vista piatta senza che nulla si rompa.
+  - In rilievo la superficie prende tutta l'area: il suo bordo vicino è già lo
+    spettro istantaneo, e disegnarne una seconda copia sopra toglierebbe
+    spazio proprio alla dimensione che quella vista serve a mostrare.
+  - I comandi stanno sopra il panadattatore, non in un pannello laterale: si
+    regolano guardando l'effetto. Da chiusi restano una barra sottile.
 - Backend **colibri**: ColibriNANO di Expert Electronics, ricevitore USB a
   campionamento diretto (0,1–55 MHz, ADC 14 bit). **Primo hardware reale
   verificato sul ferro**, non solo contro un mock.

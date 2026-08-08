@@ -55,8 +55,12 @@ Item {
         // `--no-panadapter` stacca la sorgente dal rendering GPU: serve a
         // isolare i problemi di prestazioni fra DSP e scene graph.
         feed: Qt.application.arguments.indexOf("--no-panadapter") >= 0 ? null : Session.spectrum
-        floorDb: levelControls.floorValue
-        ceilingDb: levelControls.ceilingValue
+        // Niente binding su `floorDb`/`ceilingDb`: con la scala automatica è
+        // il C++ a scriverli, e un binding qui li riporterebbe indietro.
+        Component.onCompleted: {
+            floorDb = -125
+            ceilingDb = -25
+        }
         spectrumRatio: root.spectrumRatio
         viewStart: root.viewStart
         viewSpan: root.viewSpan
@@ -161,55 +165,12 @@ Item {
         }
     }
 
-    // ── Controlli di livello del waterfall ───────────────────────────────
-    Rectangle {
-        id: levelControls
-
-        property real floorValue: -125
-        property real ceilingValue: -25
-
+    // ── Comandi della resa del waterfall ─────────────────────────────────
+    WaterfallControls {
+        panadapter: panadapter
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Theme.spacing
-        width: 132
-        height: contentColumn.implicitHeight + 2 * Theme.spacing
-        radius: Theme.radiusSmall
-        color: Qt.rgba(Theme.surface.r, Theme.surface.g, Theme.surface.b, 0.82)
-        border.width: 1
-        border.color: Theme.border
-
-        Column {
-            id: contentColumn
-            anchors.fill: parent
-            anchors.margins: Theme.spacing
-            spacing: Theme.spacingTight
-
-            Text {
-                text: qsTr("Fondo %1 dB").arg(Math.round(levelControls.floorValue))
-                font.pixelSize: Theme.fontSmall
-                color: Theme.textSecondary
-            }
-
-            DsdrSlider {
-                width: parent.width
-                from: -160; to: -60
-                value: levelControls.floorValue
-                onMoved: levelControls.floorValue = value
-            }
-
-            Text {
-                text: qsTr("Vetta %1 dB").arg(Math.round(levelControls.ceilingValue))
-                font.pixelSize: Theme.fontSmall
-                color: Theme.textSecondary
-            }
-
-            DsdrSlider {
-                width: parent.width
-                from: -80; to: 0
-                value: levelControls.ceilingValue
-                onMoved: levelControls.ceilingValue = value
-            }
-        }
     }
 
     // ── Indicatore di zoom ───────────────────────────────────────────────

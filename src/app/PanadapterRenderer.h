@@ -5,6 +5,8 @@
 // `synchronize()`, che gira sul render thread mentre il thread GUI è fermo.
 #pragma once
 
+#include "app/PanadapterView.h"
+
 #include <QColor>
 #include <QMatrix4x4>
 #include <QQuickRhiItem>
@@ -33,6 +35,7 @@ public:
 private:
     bool createPipelines();
     bool ensureSpectrumResources(QRhiResourceUpdateBatch *batch);
+    bool ensureReliefResources(QRhiResourceUpdateBatch *batch);
     void uploadRows(QRhiResourceUpdateBatch *batch);
     void updateTraceGeometry(QRhiResourceUpdateBatch *batch);
     void releaseSpectrumResources();
@@ -52,6 +55,19 @@ private:
     std::unique_ptr<QRhiShaderResourceBindings> m_traceSrb;
     std::unique_ptr<QRhiShaderResourceBindings> m_fillSrb;
 
+    // Vista in rilievo: mesh e pipeline propri, ma la stessa texture ad anello
+    // e la stessa colormap della vista piatta. Cambia come si guarda la
+    // storia, non come la si raccoglie.
+    std::unique_ptr<QRhiGraphicsPipeline> m_reliefPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> m_reliefSrb;
+    std::unique_ptr<QRhiBuffer> m_reliefUbuf;
+    std::unique_ptr<QRhiBuffer> m_reliefVbuf;
+    std::unique_ptr<QRhiBuffer> m_reliefIbuf;
+    QShader m_reliefVertShader;
+    QShader m_reliefFragShader;
+    quint32 m_reliefIndexCount = 0;
+    bool m_reliefUnavailable = false;
+
     // Risorse legate al numero di bin.
     std::unique_ptr<QRhiTexture> m_waterfallTexture;
     std::unique_ptr<QRhiShaderResourceBindings> m_waterfallSrb;
@@ -60,7 +76,7 @@ private:
 
     int m_binCount = 0;
     int m_writeRow = 0;
-    bool m_colorMapUploaded = false;
+    int m_uploadedPalette = -1;
     bool m_quadUploaded = false;
 
     // Stato copiato dall'item in synchronize().
@@ -70,6 +86,13 @@ private:
     float m_spectrumRatio = 0.42f;
     float m_viewStart = 0.0f;
     float m_viewSpan = 1.0f;
+    PanadapterView::WaterfallMode m_mode = PanadapterView::Flat;
+    int m_paletteIndex = 0;
+    float m_gamma = 0.85f;
+    float m_blackThreshold = 0.06f;
+    float m_tilt = 58.0f;
+    float m_rotation = 0.0f;
+    float m_reliefScale = 0.45f;
     QColor m_traceColor;
     QColor m_fillColor;
     QColor m_backgroundColor;
