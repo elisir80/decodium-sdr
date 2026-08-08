@@ -184,46 +184,58 @@ Rectangle {
                         }
                     }
 
-                    SignalMeter {
+                    // Lo strumento a lancetta solo per il canale in ascolto:
+                    // quattro quadranti animati in colonna sarebbero una
+                    // giostra, e tre di quei quattro non li sta guardando
+                    // nessuno.
+                    AnalogMeter {
                         Layout.fillWidth: true
+                        visible: entry.current
                         levelDb: entry.signalDb
                     }
 
-                    // ── Modo e AGC ───────────────────────────────────────
-                    GridLayout {
+                    SignalMeter {
                         Layout.fillWidth: true
-                        columns: 2
-                        columnSpacing: Theme.spacing
-                        rowSpacing: Theme.spacingTight
+                        visible: !entry.current
+                        levelDb: entry.signalDb
+                    }
 
-                        Text {
-                            text: qsTr("Modo")
-                            font.pixelSize: Theme.fontSmall
-                            color: Theme.textSecondary
-                        }
+                    // ── Modo e filtro ────────────────────────────────────
+                    ModeSelector {
+                        Layout.fillWidth: true
+                        channelIndex: entry.index
+                        mode: entry.mode
+                        filterLowHz: entry.filterLowHz
+                        filterHighHz: entry.filterHighHz
+                    }
 
-                        Text {
-                            text: qsTr("AGC")
-                            font.pixelSize: Theme.fontSmall
-                            color: Theme.textSecondary
-                        }
+                    // ── AGC ──────────────────────────────────────────────
+                    Text {
+                        text: qsTr("AGC")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textSecondary
+                    }
 
-                        DsdrComboBox {
-                            Layout.fillWidth: true
-                            model: Session.modeNames()
-                            currentIndex: entry.mode
-                            // Solo se la demodulazione è del client il modo è
-                            // davvero nostro; con DSP a bordo lo decide la radio.
-                            enabled: Session.capabilities.clientDemod
-                            onActivated: Session.setChannelMode(entry.index, currentIndex)
-                        }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacingTight
 
-                        DsdrComboBox {
-                            Layout.fillWidth: true
+                        Repeater {
                             model: Session.agcModeNames()
-                            currentIndex: entry.agcMode
-                            enabled: Session.capabilities.clientAgc
-                            onActivated: Session.setChannelAgcMode(entry.index, currentIndex)
+
+                            delegate: DsdrButton {
+                                required property int index
+                                required property string modelData
+
+                                Layout.fillWidth: true
+                                implicitWidth: 0
+                                implicitHeight: 24
+                                text: modelData
+                                checkable: true
+                                checked: entry.agcMode === index
+                                enabled: Session.capabilities.clientAgc
+                                onClicked: Session.setChannelAgcMode(entry.index, index)
+                            }
                         }
                     }
 
@@ -254,35 +266,12 @@ Rectangle {
                         }
                     }
 
-                    // ── Filtro ───────────────────────────────────────────
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: Session.capabilities.clientDemod
-
-                        Text {
-                            text: qsTr("Filtro")
-                            font.pixelSize: Theme.fontSmall
-                            color: Theme.textSecondary
-                        }
-
-                        DsdrSlider {
-                            Layout.fillWidth: true
-                            from: -6000; to: 6000; stepSize: 50
-                            value: entry.filterLowHz
-                            onMoved: Session.setChannelFilter(entry.index, value, entry.filterHighHz)
-                        }
-
-                        DsdrSlider {
-                            Layout.fillWidth: true
-                            from: -6000; to: 6000; stepSize: 50
-                            value: entry.filterHighHz
-                            onMoved: Session.setChannelFilter(entry.index, entry.filterLowHz, value)
-                        }
-                    }
-
+                    // I due cursori del passabanda se ne sono andati: i
+                    // preimpostati di ModeSelector coprono i valori d'uso, e
+                    // per il taglio fine ci sono i bordi della fascia sullo
+                    // spettro, dove si vede cosa si sta tagliando.
                     Text {
-                        text: entry.filterLowHz + " … " + entry.filterHighHz + " Hz    "
-                              + qsTr("guadagno AGC ") + Math.round(entry.agcGainDb) + " dB"
+                        text: qsTr("guadagno AGC %1 dB").arg(Math.round(entry.agcGainDb))
                         font.pixelSize: Theme.fontSmall
                         font.family: Theme.monoFamily
                         color: Theme.textDisabled

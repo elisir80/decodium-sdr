@@ -16,6 +16,8 @@ set(DSDR_QML_FILES
     qml/DsdrSlider.qml
     qml/DsdrComboBox.qml
     qml/SignalMeter.qml
+    qml/AnalogMeter.qml
+    qml/ModeSelector.qml
     qml/FrequencyDisplay.qml
     qml/BandPlan.qml
     qml/FrequencyPanel.qml
