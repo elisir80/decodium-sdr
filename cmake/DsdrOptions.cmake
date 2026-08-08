@@ -21,6 +21,14 @@ option(DSDR_GPU_SPECTRUM    "Spettro/waterfall su GPU via QQuickRhiItem"        
 option(DSDR_BUILD_TESTS        "Compila la suite di test (RNF-07)"              ON)
 option(DSDR_WARNINGS_AS_ERRORS "Tratta i warning del compilatore come errori"   OFF)
 
+# I difetti di concorrenza non si trovano rileggendo il codice: si trovano
+# facendoli succedere sotto uno strumento che li vede. Vale la pena tenere
+# l'interruttore in pianta stabile, invece di riscoprire ogni volta le opzioni.
+#   address  — use-after-free, overflow, doppia free
+#   thread   — accessi concorrenti non sincronizzati
+#   undefined
+set(DSDR_SANITIZE "" CACHE STRING "Sanitizer da attivare: address, thread, undefined (anche combinati con ;)")
+
 if(NOT DSDR_BACKEND_DEMO)
     message(WARNING
         "DSDR_BACKEND_DEMO=OFF: la conformance suite HAL e gli integration test "
@@ -42,6 +50,16 @@ function(dsdr_apply_target_defaults tgt)
         if(DSDR_WARNINGS_AS_ERRORS)
             target_compile_options(${tgt} PRIVATE -Werror)
         endif()
+    endif()
+
+    if(DSDR_SANITIZE AND NOT MSVC)
+        string(REPLACE ";" "," dsdr_san_list "${DSDR_SANITIZE}")
+        # `-fno-omit-frame-pointer` non è un dettaglio: senza, lo stack che il
+        # sanitizer stampa salta proprio i livelli che servono a capire chi ha
+        # liberato la memoria.
+        target_compile_options(${tgt} PRIVATE
+            -fsanitize=${dsdr_san_list} -fno-omit-frame-pointer -g)
+        target_link_options(${tgt} PRIVATE -fsanitize=${dsdr_san_list})
     endif()
 endfunction()
 

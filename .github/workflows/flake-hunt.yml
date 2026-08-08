@@ -1,0 +1,88 @@
+# Caccia al difetto intermittente nei test di rete.
+#
+# `tst_nettcp` e `tst_hal_conformance` sono morti in CI senza produrre output —
+# su Windows il primo, su Linux il secondo — e non si riproducono in locale
+# nemmeno in parallelo sotto contesa. Rilanciare non insegna nulla: passano.
+#
+# Questo workflow li fa girare in ciclo sotto AddressSanitizer, dove un
+# use-after-free non aspetta la fortuna per manifestarsi ma viene segnalato al
+# primo accesso, con lo stack di chi ha liberato la memoria.
+#
+# Si lancia a mano. Quando il difetto sarà chiuso, questo file va via con lui.
+name: Flake hunt
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Quante volte eseguire ciascun test"
+        required: false
+        default: "40"
+      sanitizer:
+        description: "address oppure thread"
+        required: false
+        default: "address"
+
+jobs:
+  hunt:
+    name: ${{ inputs.sanitizer }} × ${{ inputs.iterations }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dipendenze di sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build libfftw3-dev libsoapysdr-dev \
+            libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libvulkan-dev libegl1-mesa-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxcb-xkb1 libpulse-dev
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Compila con il sanitizer
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DDSDR_SANITIZE="${{ inputs.sanitizer }}"
+          cmake --build build
+
+      - name: Cicla i due test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          # Qt non libera tutto all'uscita per scelta, e i leak qui sono
+          # rumore: cerchiamo un accesso a memoria morta, non la contabilità.
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=0:print_stacktrace=1
+          TSAN_OPTIONS: second_deadlock_stack=1
+        run: |
+          set +e
+          FAILURES=0
+
+          for test in tst_nettcp tst_hal_conformance; do
+            echo "::group::$test"
+            for i in $(seq 1 ${{ inputs.iterations }}); do
+              OUT=$(./build/bin/$test 2>&1)
+              CODE=$?
+              if [ $CODE -ne 0 ]; then
+                echo "::error::$test fallito al giro $i (exit $CODE)"
+                echo "$OUT" | tail -80
+                FAILURES=$((FAILURES + 1))
+                break
+              fi
+            done
+            echo "::endgroup::"
+          done
+
+          if [ $FAILURES -gt 0 ]; then
+            echo "Riprodotto: $FAILURES test su 2"
+            exit 1
+          fi
+          echo "Nessun fallimento in ${{ inputs.iterations }} giri per test."
