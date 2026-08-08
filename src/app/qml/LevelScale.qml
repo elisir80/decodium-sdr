@@ -73,6 +73,14 @@ Item {
     /// Livello della prima tacca: il multiplo del passo appena sopra il fondo.
     readonly property real firstTickDb: Math.ceil(floorDb / stepDb) * stepDb
 
+    /// Decimali con cui etichettare, in funzione del passo.
+    ///
+    /// Su una scala compressa il passo scende sotto il decibel, e arrotondando
+    /// all'intero si ottengono tacche diverse con la stessa etichetta: −81,
+    /// −81, −82, −82. Una scala che ripete i numeri è peggio di una senza
+    /// numeri, perché sembra funzionare.
+    readonly property int labelDecimals: stepDb >= 1 ? 0 : (stepDb >= 0.1 ? 1 : 2)
+
     /// Ordinata di un livello. Il fondo scala sta sulla linea che separa
     /// spettro e waterfall, la vetta in cima al pannello.
     function yForLevel(db) {
@@ -111,7 +119,7 @@ Item {
                 x: root.labelsOnLeft ? 4 : root.width - width - 4
                 y: -height - 1
 
-                text: Math.round(tick.tickDb)
+                text: tick.tickDb.toFixed(root.labelDecimals)
                 font.pixelSize: Theme.fontSmall
                 font.family: Theme.monoFamily
                 color: Theme.textDisabled

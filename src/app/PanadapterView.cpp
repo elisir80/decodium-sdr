@@ -37,6 +37,15 @@ constexpr qreal kPublishThresholdDb = 0.25;
 /// Il minimo intervallo utile della scala, quando fondo e picco coincidono.
 constexpr qreal kMinimumSpanDb = 25.0;
 
+/// Distanza minima fra fondo e vetta, comunque li si imposti.
+///
+/// Più permissiva di `kMinimumSpanDb`, che è la scala che l'auto-range *sceglie*:
+/// questa è la scala che il progetto si rifiuta di scendere sotto. Chi vuole
+/// spremere la dinamica su una manciata di decibel deve poterlo fare; sotto i
+/// dieci, però, ogni bin diventa o nero o saturo e l'immagine non dice più
+/// niente — e ci si arriva per sbaglio, portando un cursore a fondo corsa.
+constexpr qreal kMinimumUsableSpanDb = 10.0;
+
 /// Margine sopra il picco misurato: un segnale in arrivo non deve saturare
 /// prima che la scala abbia il tempo di aprirsi.
 constexpr qreal kCeilingAbovePeakDb = 10.0;
@@ -84,6 +93,14 @@ void PanadapterView::setFeed(core::SpectrumFeed *feed)
 
 void PanadapterView::setFloorDb(qreal db)
 {
+    // La vetta cede il passo, ma non si lascia scavalcare: una scala più
+    // stretta di kMinimumSpanDb rende ogni bin o nero o saturo, e l'immagine
+    // smette di dire alcunché. Con la scala automatica il minimo era già
+    // garantito dal calcolo; in manuale non lo garantiva nessuno, e bastava
+    // portare un cursore a fondo corsa per ritrovarsi tre decibel di
+    // dinamica e un waterfall in fiamme.
+    db = std::min(db, m_ceilingDb - kMinimumUsableSpanDb);
+
     if (qFuzzyCompare(m_floorDb, db))
         return;
     m_floorDb = db;
@@ -95,6 +112,9 @@ void PanadapterView::setFloorDb(qreal db)
 
 void PanadapterView::setCeilingDb(qreal db)
 {
+    // Simmetrico a setFloorDb: vedi il commento là.
+    db = std::max(db, m_floorDb + kMinimumUsableSpanDb);
+
     if (qFuzzyCompare(m_ceilingDb, db))
         return;
     m_ceilingDb = db;

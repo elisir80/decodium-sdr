@@ -73,6 +73,7 @@ private slots:
     void autoRangeKeepsAUsableSpan();
     void manualRangeIsNotOverwritten();
     void toneControlsAreClamped();
+    void theScaleKeepsAUsableSpan();
     void historyIsMeasuredNotAssumed();
 };
 
@@ -313,6 +314,36 @@ void WaterfallTest::toneControlsAreClamped()
     QVERIFY(view.tilt() >= 15.0);
     view.setTilt(180.0);
     QVERIFY(view.tilt() <= 85.0);
+}
+
+void WaterfallTest::theScaleKeepsAUsableSpan()
+{
+    PanadapterView view;
+    view.setFloorDb(-125.0);
+    view.setCeilingDb(-25.0);
+
+    // Il caso visto sul campo: la vetta portata a fondo corsa fin sotto il
+    // fondo. Restavano tre decibel di dinamica, ogni bin diventava nero o
+    // saturo e la scala mostrava tacche diverse con la stessa etichetta.
+    view.setCeilingDb(-128.0);
+    QVERIFY2(view.ceilingDb() - view.floorDb() >= 10.0,
+             qPrintable(QStringLiteral("scala di %1 dB dopo aver abbassato la vetta")
+                            .arg(view.ceilingDb() - view.floorDb())));
+
+    // E nell'altro verso: il fondo spinto sopra la vetta.
+    view.setFloorDb(-125.0);
+    view.setCeilingDb(-25.0);
+    view.setFloorDb(-20.0);
+    QVERIFY2(view.ceilingDb() - view.floorDb() >= 10.0,
+             qPrintable(QStringLiteral("scala di %1 dB dopo aver alzato il fondo")
+                            .arg(view.ceilingDb() - view.floorDb())));
+
+    // Restringere fin dove è lecito deve però restare possibile: il limite è
+    // una rete di sicurezza, non una tutela contro le scelte dell'operatore.
+    view.setFloorDb(-100.0);
+    view.setCeilingDb(-88.0);
+    QCOMPARE(view.ceilingDb(), -88.0);
+    QCOMPARE(view.floorDb(), -100.0);
 }
 
 void WaterfallTest::historyIsMeasuredNotAssumed()

@@ -63,6 +63,40 @@ TestCase {
                "passo non tondo: " + scale.stepDb + " (mantissa " + mantissa + ")")
     }
 
+    // Su una scala compressa il passo scende sotto il decibel: arrotondando
+    // all'intero comparivano tacche diverse con la stessa etichetta — −81,
+    // −81, −82, −82 — e una scala che ripete i numeri sembra funzionare
+    // mentre non dice niente.
+    function test_labels_do_not_repeat_on_a_narrow_scale() {
+        // L'altezza conta: su un pannello alto la spaziatura desiderata
+        // concede molte divisioni, il passo scende a due decimi di decibel ed
+        // è lì che gli interi cominciano a ripetersi. Sono i numeri veri di
+        // una finestra a schermo intero su un monitor da 1370 punti.
+        const scale = createTemporaryObject(scaleComponent, testCase, {
+            floorDb: -83, ceilingDb: -80, width: 200, height: 1370
+        })
+        wait(50)
+
+        const seen = {}
+        let labels = 0
+        for (let i = 0; i < scale.children.length; ++i) {
+            const tick = scale.children[i]
+            if (tick.height !== 1 || !tick.visible)
+                continue
+            for (let j = 0; j < tick.children.length; ++j) {
+                const child = tick.children[j]
+                if (child.text === undefined || String(child.text).length === 0)
+                    continue
+                const text = String(child.text)
+                verify(seen[text] === undefined,
+                       "due tacche con la stessa etichetta: '" + text + "'")
+                seen[text] = true
+                ++labels
+            }
+        }
+        verify(labels >= 2, "etichette insufficienti per il controllo: " + labels)
+    }
+
     function test_level_maps_to_position() {
         const scale = createTemporaryObject(scaleComponent, testCase, {
             floorDb: -100, ceilingDb: -50, width: 200, height: 400, spectrumRatio: 0.5
