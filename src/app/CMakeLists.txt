@@ -28,6 +28,7 @@ set(DSDR_QML_FILES
     qml/SoapyDevicePanel.qml
     qml/NetTcpDevicePanel.qml
     qml/ColibriDevicePanel.qml
+    qml/IqFileDevicePanel.qml
 )
 
 foreach(qml_file IN LISTS DSDR_QML_FILES)

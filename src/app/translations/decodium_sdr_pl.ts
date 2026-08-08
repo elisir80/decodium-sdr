@@ -150,6 +150,37 @@
     </message>
 </context>
 <context>
+    <name>IqFileDevicePanel</name>
+    <message>
+        <source>REGISTRAZIONE</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Riprendi</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Pausa</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Velocità</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Fuori da 1× l&apos;audio cambia tono: serve a cercare, non ad ascoltare.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Registrata con %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Metadati assenti: la frequenza è dedotta dal nome del file.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>DECODIUM SDR — %1</source>
@@ -262,6 +293,54 @@
     </message>
     <message>
         <source>Scala di grigi</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>File troppo corto per essere un WAV.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Non è un file RIFF/WAV.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>File RIFF ma non WAVE.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Chunk fmt incompleto.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Formato campioni non supportato (tag %1, %2 bit): servono float32, PCM 16 bit o PCM 8 bit.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Chunk fmt assente.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Chunk data assente.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Servono due canali (I e Q), trovati %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Frequenza di campionamento nulla.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>La registrazione non contiene campioni.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Registrazione IQ</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Registrazione — %1</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -551,6 +630,56 @@
     </message>
     <message>
         <source>Troppi panadattatori aperti.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>dsdr::hal::iqfile::IqFileBackend</name>
+    <message>
+        <source>Nessun file indicato.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Il device %1 non appartiene al backend iqfile.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Impossibile leggere %1: %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>La frequenza di una registrazione non è modificabile: i campioni furono acquisiti a %1 Hz.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>La frequenza di campionamento di una registrazione è fissa: %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Nessuna registrazione aperta.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Al massimo %1 canali RX su una registrazione.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Canale %1 inesistente.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Troppi panadattatori aperti.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Da una registrazione non si trasmette.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>dsdr::hal::iqfile::IqFileWorker</name>
+    <message>
+        <source>Impossibile aprire %1.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -19,6 +19,10 @@
 #include "hal/backends/colibri/ColibriBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_IQFILE
+#include "hal/backends/iqfile/IqFileBackend.h"
+#endif
+
 namespace dsdr::hal {
 
 BackendRegistry &BackendRegistry::instance()
@@ -134,6 +138,17 @@ void registerBuiltinBackends()
                     QStringLiteral("Ricevitore USB a campionamento diretto di Expert "
                                    "Electronics: 0,1–55 MHz, ADC a 14 bit. Sola ricezione.")},
         [](QObject *parent) -> IRadioBackend * { return new ColibriBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_IQFILE
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("iqfile"),
+                    QStringLiteral("Registrazione IQ"),
+                    QStringLiteral("Riapre una registrazione fatta con DECODIUM SDR — o con "
+                                   "un altro programma — e la tratta come una radio: "
+                                   "sintonizzabile, demodulabile, con il suo waterfall. "
+                                   "Con la differenza che il tempo si può riavvolgere.")},
+        [](QObject *parent) -> IRadioBackend * { return new IqFileBackend(parent); });
 #endif
 
     // Gli altri backend si aggiungono qui, uno per fase (§9). Ogni blocco è

@@ -33,7 +33,7 @@ out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
 | Backend colibri (ColibriNANO) | ✅ verificato sul ricevitore vero |
 | Multi-canale | ✅ dalla Fase 0 |
 | Registrazione IQ | ✅ WAV float32 + sidecar JSON, RF64 oltre i 4 GB |
-| Riproduzione da file IQ | ⬜ arriverà come backend `iqfile`, dietro lo stesso seam |
+| Riproduzione da file IQ | ✅ backend `iqfile`: legge il nostro WAV/RF64 e anche PCM 16/8 bit |
 | i18n — pipeline e selettore lingua | ✅ 14 lingue predisposte |
 | i18n — traduzioni complete | 🔄 italiano (sorgente) e inglese; le altre 12 attendono revisori madrelingua |
 | Pacchetti AppImage / DMG / ZIP | ✅ workflow di release su tag |
@@ -77,6 +77,7 @@ Backend **hamlib**, raffinamenti, Flathub, feature dalla community.
 | Lingua sorgente delle stringhe: italiano | **Decisione aperta.** Lo standard open source è l'inglese come sorgente, così chi traduce in lettone o giapponese non deve conoscere l'italiano. La migrazione è meccanica (~90 stringhe) e non tocca la pipeline | Fase 1 |
 | Persistenza impostazioni (SettingsStore SQLite) | Le impostazioni non sopravvivono al riavvio | Fase 1 |
 | Resampler frazionario per rate non multipli di 48 kHz | Alcuni device Soapy | Fase 1 |
+| La conformance suite crasha a volte con il ColibriNANO collegato | Il segfault è dentro `colibrinano_lib.dll`, in un suo thread, dopo la chiusura del device: nessun frame del nostro codice nello stack. Non riproducibile a comando — tre esecuzioni successive sono pulite. In CI non si vede, perché senza hardware il backend viene saltato. Il primo sospetto è `finalize()`, che risolviamo dalla libreria e non chiamiamo mai | Fase 1 |
 | `tst_nettcp` crashato una volta in CI su Windows senza produrre output | **Non riproducibile:** 44 esecuzioni locali pulite (12 in sequenza, 32 in parallelo sotto contesa) e verde al rilancio in CI. Non è un'asserzione fallita ma una morte silenziosa del processo dopo 9 s, quindi il sospetto è una race nel mock server sotto un runner lento — lo stesso punto che ha già avuto uno use-after-free, dove `abort()` emetteva `disconnected` in modo sincrono. Se ricapita, è lì che va guardato invece di rilanciare | Fase 1 |
 | i18n: i tredici `.ts` esistono ma le traduzioni sono vuote | Servono revisori madrelingua; le stringhe si riestraggono con `update_translations` | Fase 1 |
 | Path CPU dello spettro (`DSDR_GPU_SPECTRUM=OFF`) non implementato | Hardware grafico antico | Fase 2 |

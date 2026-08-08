@@ -6,6 +6,26 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ### Aggiunto — Fase 1
 
+- Backend **iqfile**: le registrazioni tornano ascoltabili. Chiude il cerchio
+  che `IqRecorder` apriva — quello che l'applicazione scrive, la stessa
+  applicazione lo riascolta.
+  - Dietro il seam una registrazione è una radio come un'altra:
+    sintonizzabile, demodulabile, con il suo waterfall e i suoi quattro
+    canali. Con una differenza sola, ma grossa: il tempo si può fermare e
+    riavvolgere.
+  - Legge il nostro WAV float32 e la sua promozione a RF64, ma anche PCM a 16
+    e 8 bit: sono venti righe di conversione che lo rendono utile con i file
+    registrati da altri programmi, non solo con i nostri.
+  - La frequenza centrale non sta nel WAV. Viene dal sidecar JSON; quando
+    manca si tenta il nome del file, e il pannello dichiara che quel numero è
+    una deduzione — tutto il resto della UI lo tratterebbe come certo.
+  - Sintonia e frequenza di campionamento si **rifiutano**: spostarle
+    significherebbe mentire su cosa contengono i campioni. Il PTT non esiste,
+    perché la capability dice `tx = None`.
+  - La riproduzione va al ritmo della registrazione, non a quello del disco.
+  - Un file troncato dichiara più byte di quanti ne abbia: ci si fida di ciò
+    che c'è davvero invece di leggere oltre la fine.
+
 - **Waterfall completo**, con vista in rilievo opzionale.
   - Cinque palette (DECODIUM, Raptor, Turbo, Fuoco, scala di grigi): la
     tabella è una texture 1D che si ricarica solo quando l'utente cambia
