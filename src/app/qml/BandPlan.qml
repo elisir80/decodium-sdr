@@ -28,6 +28,95 @@ QtObject {
         { name: "6m",   start: 50000000, end: 52000000, home: 50150000 },
     ]
 
+    /// Segmenti d'uso dentro le bande, secondo il piano IARU Regione 1.
+    ///
+    /// Serve a sapere dove si sta: su una banda che non si frequenta, o su un
+    /// segmento regolato diversamente da come lo si ricorda, è la differenza
+    /// fra chiamare dove si può e dove non si dovrebbe.
+    ///
+    /// Attenzione a cosa è e cosa non è: è il piano *volontario* della
+    /// Regione 1, non la licenza. I limiti che contano davvero sono quelli
+    /// della propria amministrazione e della propria patente, e in Regione 2
+    /// e 3 i confini sono altri. Qui è una guida alla lettura dello spettro.
+    ///
+    /// `kind` vale "cw", "digi", "beacon" o "phone".
+    readonly property var segments: [
+        { band: "160m", start:  1810000, end:  1838000, kind: "cw" },
+        { band: "160m", start:  1838000, end:  1843000, kind: "digi" },
+        { band: "160m", start:  1843000, end:  2000000, kind: "phone" },
+
+        { band: "80m",  start:  3500000, end:  3570000, kind: "cw" },
+        { band: "80m",  start:  3570000, end:  3600000, kind: "digi" },
+        { band: "80m",  start:  3600000, end:  3800000, kind: "phone" },
+
+        { band: "60m",  start:  5351500, end:  5354000, kind: "cw" },
+        { band: "60m",  start:  5354000, end:  5366000, kind: "phone" },
+
+        { band: "40m",  start:  7000000, end:  7040000, kind: "cw" },
+        { band: "40m",  start:  7040000, end:  7050000, kind: "digi" },
+        { band: "40m",  start:  7050000, end:  7200000, kind: "phone" },
+
+        { band: "30m",  start: 10100000, end: 10130000, kind: "cw" },
+        { band: "30m",  start: 10130000, end: 10150000, kind: "digi" },
+
+        { band: "20m",  start: 14000000, end: 14070000, kind: "cw" },
+        { band: "20m",  start: 14070000, end: 14099000, kind: "digi" },
+        { band: "20m",  start: 14099000, end: 14101000, kind: "beacon" },
+        { band: "20m",  start: 14101000, end: 14350000, kind: "phone" },
+
+        { band: "17m",  start: 18068000, end: 18095000, kind: "cw" },
+        { band: "17m",  start: 18095000, end: 18109000, kind: "digi" },
+        { band: "17m",  start: 18109000, end: 18111000, kind: "beacon" },
+        { band: "17m",  start: 18111000, end: 18168000, kind: "phone" },
+
+        { band: "15m",  start: 21000000, end: 21070000, kind: "cw" },
+        { band: "15m",  start: 21070000, end: 21149000, kind: "digi" },
+        { band: "15m",  start: 21149000, end: 21151000, kind: "beacon" },
+        { band: "15m",  start: 21151000, end: 21450000, kind: "phone" },
+
+        { band: "12m",  start: 24890000, end: 24915000, kind: "cw" },
+        { band: "12m",  start: 24915000, end: 24929000, kind: "digi" },
+        { band: "12m",  start: 24929000, end: 24931000, kind: "beacon" },
+        { band: "12m",  start: 24931000, end: 24990000, kind: "phone" },
+
+        { band: "10m",  start: 28000000, end: 28070000, kind: "cw" },
+        { band: "10m",  start: 28070000, end: 28190000, kind: "digi" },
+        { band: "10m",  start: 28190000, end: 28225000, kind: "beacon" },
+        { band: "10m",  start: 28225000, end: 29700000, kind: "phone" },
+
+        { band: "6m",   start: 50000000, end: 50100000, kind: "cw" },
+        { band: "6m",   start: 50100000, end: 50500000, kind: "phone" },
+        { band: "6m",   start: 50500000, end: 52000000, kind: "digi" },
+    ]
+
+    /// Nome leggibile di un tipo di segmento.
+    function segmentLabel(kind) {
+        switch (kind) {
+        case "cw":     return qsTr("CW")
+        case "digi":   return qsTr("DATI")
+        case "beacon": return qsTr("FARI")
+        case "phone":  return qsTr("FONIA")
+        }
+        return ""
+    }
+
+    /// Segmenti che toccano l'intervallo richiesto, in hertz.
+    ///
+    /// Chi disegna la striscia riceve solo quello che gli serve: filtrare a
+    /// monte evita di istanziare decine di rettangoli invisibili a ogni
+    /// cambio di sintonia.
+    function segmentsIn(startHz, endHz) {
+        const result = []
+        if (!(endHz > startHz))
+            return result
+        for (let i = 0; i < segments.length; ++i) {
+            const s = segments[i]
+            if (s.end > startHz && s.start < endHz)
+                result.push(s)
+        }
+        return result
+    }
+
     /// Emissioni orarie e stazioni di riferimento: comode per verificare che
     /// l'antenna e la catena di ricezione funzionino davvero.
     readonly property var references: [
