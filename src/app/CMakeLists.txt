@@ -91,6 +91,22 @@ qt_add_executable(dsdr_app main.cpp)
 set_target_properties(dsdr_app PROPERTIES OUTPUT_NAME "decodium-sdr")
 target_compile_definitions(dsdr_app PRIVATE DSDR_VERSION="${PROJECT_VERSION}")
 
+# Su macOS l'applicazione dev'essere un bundle, e non lo è per default: senza,
+# il deploy di Qt si limita a copiare l'eseguibile e avvisa che «executable
+# targets have to be app bundles». Il risultato è un binario che non parte su
+# nessuna macchina che non abbia già Qt installato — e non c'è alcun .app da
+# cui ricavare il DMG.
+if(APPLE)
+    set_target_properties(dsdr_app PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "DECODIUM SDR"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "it.decodium.sdr"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_COPYRIGHT "GPL-3.0-or-later"
+    )
+endif()
+
 target_link_libraries(dsdr_app PRIVATE dsdr_qml dsdr_qmlplugin)
 
 dsdr_apply_target_defaults(dsdr_app)

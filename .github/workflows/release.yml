@@ -8,11 +8,11 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Senza input: la versione viene dal progetto, e un campo obbligatorio che
+  # nessuno step legge è solo un ostacolo fra chi vuole provare il
+  # confezionamento e il workflow. Lanciato a mano costruisce i tre pacchetti
+  # e li carica come artifact, senza creare alcuna release.
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Versione da costruire (senza la v)"
-        required: true
 
 permissions:
   contents: write
@@ -103,7 +103,17 @@ jobs:
         run: ctest --test-dir build --output-on-failure --timeout 180
 
       - name: Installa in staging
-        run: cmake --install build --prefix staging
+        shell: bash
+        run: |
+          # Il prefix deve essere assoluto: `qt6_deploy_qt_conf` rifiuta un
+          # percorso relativo, e il messaggio arriva dopo che l'installazione
+          # ha già copiato mezza Qt. Su MSYS2 serve anche la forma Windows,
+          # perché cmake lì è un binario nativo.
+          PREFIX="$(pwd)/staging"
+          if command -v cygpath >/dev/null 2>&1; then
+            PREFIX="$(cygpath -m "$PREFIX")"
+          fi
+          cmake --install build --prefix "$PREFIX"
 
       # ── Confezionamento ─────────────────────────────────────────────────
       - name: AppImage (Linux)
