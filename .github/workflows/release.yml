@@ -136,11 +136,11 @@ jobs:
           Terminal=false
           EOF
 
-          # Segnaposto: l'icona vera arriverà con l'identità visiva.
-          convert -size 256x256 xc:'#070B11' -fill '#6EE7FF' -pointsize 48 \
-                  -gravity center -annotate 0 'DSDR' \
-                  AppDir/usr/share/icons/hicolor/256x256/apps/it.decodium.sdr.png \
-            || touch AppDir/usr/share/icons/hicolor/256x256/apps/it.decodium.sdr.png
+          # L'icona è un file versionato, non qualcosa che la CI debba saper
+          # produrre: generarla al volo dipendeva da ImageMagick, che su
+          # ubuntu-24.04 non c'è, e il ripiego lasciava un PNG di zero byte che
+          # linuxdeploy rifiuta — dopo aver già fatto tutto il resto del lavoro.
+          cp packaging/icons/it.decodium.sdr.png AppDir/usr/share/icons/hicolor/256x256/apps/
 
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
