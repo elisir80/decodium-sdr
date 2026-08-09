@@ -25,6 +25,7 @@ Rectangle {
     required property real signalDb
     required property int agcMode
     required property bool muted
+    required property real volume
 
     /// Larghezza del filtro: è il numero che si legge, non i due estremi.
     readonly property int filterWidthHz: Math.max(0, filterHighHz - filterLowHz)
@@ -144,6 +145,20 @@ Rectangle {
             checked: root.muted
             danger: root.muted
             onToggled: Session.setChannelMuted(root.index, checked)
+        }
+
+        // Il volume accanto al silenzia, non in fondo alla colonna: sono la
+        // stessa manopola divisa in due, e chi abbassa spesso finisce per
+        // volere l'una o l'altra. Da muto il cursore si spegne — muoverlo
+        // senza sentire niente è il modo più efficace di credere che il guasto
+        // sia altrove.
+        DsdrSlider {
+            implicitWidth: 84
+            enabled: !root.muted
+            from: 0; to: 1
+            value: root.volume
+            accentColor: root.channelColor
+            onMoved: Session.setChannelVolume(root.index, value)
         }
 
         // ── Modo, filtro, AGC ────────────────────────────────────────────
