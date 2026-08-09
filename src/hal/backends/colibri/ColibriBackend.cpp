@@ -67,6 +67,9 @@ BackendCapabilities ColibriBackend::capabilities() const
 
     caps.hasHardwareFilters = true;   // passa-basso commutato dal device
     caps.hasPreamp = true;            // −31,5…+6 dB, preamplificatore e attenuatore insieme
+    // La stessa manopola serve alla guardia: si scende dal livello scelto
+    // dall'operatore fino al fondo scala del preamplificatore.
+    caps.maxGainReductionDb = 31.5;
     caps.hasAttenuator = true;
     caps.adcBits = 14;
 
@@ -464,6 +467,21 @@ void ColibriBackend::destroyPanadapter(PanId pan)
     m_panadapters.remove(pan);
 }
 
+double ColibriBackend::setGainReduction(double db)
+{
+    // Preamplificatore e attenuatore sono la stessa manopola: togliere
+    // guadagno vuol dire scendere lungo quella scala, a partire dal livello
+    // che l'operatore ha scelto e mai sotto il fondo del campo.
+    const double headroom = static_cast<double>(m_operatorPreampDb - kMinPreampDb);
+    m_gainReductionDb = std::clamp(db, 0.0, headroom);
+
+    m_preampDb = static_cast<float>(m_operatorPreampDb - m_gainReductionDb);
+    if (m_handle)
+        ColibriLibrary::instance().setPreamp(m_handle, m_preampDb);
+
+    return m_gainReductionDb;
+}
+
 void ColibriBackend::setPtt(bool transmit)
 {
     if (transmit) {
@@ -502,6 +520,11 @@ QVariant ColibriBackend::nativeCommand(const QString &command, const QVariantMap
     if (command == QLatin1String("colibri.setPreamp")) {
         const float db = std::clamp(static_cast<float>(args.value(QStringLiteral("db"), 0.0).toDouble()),
                                     kMinPreampDb, kMaxPreampDb);
+        // Il valore scelto a mano diventa il nuovo tetto: una riduzione in
+        // corso resta sottratta, ma non sopravvive a chi rimette le mani sulla
+        // manopola.
+        m_operatorPreampDb = db;
+        m_gainReductionDb = 0.0;
         m_preampDb = db;
         if (m_handle)
             ColibriLibrary::instance().setPreamp(m_handle, db);

@@ -36,6 +36,7 @@ private slots:
     void noiseFiltersReachTheDspWithoutKillingTheAudio();
     void theChannelMeasuresItsOwnNoiseFloor();
     void theOverloadGuardStaysQuietOnAWellBehavedBand();
+    void thePassbandCanSlideWithoutChangingWidth();
 
 private:
     /// Attende che `predicate` diventi vera, facendo girare l'event loop.
@@ -422,9 +423,48 @@ void TestSessionDemo::theOverloadGuardStaysQuietOnAWellBehavedBand()
     QVERIFY2(session.peakDbfs() > -100.0 && session.peakDbfs() <= 0.5,
              qPrintable(QStringLiteral("picco implausibile: %1 dBFS").arg(session.peakDbfs())));
 
-    // E il device non offre correzione di guadagno dal seam: la UI deve poterlo
-    // dire invece di mostrare un automatismo che non scatterà.
-    QVERIFY(!session.canCorrectGain());
+    // Il demo sa togliere guadagno dal seam, quindi la guardia qui può
+    // correggere davvero — ma su una banda sana non deve aver corretto nulla.
+    QVERIFY2(session.canCorrectGain(), "il demo dichiara di saper ridurre il guadagno");
+    QCOMPARE(session.gainReductionDb(), 0.0);
+}
+
+void TestSessionDemo::thePassbandCanSlideWithoutChangingWidth()
+{
+    SessionManager session;
+    QVERIFY2(connectSession(session), "connessione al backend demo fallita");
+
+    const ChannelEntry *entry = session.channels()->at(0);
+    QVERIFY(entry != nullptr);
+    const int low = entry->settings.filterLowHz;
+    const int high = entry->settings.filterHighHz;
+    QCOMPARE(entry->settings.passbandShiftHz, 0.0);
+
+    session.setChannelPassbandShift(0, 400.0);
+    entry = session.channels()->at(0);
+    QCOMPARE(entry->settings.passbandShiftHz, 400.0);
+
+    // Lo spostamento non tocca la larghezza: è un IF shift, non un filtro
+    // diverso. Se cambiasse anche i bordi, tornare a zero non riporterebbe il
+    // canale com'era.
+    QCOMPARE(entry->settings.filterLowHz, low);
+    QCOMPARE(entry->settings.filterHighHz, high);
+
+    // E la catena regge lo spostamento senza smettere di produrre audio: i
+    // coefficienti si rigenerano nel thread del DSP mentre scorre.
+    QVERIFY2(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 4000),
+             "audio perso dopo lo spostamento del passa-banda");
+
+    // Fuori scala si rientra nei limiti invece di prendere il valore alla
+    // lettera: una finestra spostata di mezzo megahertz ascolterebbe il vuoto.
+    session.setChannelPassbandShift(0, 99999.0);
+    entry = session.channels()->at(0);
+    QVERIFY2(std::abs(entry->settings.passbandShiftHz) <= 2000.0,
+             qPrintable(QStringLiteral("spostamento fuori scala accettato: %1 Hz")
+                            .arg(entry->settings.passbandShiftHz)));
+
+    session.setChannelPassbandShift(0, 0.0);
+    QCOMPARE(session.channels()->at(0)->settings.passbandShiftHz, 0.0);
 }
 
 QTEST_MAIN(TestSessionDemo)

@@ -56,6 +56,9 @@ public:
     PanId createPanadapter(const PanConfig &config) override;
     void destroyPanadapter(PanId pan) override;
 
+    double setGainReduction(double db) override;
+    double gainReduction() const override { return m_gainReductionDb; }
+
     void setPtt(bool transmit) override;
     bool ptt() const override { return m_ptt; }
     void setTxFrequency(qint64 hz) override;
@@ -83,6 +86,7 @@ private:
 
     DeviceDescriptor m_device;
     qint64 m_centerHz = 7'100'000;
+    double m_gainReductionDb = 0.0;
     qint64 m_txFrequencyHz = 7'100'000;
     double m_sampleRate = 192000.0;
 

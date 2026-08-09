@@ -27,6 +27,14 @@ struct ChannelSettings
     DemodMode mode = DemodMode::Usb;
     int filterLowHz = 300;   ///< bordi del passa-banda, riferiti alla portante
     int filterHighHz = 2700;
+    /// Spostamento del passa-banda rispetto alla portante, in hertz.
+    ///
+    /// È l'IF shift dei ricevitori di una volta: la larghezza resta quella, si
+    /// sposta la finestra. Serve quando l'interferenza sta da un lato solo —
+    /// si scivola dall'altra parte e si continua a copiare, invece di
+    /// stringere il filtro e perdere anche il timbro di chi parla.
+    double passbandShiftHz = 0.0;
+
     AgcMode agcMode = AgcMode::Medium;
     double agcThresholdDb = -100.0;
     double agcMaxGainDb = 90.0;

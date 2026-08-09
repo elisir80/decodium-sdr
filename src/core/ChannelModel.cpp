@@ -44,6 +44,7 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case ModeNameRole:     return demodModeName(entry.settings.mode);
     case FilterLowRole:    return entry.settings.filterLowHz;
     case FilterHighRole:   return entry.settings.filterHighHz;
+    case PassbandShiftRole: return entry.settings.passbandShiftHz;
     case AgcModeRole:      return static_cast<int>(entry.settings.agcMode);
     case AgcThresholdRole: return entry.settings.agcThresholdDb;
     case VolumeRole:       return entry.settings.volume;
@@ -75,6 +76,7 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {ModeNameRole, "modeName"},
         {FilterLowRole, "filterLowHz"},
         {FilterHighRole, "filterHighHz"},
+        {PassbandShiftRole, "passbandShiftHz"},
         {AgcModeRole, "agcMode"},
         {AgcThresholdRole, "agcThresholdDb"},
         {VolumeRole, "volume"},

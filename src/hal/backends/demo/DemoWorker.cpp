@@ -6,6 +6,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
 
 namespace dsdr::hal::demo {
 
@@ -75,6 +76,11 @@ void DemoWorker::setTransmitting(bool transmitting)
     m_transmitting = transmitting;
 }
 
+void DemoWorker::setGainReductionDb(double db)
+{
+    m_gainScale = static_cast<float>(std::pow(10.0, -std::max(0.0, db) / 20.0));
+}
+
 void DemoWorker::tick()
 {
     if (!m_running || !m_ring)
@@ -107,6 +113,13 @@ void DemoWorker::tick()
             std::fill_n(m_block.begin(), count, dsp::Complex(0.0f, 0.0f));
         } else {
             m_band.generate(m_block.data(), count);
+        }
+
+        // L'attenuazione chiesta dalla catena agisce qui, dove agirebbe su una
+        // radio vera: prima che i campioni entrino nel ring, non a valle.
+        if (m_gainScale < 1.0f) {
+            for (std::size_t i = 0; i < count; ++i)
+                m_block[i] *= m_gainScale;
         }
 
         for (std::size_t i = 0; i < count; ++i) {

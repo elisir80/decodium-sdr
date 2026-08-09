@@ -25,6 +25,7 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
 | **Overload Guard**: riconosce la saturazione dell'ADC e lo dice, invece di lasciarla scambiare per propagazione scarsa | ✅ |
 | Fondo di rumore e **S/N reale** per canale | ✅ |
+| Passband tuning (IF shift) su ogni canale | ✅ |
 | Filtri di disturbo: **NB** a banda piena nel motore, **NR** e **ANF** (un predittore adattivo, due prese), **notch** manuale | ✅ spenti di fabbrica — [DSDR-SPEC-003](docs/DSDR-SPEC-003-RX-Excellence.md) §4–5 |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |

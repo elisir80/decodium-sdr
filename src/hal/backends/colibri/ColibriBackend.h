@@ -65,6 +65,9 @@ public:
     PanId createPanadapter(const PanConfig &config) override;
     void destroyPanadapter(PanId pan) override;
 
+    double setGainReduction(double db) override;
+    double gainReduction() const override { return m_gainReductionDb; }
+
     void setPtt(bool transmit) override;
     bool ptt() const override { return false; }
     void setTxFrequency(qint64 hz) override;
@@ -105,6 +108,10 @@ private:
     qint64 m_centerHz = 7'100'000;
     double m_sampleRate = 768000.0;
     float m_preampDb = 0.0f;
+    /// Livello scelto dall'operatore, a cui la guardia non deve mai salire
+    /// sopra: la riduzione si sottrae a questo, non lo sostituisce.
+    float m_operatorPreampDb = 0.0f;
+    double m_gainReductionDb = 0.0;
 
     QHash<ChannelId, RxChannelConfig> m_channels;
     QHash<PanId, PanConfig> m_panadapters;

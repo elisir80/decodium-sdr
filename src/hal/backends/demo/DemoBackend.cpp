@@ -7,6 +7,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
 
 namespace dsdr::hal::demo {
 
@@ -77,6 +78,9 @@ BackendCapabilities DemoBackend::capabilities() const
 
     caps.sampleRates = {192000.0, 384000.0, 768000.0, 960000.0, 1536000.0};
     caps.defaultSampleRate = 192000.0;
+    // Il demo sa togliere guadagno come lo saprebbe una radio: serve a provare
+    // davvero la guardia contro la saturazione, in CI e senza hardware.
+    caps.maxGainReductionDb = 30.0;
     caps.minFrequencyHz = 100'000;
     caps.maxFrequencyHz = 2'000'000'000;
     caps.hasHardwareFilters = false;
@@ -361,6 +365,21 @@ PanId DemoBackend::createPanadapter(const PanConfig &config)
 void DemoBackend::destroyPanadapter(PanId pan)
 {
     m_panadapters.remove(pan);
+}
+
+double DemoBackend::setGainReduction(double db)
+{
+    // Passi da tre dB, come su un attenuatore vero: chi chiede sette dB ne
+    // ottiene sei, e deve poterlo sapere dal valore restituito invece di
+    // credere di averne sette.
+    const double wanted = std::clamp(db, 0.0, capabilities().maxGainReductionDb);
+    m_gainReductionDb = std::floor(wanted / 3.0) * 3.0;
+
+    if (m_worker) {
+        QMetaObject::invokeMethod(m_worker, "setGainReductionDb", Qt::QueuedConnection,
+                                  Q_ARG(double, m_gainReductionDb));
+    }
+    return m_gainReductionDb;
 }
 
 void DemoBackend::setPtt(bool transmit)

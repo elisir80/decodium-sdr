@@ -105,16 +105,38 @@ SessionManager::SessionManager(QObject *parent)
                                         .arg(peakDbfs, 0, 'f', 1));
                 }
 
-                // La correzione la guardia la chiede, ma questo backend non ha
-                // ancora un modo di riceverla dal seam: si dice all'operatore
-                // che cosa servirebbe, invece di far finta di averlo fatto.
-                if (requestDb < 0.0) {
-                    setStatus(tr("Servirebbero %1 dB in meno di guadagno.")
-                                  .arg(-requestDb, 0, 'f', 0));
-                } else if (requestDb > 0.0) {
-                    setStatus(tr("C'è margine: si possono restituire %1 dB.")
-                                  .arg(requestDb, 0, 'f', 0));
+                if (requestDb == 0.0)
+                    return;
+
+                // Dove il device sa togliere guadagno, la guardia smette di
+                // essere una spia: la richiesta passa dal seam e il backend la
+                // realizza col mezzo che ha. Dove non sa, si dice che cosa
+                // servirebbe — che è meno utile ma è vero.
+                if (!canCorrectGain()) {
+                    setStatus(requestDb < 0.0
+                                  ? tr("Servirebbero %1 dB in meno di guadagno.")
+                                        .arg(-requestDb, 0, 'f', 0)
+                                  : tr("C'è margine: si possono restituire %1 dB.")
+                                        .arg(requestDb, 0, 'f', 0));
+                    return;
                 }
+
+                const double target = std::max(0.0, m_gainReductionDb - requestDb);
+                const double applied = m_backend->setGainReduction(target);
+                if (qFuzzyCompare(applied, m_gainReductionDb))
+                    return;
+
+                m_gainReductionDb = applied;
+                emit overloadChanged();
+
+                // Si annuncia il valore **applicato**, non quello chiesto: gli
+                // attenuatori hanno passi discreti, e dire «−6 dB» quando ne
+                // sono entrati 3 insegna a non fidarsi del pannello.
+                setStatus(requestDb < 0.0
+                              ? tr("Attenuazione a %1 dB: ingresso in saturazione.")
+                                    .arg(applied, 0, 'f', 0)
+                              : tr("Attenuazione a %1 dB: c'era margine.")
+                                    .arg(applied, 0, 'f', 0));
             });
 
     connect(&m_recorder, &IqRecorder::failed, this, [this](const QString &message) {
@@ -606,6 +628,20 @@ void SessionManager::setChannelFilter(int row, int lowHz, int highHz)
     pushChannelToEngine(row);
 }
 
+void SessionManager::setChannelPassbandShift(int row, double hz)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+
+    // Due chilohertz per parte: oltre, la finestra esce dalla banda del
+    // demodulatore e si ascolterebbe il vuoto credendo di aver spostato il
+    // filtro.
+    entry->settings.passbandShiftHz = std::clamp(hz, -2000.0, 2000.0);
+    m_channels.entryChanged(row, {ChannelModel::PassbandShiftRole});
+    pushChannelToEngine(row);
+}
+
 void SessionManager::setChannelAgcMode(int row, int mode)
 {
     ChannelEntry *entry = m_channels.mutableAt(row);
@@ -688,11 +724,10 @@ void SessionManager::setOverloadMode(int mode)
 
 bool SessionManager::canCorrectGain() const
 {
-    // Oggi nessun backend espone il guadagno attraverso il seam: preamp e
-    // attenuatore vivono nei comandi nativi dei loro pannelli. Finché è così
-    // la guardia avverte e non corregge, e la UI lo dice invece di mostrare un
-    // automatismo che non scatterebbe mai.
-    return false;
+    // Un solo numero dice sia se il comando esiste sia fin dove arriva: un
+    // device che non sa togliere guadagno lascia la capability a zero, e la
+    // guardia resta un indicatore (CONSTITUTION §7).
+    return m_connected && m_capabilities.maxGainReduction() > 0.0;
 }
 
 double SessionManager::noiseBlankerActivity() const

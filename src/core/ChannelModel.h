@@ -42,6 +42,7 @@ public:
         ModeNameRole,
         FilterLowRole,
         FilterHighRole,
+        PassbandShiftRole,
         AgcModeRole,
         AgcThresholdRole,
         VolumeRole,

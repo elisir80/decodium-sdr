@@ -42,6 +42,13 @@ public slots:
     void setCenterFrequency(qint64 hz);
     void setTransmitting(bool transmitting);
 
+    /// Attenuazione applicata al segnale generato, in dB.
+    ///
+    /// Serve a rendere vera la richiesta della guardia contro la saturazione:
+    /// un demo che accettasse il comando senza cambiare i campioni farebbe
+    /// passare in CI un automatismo che nella realtà non fa niente.
+    void setGainReductionDb(double db);
+
 signals:
     /// Emesso dopo ogni blocco scritto nel ring: `dropped` conta le coppie
     /// I/Q perse per overrun (consumatore troppo lento).
@@ -64,6 +71,7 @@ private:
     quint64 m_framesGenerated = 0;
     bool m_running = false;
     bool m_transmitting = false;
+    float m_gainScale = 1.0f;   ///< attenuazione richiesta, in lineare
 };
 
 } // namespace dsdr::hal::demo

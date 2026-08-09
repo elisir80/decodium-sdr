@@ -82,7 +82,10 @@ class SessionManager : public QObject
     /// Il device offre un modo di togliere guadagno dalla HAL. Finché è falso
     /// la guardia può solo avvertire — e la UI deve dirlo, invece di mostrare
     /// un automatismo che non scatterà mai (CONSTITUTION §7).
-    Q_PROPERTY(bool canCorrectGain READ canCorrectGain NOTIFY backendChanged)
+    Q_PROPERTY(bool canCorrectGain READ canCorrectGain NOTIFY connectionChanged)
+
+    /// Quanto guadagno la guardia ha tolto finora, in dB.
+    Q_PROPERTY(double gainReductionDb READ gainReductionDb NOTIFY overloadChanged)
     Q_PROPERTY(int spectrumAveraging READ spectrumAveraging WRITE setSpectrumAveraging
                    NOTIFY spectrumAveragingChanged)
 
@@ -140,6 +143,7 @@ public:
     int overloadMode() const { return m_overloadMode; }
     void setOverloadMode(int mode);
     bool canCorrectGain() const;
+    double gainReductionDb() const { return m_gainReductionDb; }
 
     bool noiseBlanker() const { return m_nbEnabled; }
     double noiseBlankerThreshold() const { return m_nbThreshold; }
@@ -174,6 +178,10 @@ public:
     Q_INVOKABLE void nudgeChannel(int row, qint64 deltaHz);
     Q_INVOKABLE void setChannelMode(int row, int mode);
     Q_INVOKABLE void setChannelFilter(int row, int lowHz, int highHz);
+
+    /// Sposta il passa-banda senza cambiarne la larghezza (IF shift): serve
+    /// quando l'interferenza sta da un lato solo.
+    Q_INVOKABLE void setChannelPassbandShift(int row, double hz);
     Q_INVOKABLE void setChannelAgcMode(int row, int mode);
     Q_INVOKABLE void setChannelAgcThreshold(int row, double thresholdDb);
     Q_INVOKABLE void setChannelVolume(int row, double volume);
@@ -257,6 +265,7 @@ private:
     double m_replayHistory = 0.0;    ///< fin dove si potrebbe tornare
     double m_nbThreshold = 4.0;
     double m_peakDbfs = -160.0;
+    double m_gainReductionDb = 0.0;
     int m_overloadMode = 0;
     bool m_nbEnabled = false;
     bool m_overloaded = false;

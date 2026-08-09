@@ -64,6 +64,25 @@ public:
     virtual void setDemod(ChannelId channel, DemodMode mode) = 0;    ///< no-op se DSP client
     virtual void setFilter(ChannelId channel, int lowHz, int highHz) = 0; ///< idem
 
+    // ── Guadagno d'ingresso ──────────────────────────────────────────────
+    //
+    // Il core non conosce attenuatori né preamplificatori: chiede quanti dB
+    // togliere all'ingresso, e il device sceglie con che cosa farlo. È il
+    // canale per cui la guardia contro la saturazione (SPEC-003 §3) smette di
+    // essere una spia e diventa un rimedio.
+    //
+    // Ha un'implementazione di default che non fa nulla e restituisce zero:
+    // un backend che non sa togliere guadagno — un file registrato, un server
+    // che consegna audio già demodulato — non deve scrivere una riga, e la sua
+    // capability `maxGainReductionDb` resta a zero.
+    //
+    // Restituisce la riduzione **davvero** applicata, che quasi mai è quella
+    // chiesta: gli attenuatori hanno passi discreti, e il chiamante deve poter
+    // mostrare il valore vero invece di quello sperato.
+
+    virtual double setGainReduction(double db);
+    virtual double gainReduction() const;
+
     // ── Panadattatori ────────────────────────────────────────────────────
 
     virtual PanId createPanadapter(const PanConfig &config) = 0;

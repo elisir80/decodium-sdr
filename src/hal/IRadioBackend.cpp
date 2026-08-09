@@ -13,4 +13,18 @@ QVariant IRadioBackend::nativeCommand(const QString &command, const QVariantMap 
     return QVariant();
 }
 
+double IRadioBackend::setGainReduction(double db)
+{
+    // Silenzio, e non un avvertimento: chi non sa togliere guadagno lo dichiara
+    // già con `maxGainReductionDb` a zero, e il core non glielo chiede. Se
+    // arriva lo stesso, restituire zero è la risposta onesta — nulla applicato.
+    Q_UNUSED(db)
+    return 0.0;
+}
+
+double IRadioBackend::gainReduction() const
+{
+    return 0.0;
+}
+
 } // namespace dsdr::hal

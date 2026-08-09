@@ -27,7 +27,8 @@ bool ChannelSettings::operator==(const ChannelSettings &o) const noexcept
     return offsetHz == o.offsetHz && mode == o.mode && filterLowHz == o.filterLowHz
         && filterHighHz == o.filterHighHz && agcMode == o.agcMode
         && agcThresholdDb == o.agcThresholdDb && agcMaxGainDb == o.agcMaxGainDb
-        && cwPitchHz == o.cwPitchHz && volume == o.volume && muted == o.muted
+        && cwPitchHz == o.cwPitchHz && passbandShiftHz == o.passbandShiftHz
+        && volume == o.volume && muted == o.muted
         && squelchEnabled == o.squelchEnabled
         && squelchThresholdDb == o.squelchThresholdDb
         && nrEnabled == o.nrEnabled && nrStrength == o.nrStrength
@@ -146,6 +147,12 @@ void ChannelProcessor::computeFilterEdges(double &loHz, double &hiHz) const
         break;
     }
 
+    // Lo spostamento si applica dopo il calcolo dei bordi e prima del taglio
+    // a Nyquist: sposta la finestra, non la allarga, ed è la stessa cosa per
+    // ogni modo — anche in CW, dove il pitch ha già spostato il DDC.
+    loHz += m_settings.passbandShiftHz;
+    hiHz += m_settings.passbandShiftHz;
+
     loHz = std::clamp(loHz, -nyquist * 0.95, nyquist * 0.95);
     hiHz = std::clamp(hiHz, -nyquist * 0.95, nyquist * 0.95);
     if (hiHz - loHz < 50.0)
@@ -175,6 +182,7 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     const bool filterChanged = settings.mode != m_settings.mode
         || settings.filterLowHz != m_settings.filterLowHz
         || settings.filterHighHz != m_settings.filterHighHz
+        || settings.passbandShiftHz != m_settings.passbandShiftHz
         || settings.cwPitchHz != m_settings.cwPitchHz;
     const bool tuningChanged = settings.offsetHz != m_settings.offsetHz
         || settings.cwPitchHz != m_settings.cwPitchHz || settings.mode != m_settings.mode;

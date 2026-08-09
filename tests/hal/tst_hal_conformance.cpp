@@ -60,6 +60,9 @@ private slots:
     void unknownNativeCommandReturnsInvalid_data();
     void unknownNativeCommandReturnsInvalid();
 
+    void gainReductionKeepsItsPromise_data();
+    void gainReductionKeepsItsPromise();
+
 private:
     static void addBackendRows();
 
@@ -384,6 +387,46 @@ void TestHalConformance::teardownDuringStreamingIsClean()
 }
 
 void TestHalConformance::unknownNativeCommandReturnsInvalid_data() { addBackendRows(); }
+
+void TestHalConformance::gainReductionKeepsItsPromise_data() { addBackendRows(); }
+
+void TestHalConformance::gainReductionKeepsItsPromise()
+{
+    QFETCH(QString, backendId);
+    std::unique_ptr<IRadioBackend> backend(BackendRegistry::instance().create(backendId));
+    QVERIFY(backend);
+
+    const double limit = backend->capabilities().maxGainReductionDb;
+
+    // Chi non dichiara il campo non deve nemmeno provarci: restituire zero è
+    // la risposta onesta, e il core lo legge per sapere che la guardia contro
+    // la saturazione può solo avvertire (SPEC-003 §3).
+    if (limit <= 0.0) {
+        QCOMPARE(backend->setGainReduction(6.0), 0.0);
+        QCOMPARE(backend->gainReduction(), 0.0);
+        return;
+    }
+
+    // Chi lo dichiara deve rispettare tre cose: non applicare più di quanto
+    // chiesto, non superare il proprio limite, e raccontare la verità su
+    // quanto ha fatto davvero — i passi sono discreti, e un backend che
+    // rispondesse «sei» avendone messi tre insegnerebbe a non fidarsi.
+    const double applied = backend->setGainReduction(6.0);
+    QVERIFY2(applied >= 0.0 && applied <= 6.0,
+             qPrintable(QStringLiteral("%1: applicati %2 dB su 6 richiesti")
+                            .arg(backendId).arg(applied)));
+    QCOMPARE(backend->gainReduction(), applied);
+
+    const double clamped = backend->setGainReduction(limit * 10.0);
+    QVERIFY2(clamped <= limit + 0.001,
+             qPrintable(QStringLiteral("%1: %2 dB oltre il limite dichiarato di %3")
+                            .arg(backendId).arg(clamped).arg(limit)));
+
+    // E si deve poter tornare indietro: una riduzione che non si annulla
+    // renderebbe il ricevitore sordo per il resto della sessione.
+    QCOMPARE(backend->setGainReduction(0.0), 0.0);
+    QCOMPARE(backend->gainReduction(), 0.0);
+}
 
 void TestHalConformance::unknownNativeCommandReturnsInvalid()
 {

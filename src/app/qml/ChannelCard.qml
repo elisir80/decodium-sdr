@@ -20,6 +20,7 @@ Rectangle {
     required property string modeName
     required property int filterLowHz
     required property int filterHighHz
+    required property real passbandShiftHz
     required property int agcMode
     required property real agcThresholdDb
     required property real volume
@@ -241,6 +242,54 @@ Rectangle {
             text: qsTr("squelch chiuso")
             font.pixelSize: Theme.fontSmall
             color: Theme.warning
+        }
+
+        // ── Spostamento del passa-banda ──────────────────────
+        //
+        // L'IF shift dei ricevitori di una volta: la larghezza
+        // resta quella, si sposta la finestra. Quando l'inter-
+        // ferenza sta da un lato solo si scivola dall'altra
+        // parte, invece di stringere il filtro e perdere anche
+        // il timbro di chi sta parlando.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+
+            Text {
+                text: qsTr("Shift")
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+            }
+
+            DsdrSlider {
+                id: shiftSlider
+                Layout.fillWidth: true
+                from: -2000; to: 2000
+                stepSize: 10
+                value: entry.passbandShiftHz
+                onMoved: Session.setChannelPassbandShift(entry.index, value)
+            }
+
+            // Riportare a zero con un cursore è un esercizio di mira: il
+            // valore centrale è largo un pixel, e chi lo manca resta con
+            // trenta hertz di scostamento senza accorgersene.
+            DsdrButton {
+                implicitWidth: 64
+                implicitHeight: 22
+                text: Math.round(entry.passbandShiftHz) + " Hz"
+                enabled: Math.abs(entry.passbandShiftHz) > 1
+                onClicked: Session.setChannelPassbandShift(entry.index, 0)
+            }
+        }
+
+        // Trascinato il cursore, il binding su `value` si romperebbe: questo lo
+        // rimette al passo quando non lo si sta tenendo.
+        Binding {
+            target: shiftSlider
+            property: "value"
+            value: entry.passbandShiftHz
+            when: !shiftSlider.pressed
+            restoreMode: Binding.RestoreNone
         }
 
         // ── Disturbi ─────────────────────────────────────────

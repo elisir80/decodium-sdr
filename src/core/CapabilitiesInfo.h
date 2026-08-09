@@ -29,6 +29,7 @@ class CapabilitiesInfo : public QObject
     Q_PROPERTY(qint64 maxFrequency READ maxFrequency NOTIFY changed)
     Q_PROPERTY(bool hasPreamp READ hasPreamp NOTIFY changed)
     Q_PROPERTY(bool hasAttenuator READ hasAttenuator NOTIFY changed)
+    Q_PROPERTY(double maxGainReduction READ maxGainReduction NOTIFY changed)
     Q_PROPERTY(bool remoteCapable READ remoteCapable NOTIFY changed)
     Q_PROPERTY(bool supportsRecording READ supportsRecording NOTIFY changed)
     Q_PROPERTY(QStringList nativePanels READ nativePanels NOTIFY changed)
@@ -55,6 +56,7 @@ public:
     qint64 minFrequency() const { return m_capabilities.minFrequencyHz; }
     qint64 maxFrequency() const { return m_capabilities.maxFrequencyHz; }
     bool hasPreamp() const { return m_capabilities.hasPreamp; }
+    double maxGainReduction() const { return m_capabilities.maxGainReductionDb; }
     bool hasAttenuator() const { return m_capabilities.hasAttenuator; }
     bool remoteCapable() const { return m_capabilities.remoteCapable; }
     bool supportsRecording() const { return m_capabilities.supportsRecording; }

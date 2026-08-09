@@ -41,6 +41,18 @@ struct BackendCapabilities
     bool hasAttenuator = false;
     int adcBits = 0;
 
+    /// Quanto guadagno il device può togliere su richiesta della catena, in dB.
+    ///
+    /// Zero — il default — significa «non offerto», e allora la guardia contro
+    /// la saturazione (SPEC-003 §3) resta un indicatore: avverte e non
+    /// corregge. È un solo numero perché dice due cose insieme, se il comando
+    /// esiste e fin dove arriva, e un `bool` separato avrebbe permesso di
+    /// dichiararlo disponibile con campo nullo.
+    ///
+    /// Con quale mezzo lo faccia — attenuatore, preamp, guadagno del tuner — è
+    /// affar suo: il core chiede dei decibel in meno, non un componente.
+    double maxGainReductionDb = 0.0;
+
     // ── Rete / sessione ──────────────────────────────────────────────────
     bool remoteCapable = false;   ///< già dietro rete (kiwi, nettcp, flex)
     bool multiClient = false;
