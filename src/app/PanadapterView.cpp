@@ -384,6 +384,38 @@ void PanadapterView::setFillColor(const QColor &color)
     update();
 }
 
+void PanadapterView::setPeakColor(const QColor &color)
+{
+    if (m_peakColor == color)
+        return;
+    m_peakColor = color;
+    emit colorsChanged();
+    update();
+}
+
+void PanadapterView::setPeakHold(bool enabled)
+{
+    if (m_peakHold == enabled)
+        return;
+    m_peakHold = enabled;
+    emit peakHoldChanged();
+    update();
+}
+
+void PanadapterView::setPeakDecayDb(qreal dbPerSecond)
+{
+    // Sotto un decibel al secondo la riga non scende più: un picco casuale
+    // resterebbe lì per minuti e la traccia diventerebbe l'inviluppo di tutto
+    // ciò che è passato. Sopra i sessanta smette di essere una tenuta e torna
+    // a essere la traccia istantanea, solo più lenta.
+    dbPerSecond = qBound(1.0, dbPerSecond, 60.0);
+    if (qFuzzyCompare(m_peakDecayDb, dbPerSecond))
+        return;
+    m_peakDecayDb = dbPerSecond;
+    emit peakHoldChanged();
+    update();
+}
+
 void PanadapterView::setBackgroundColor(const QColor &color)
 {
     if (m_backgroundColor == color)

@@ -15,6 +15,7 @@ function(dsdr_add_test name)
 endfunction()
 
 add_subdirectory(app)
+add_subdirectory(core)
 add_subdirectory(dsp)
 add_subdirectory(hal)
 add_subdirectory(integration)

@@ -132,6 +132,22 @@ SpectrumFeed *SessionManager::spectrum() const
     return m_engine ? m_engine->spectrumFeed() : nullptr;
 }
 
+void SessionManager::setSpectrumAveraging(int frames)
+{
+    frames = std::clamp(frames, 1, SpectrumFeed::kMaxAveraging);
+    if (m_spectrumAveraging == frames)
+        return;
+
+    m_spectrumAveraging = frames;
+    // La scrittura verso il thread del DSP è un atomico, non una chiamata di
+    // metodo: non serve accodarla, e accodarla vorrebbe dire farla arrivare
+    // all'elaborazione dopo la prossima.
+    if (SpectrumFeed *feed = spectrum())
+        feed->setAveraging(frames);
+
+    emit spectrumAveragingChanged();
+}
+
 void SessionManager::setStatus(const QString &message)
 {
     if (m_statusMessage == message)

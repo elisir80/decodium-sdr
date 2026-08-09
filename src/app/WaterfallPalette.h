@@ -15,6 +15,13 @@ namespace dsdr::app {
 /// Numero di livelli della tabella caricata come texture 1D.
 inline constexpr int kColorMapSize = 256;
 
+/// Quota della scala oltre la quale il passaggio dal freddo al caldo arriva
+/// troppo tardi per il traffico che si guarda davvero.
+///
+/// Il perché sta in `WaterfallPalette.cpp`, accanto alle tabelle: qui il valore
+/// è esposto perché è un contratto verificabile, e `tst_waterfall` lo verifica.
+inline constexpr float kWarmBreakLimit = 0.60f;
+
 /// Nomi delle palette, nell'ordine degli indici.
 QStringList waterfallPaletteNames();
 

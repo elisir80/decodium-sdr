@@ -89,6 +89,7 @@ Item {
         viewSpan: root.viewSpan
         traceColor: Theme.spectrumTrace
         fillColor: Theme.spectrumFill
+        peakColor: Theme.spectrumPeak
         backgroundColor: Theme.spectrumBackground
     }
 

@@ -34,6 +34,9 @@ QtObject {
     readonly property color spectrumTrace: "#6EE7FF"
     readonly property color spectrumFill: "#1E88C7"
     readonly property color spectrumGrid: "#16202C"
+    // La riga dei massimi: calda, per staccare dal ciano della traccia
+    // istantanea senza gridare come il rosso della trasmissione.
+    readonly property color spectrumPeak: "#FFC86E"
 
     // ── Segmenti del piano bande ─────────────────────────────────────────
     //

@@ -36,4 +36,11 @@ public:
     }
 };
 
+// `SpectrumFeed` resta di proposito senza registrazione QML, benché
+// `Session.spectrum` lo esponga. Vive sul thread del DSP: registrarlo lo
+// renderebbe un tipo come gli altri, e il primo `Connections` che qualcuno gli
+// puntasse contro fallirebbe a runtime con «illegal attempt to connect to an
+// object in a different thread». Quel che la UI deve poter regolare passa da
+// `SessionManager`, che sta sul thread giusto — vedi `spectrumAveraging`.
+
 } // namespace dsdr::app

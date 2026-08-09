@@ -23,8 +23,22 @@ class SpectrumFeed : public QObject
     Q_PROPERTY(int binCount READ binCount NOTIFY geometryChanged)
     Q_PROPERTY(qint64 centerFrequency READ centerFrequency NOTIFY geometryChanged)
     Q_PROPERTY(double spanHz READ spanHz NOTIFY geometryChanged)
+    Q_PROPERTY(int averaging READ averaging WRITE setAveraging NOTIFY averagingChanged)
 
 public:
+    /// Quante FFT al massimo si possono mediare per riga.
+    ///
+    /// Oltre l'ottava trasformata il guadagno diventa impercettibile — la
+    /// deviazione del rumore scende con la radice di N — mentre il ritardo con
+    /// cui un segnale compare sul waterfall continua a crescere in modo
+    /// lineare. È il punto in cui si comincia a pagare più di quanto si prenda.
+    static constexpr int kMaxAveraging = 8;
+
+    /// Il valore di fabbrica. Tre trasformate dimezzano quasi il respiro del
+    /// fondo e costano un terzo delle righe al secondo: è il compromesso che
+    /// rende il waterfall leggibile senza farlo sembrare in ritardo.
+    static constexpr int kDefaultAveraging = 3;
+
     explicit SpectrumFeed(QObject *parent = nullptr);
 
     // ── Lato produttore (thread DSP) ─────────────────────────────────────
@@ -33,10 +47,23 @@ public:
     /// o frequenza di campionamento; il consumatore se ne accorge al fetch.
     void configure(int binCount, double spanHz, qint64 centerFrequencyHz);
 
-    /// Pubblica una riga di spettro (dBFS, già in ordine di frequenza).
-    /// Non blocca: se il consumatore è in ritardo la riga più vecchia viene
-    /// scartata, perché per un waterfall la riga fresca vale più di quella persa.
+    /// Consegna una FFT (dBFS, già in ordine di frequenza).
+    ///
+    /// Non blocca e non alloca. Con `averaging()` maggiore di uno la riga non
+    /// esce a ogni chiamata: si accumula, e sul ring compare la media. Il
+    /// contratto verso il consumatore non cambia — sul ring finiscono solo
+    /// righe complete di `binCount` valori — cambia il ritmo con cui arrivano.
     void publish(const float *magnitudesDb);
+
+    // ── Media fra le righe ───────────────────────────────────────────────
+
+    /// Quante FFT si mediano per ogni riga di waterfall. Uno significa
+    /// nessuna media: ogni trasformata è una riga, com'era prima.
+    int averaging() const noexcept { return m_averaging.load(std::memory_order_relaxed); }
+
+    /// Scrivibile da qualunque thread: il produttore la rilegge alla prossima
+    /// trasformata e l'accumulo in corso si adegua da sé.
+    void setAveraging(int frames);
 
     // ── Lato consumatore (render thread) ─────────────────────────────────
 
@@ -60,11 +87,23 @@ public:
 signals:
     void geometryChanged();
     void levelRangeChanged();
+    void averagingChanged();
     /// Emesso (dal thread DSP) quando c'è almeno una riga nuova da consumare.
     void framesAvailable();
 
 private:
+    /// Mette una riga sul ring e avvisa il consumatore.
+    void pushRow(const float *row, std::size_t rowFloats);
+
     std::unique_ptr<dsp::SpscRing<float>> m_ring;
+
+    // Accumulatore della media: appartiene al solo thread produttore, che è
+    // l'unico a chiamare `publish()` e `configure()`. Nasce in `configure()`,
+    // perché nel percorso caldo non si alloca (CONSTITUTION §5).
+    std::vector<float> m_accumulator;
+    int m_accumulated = 0;
+    std::atomic<int> m_averaging{kDefaultAveraging};
+
     std::atomic<int> m_binCount{0};
     std::atomic<qint64> m_centerHz{0};
     std::atomic<double> m_spanHz{0.0};

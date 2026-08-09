@@ -12,6 +12,7 @@
 // Questo file è il *contenuto* del pannello: la cornice, il titolo e il
 // collasso li mette PanelFrame.
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtCore
 import DecodiumSdr
@@ -44,6 +45,9 @@ ColumnLayout {
         property real tilt: 58
         property real rotation3d: 0
         property real reliefScale: 0.45
+        property int averaging: 3
+        property bool peakHold: true
+        property real peakDecayDb: 12
     }
 
     Component.onCompleted: {
@@ -55,6 +59,9 @@ ColumnLayout {
         panadapter.tilt = prefs.tilt
         panadapter.rotation3d = prefs.rotation3d
         panadapter.reliefScale = prefs.reliefScale
+        panadapter.peakHold = prefs.peakHold
+        panadapter.peakDecayDb = prefs.peakDecayDb
+        Session.spectrumAveraging = prefs.averaging
         restored = true
     }
 
@@ -77,6 +84,21 @@ ColumnLayout {
             prefs.rotation3d = root.panadapter.rotation3d
             prefs.reliefScale = root.panadapter.reliefScale
         }
+        function onPeakHoldChanged() {
+            prefs.peakHold = root.panadapter.peakHold
+            prefs.peakDecayDb = root.panadapter.peakDecayDb
+        }
+    }
+
+    // La media non è una regolazione del panadattatore: è il DSP a decidere
+    // quante trasformate fanno una riga, e il rendering si limita a consumare
+    // quello che gli arriva. Passa da `Session` perché il feed vive sul thread
+    // del DSP, dove QML non può seguirlo.
+    Connections {
+        target: Session
+        enabled: root.restored
+
+        function onSpectrumAveragingChanged() { prefs.averaging = Session.spectrumAveraging }
     }
 
     /// Etichetta, lettura e cursore come un blocco solo.
@@ -92,6 +114,10 @@ ColumnLayout {
         property alias from: levelSlider.from
         property alias to: levelSlider.to
         property alias sliderItem: levelSlider
+        /// Per i comandi che contano invece di misurare: un passo intero e lo
+        /// scatto, così il cursore non può fermarsi fra due valori validi.
+        property alias stepSize: levelSlider.stepSize
+        property alias snapMode: levelSlider.snapMode
 
         /// Il valore mostrato. Chi lo usa lo lega alla proprietà del
         /// panadattatore; `moved` riporta indietro il trascinamento.
@@ -228,6 +254,57 @@ ColumnLayout {
         from: 0; to: 0.6
         value: root.panadapter.blackThreshold
         onMoved: (v) => root.panadapter.blackThreshold = v
+    }
+
+    // ── Media fra le righe ───────────────────────────────────────────────
+    //
+    // Il fondo di una FFT non mediata respira di parecchi decibel da una riga
+    // all'altra, e quel respiro è tutto quello che si vede su una banda quieta.
+    // Mediando N trasformate il fondo si ferma e i segnali deboli restano.
+    LevelRow {
+        Layout.fillWidth: true
+        label: qsTr("Media")
+        readout: Session.spectrumAveraging <= 1
+                 ? qsTr("spenta")
+                 : qsTr("%1 FFT").arg(Session.spectrumAveraging)
+        from: 1; to: 8
+        stepSize: 1
+        snapMode: Slider.SnapAlways
+        value: Session.spectrumAveraging
+        onMoved: (v) => Session.spectrumAveraging = Math.round(v)
+    }
+
+    // Il costo della media è dichiarato dove si paga: meno righe al secondo
+    // vuol dire più storia sullo schermo, e vale la pena saperlo prima di
+    // chiedersi perché il waterfall scorre più piano.
+    Text {
+        Layout.fillWidth: true
+        visible: Session.spectrumAveraging > 1 && root.panadapter.historySeconds > 0
+        text: qsTr("storia  %1 s").arg(Math.round(root.panadapter.historySeconds))
+        font.pixelSize: Theme.fontSmall
+        font.family: Theme.monoFamily
+        color: Theme.textSecondary
+        elide: Text.ElideRight
+    }
+
+    // ── Tenuta dei picchi ────────────────────────────────────────────────
+    DsdrButton {
+        Layout.fillWidth: true
+        implicitWidth: 0
+        text: qsTr("Tenuta dei picchi")
+        checkable: true
+        checked: root.panadapter.peakHold
+        onClicked: root.panadapter.peakHold = checked
+    }
+
+    LevelRow {
+        Layout.fillWidth: true
+        visible: root.panadapter.peakHold
+        label: qsTr("Discesa")
+        readout: qsTr("%1 dB/s").arg(Math.round(root.panadapter.peakDecayDb))
+        from: 1; to: 60
+        value: root.panadapter.peakDecayDb
+        onMoved: (v) => root.panadapter.peakDecayDb = v
     }
 
     // ── Scena in rilievo ─────────────────────────────────────────────────

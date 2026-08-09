@@ -31,7 +31,10 @@ class PanadapterView : public QQuickRhiItem
     Q_PROPERTY(qreal spectrumRatio READ spectrumRatio WRITE setSpectrumRatio NOTIFY spectrumRatioChanged)
     Q_PROPERTY(QColor traceColor READ traceColor WRITE setTraceColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor fillColor READ fillColor WRITE setFillColor NOTIFY colorsChanged)
+    Q_PROPERTY(QColor peakColor READ peakColor WRITE setPeakColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY colorsChanged)
+    Q_PROPERTY(bool peakHold READ peakHold WRITE setPeakHold NOTIFY peakHoldChanged)
+    Q_PROPERTY(qreal peakDecayDb READ peakDecayDb WRITE setPeakDecayDb NOTIFY peakHoldChanged)
     Q_PROPERTY(qreal viewStart READ viewStart WRITE setViewStart NOTIFY viewChanged)
     Q_PROPERTY(qreal viewSpan READ viewSpan WRITE setViewSpan NOTIFY viewChanged)
     Q_PROPERTY(WaterfallMode waterfallMode READ waterfallMode WRITE setWaterfallMode NOTIFY waterfallModeChanged)
@@ -107,8 +110,30 @@ public:
     void setTraceColor(const QColor &color);
     QColor fillColor() const { return m_fillColor; }
     void setFillColor(const QColor &color);
+    QColor peakColor() const { return m_peakColor; }
+    void setPeakColor(const QColor &color);
     QColor backgroundColor() const { return m_backgroundColor; }
     void setBackgroundColor(const QColor &color);
+
+    /// Tenuta dei picchi: una seconda traccia che segna il massimo raggiunto da
+    /// ogni bin e scende piano.
+    ///
+    /// La traccia istantanea dice cosa c'è *adesso*; su una banda dove i
+    /// segnali vanno e vengono — un CQ, una risposta, una portante che si apre
+    /// — quel «adesso» è quasi sempre il momento sbagliato. La riga dei massimi
+    /// tiene insieme gli ultimi secondi e mostra dov'era occupato lo spettro,
+    /// che è l'informazione con cui si decide dove sintonizzare.
+    bool peakHold() const { return m_peakHold; }
+    void setPeakHold(bool enabled);
+
+    /// Con quanti decibel al secondo scende la riga dei massimi.
+    ///
+    /// In decibel al secondo e non per riga: il ritmo delle righe dipende dalla
+    /// banda, dalla FFT e da quante trasformate si mediano, e una discesa
+    /// legata a quello cambierebbe velocità ogni volta che si tocca la media.
+    /// Quello che l'occhio giudica è quanto tempo un picco resta lì.
+    qreal peakDecayDb() const { return m_peakDecayDb; }
+    void setPeakDecayDb(qreal dbPerSecond);
 
     /// Porzione di banda mostrata, come frazioni di 0..1. `viewStart` è il
     /// bordo sinistro, `viewSpan` la larghezza: insieme sono lo zoom.
@@ -185,6 +210,7 @@ signals:
     void autoRangeChanged();
     void measuredLevelsChanged();
     void historySecondsChanged();
+    void peakHoldChanged();
 
 private:
     /// Pubblica sul thread GUI le misure raccolte dal render thread.
@@ -199,7 +225,10 @@ private:
     qreal m_spectrumRatio = 0.42;
     QColor m_traceColor{0x6E, 0xE7, 0xFF};
     QColor m_fillColor{0x1E, 0x88, 0xC7};
+    QColor m_peakColor{0xFF, 0xC8, 0x6E};
     QColor m_backgroundColor{0x07, 0x0B, 0x11};
+    bool m_peakHold = true;
+    qreal m_peakDecayDb = 12.0;
     qreal m_viewStart = 0.0;
     qreal m_viewSpan = 1.0;
 

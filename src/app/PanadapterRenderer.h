@@ -8,6 +8,7 @@
 #include "app/PanadapterView.h"
 
 #include <QColor>
+#include <QElapsedTimer>
 #include <QMatrix4x4>
 #include <QQuickRhiItem>
 
@@ -38,6 +39,7 @@ private:
     bool ensureReliefResources(QRhiResourceUpdateBatch *batch);
     void uploadRows(QRhiResourceUpdateBatch *batch);
     void updateTraceGeometry(QRhiResourceUpdateBatch *batch);
+    void updatePeakGeometry(QRhiResourceUpdateBatch *batch);
     void releaseSpectrumResources();
 
     QRhi *m_rhi = nullptr;
@@ -47,6 +49,7 @@ private:
     std::unique_ptr<QRhiBuffer> m_waterfallUbuf;
     std::unique_ptr<QRhiBuffer> m_traceUbuf;
     std::unique_ptr<QRhiBuffer> m_fillUbuf;
+    std::unique_ptr<QRhiBuffer> m_peakUbuf;
     std::unique_ptr<QRhiSampler> m_linearSampler;
     std::unique_ptr<QRhiTexture> m_colorMapTexture;
     std::unique_ptr<QRhiGraphicsPipeline> m_waterfallPipeline;
@@ -54,6 +57,10 @@ private:
     std::unique_ptr<QRhiGraphicsPipeline> m_fillPipeline;
     std::unique_ptr<QRhiShaderResourceBindings> m_traceSrb;
     std::unique_ptr<QRhiShaderResourceBindings> m_fillSrb;
+    // La riga dei massimi riusa la pipeline della traccia — stessa topologia,
+    // stessi shader, stesso layout di vertici — e cambia solo il gruppo di
+    // risorse, perché l'unica cosa che la distingue è il colore.
+    std::unique_ptr<QRhiShaderResourceBindings> m_peakSrb;
 
     // Vista in rilievo: mesh e pipeline propri, ma la stessa texture ad anello
     // e la stessa colormap della vista piatta. Cambia come si guarda la
@@ -73,6 +80,7 @@ private:
     std::unique_ptr<QRhiShaderResourceBindings> m_waterfallSrb;
     std::unique_ptr<QRhiBuffer> m_traceVbuf;
     std::unique_ptr<QRhiBuffer> m_fillVbuf;
+    std::unique_ptr<QRhiBuffer> m_peakVbuf;
 
     int m_binCount = 0;
     int m_writeRow = 0;
@@ -95,7 +103,10 @@ private:
     float m_reliefScale = 0.45f;
     QColor m_traceColor;
     QColor m_fillColor;
+    QColor m_peakColor;
     QColor m_backgroundColor;
+    bool m_peakHold = true;
+    float m_peakDecayDb = 12.0f;
 
     // Dati del frame corrente.
     std::vector<float> m_fetched;     ///< righe estratte dal feed
@@ -105,6 +116,17 @@ private:
     std::vector<float> m_latestRow;
     int m_pendingRows = 0;
     bool m_traceDirty = false;
+
+    // ── Tenuta dei picchi ────────────────────────────────────────────────
+    //
+    // I massimi si tengono in decibel, non in frazione di scala: fondo e vetta
+    // si muovono da soli quando l'auto-range lavora, e un massimo memorizzato
+    // come posizione sullo schermo scivolerebbe insieme a loro — la riga
+    // sembrerebbe salire mentre la scala si stringe.
+    std::vector<float> m_peakRow;
+    std::vector<float> m_peakVertices;
+    QElapsedTimer m_peakClock;
+    bool m_peakSeeded = false;
 };
 
 } // namespace dsdr::app

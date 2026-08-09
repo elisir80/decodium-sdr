@@ -34,6 +34,32 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
   da una costante: `PanadapterView` conta le righe consumate e ne pubblica il
   ritmo. Finché la misura non c'è, l'asse non si disegna — meglio nessuna scala
   di una inventata.
+- **Media fra le righe** (`SpectrumFeed::averaging`, 1–8 trasformate per riga,
+  tre di fabbrica). Il fondo di una FFT non mediata respira di parecchi decibel
+  da una riga all'altra, ed è tutto quello che si vede su una banda quieta. La
+  media si fa in decibel — la media video degli analizzatori di spettro — e sul
+  rumore converge circa 2,5 dB più in basso che sui segnali: il fondo si ferma
+  *e* scende rispetto al traffico. Il prezzo è dichiarato nel pannello: meno
+  righe al secondo, quindi più secondi di storia sullo schermo.
+- **Tenuta dei picchi**: una seconda traccia che segna il massimo raggiunto da
+  ogni bin e scende a velocità regolabile in dB al secondo. La traccia
+  istantanea dice cosa c'è adesso; su una banda dove i segnali vanno e vengono,
+  «adesso» è quasi sempre il momento sbagliato.
+
+### Cambiato — Resa dello spettro
+
+- **Le palette diventano calde dove sta il traffico.** Il salto verde → giallo è
+  il primo appiglio che l'occhio trova in un waterfall, e stava a metà scala —
+  dove lo mettono le tabelle nate per le mappe di calore. Ma con la scala
+  automatica il traffico ordinario vive nel primo terzo, e la metà alta la
+  raggiungono solo le stazioni locali: il salto è sceso a quota 0,40, con il
+  tratto caldo tirato per non perdere risoluzione sui segnali forti.
+- **La vista in rilievo ha una luce.** La normale della superficie si ricava dai
+  campioni vicini nel vertex shader e una luce radente, fissa rispetto ai dati
+  come nelle carte in rilievo, illumina un fianco delle creste e ne lascia
+  l'altro in ombra. Il piano orizzontale vale esattamente uno: sul fondo di
+  rumore, che è piatto, il colore resta quello che la palette gli assegna — la
+  luce aggiunge volume dove c'è una forma e sparisce dove non ce n'è.
 
 ### Corretto
 

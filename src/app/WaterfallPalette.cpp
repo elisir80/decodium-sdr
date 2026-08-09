@@ -29,46 +29,80 @@ constexpr float kFloorFadeEnd = 0.05f;
 /// sotto; il viola di Turbo sta sopra.
 constexpr float kFloorBrightness = 0.25f;
 
+/// Dove cade il passaggio dal freddo al caldo — il salto verde → giallo.
+///
+/// È il punto in cui una palette smette di dire «fondo» e comincia a dire
+/// «segnale», e l'occhio lo trova prima di qualunque altra cosa nell'immagine:
+/// è il salto di tinta più grande di tutta la rampa. Metterlo a metà scala,
+/// come fa quasi ogni tabella di colore nata per le mappe di calore, vuol dire
+/// spenderlo dove non passa quasi nessuno.
+///
+/// Su un waterfall la scala non è popolata in modo uniforme. Con l'auto-range
+/// il fondo si posa poco sopra il rumore e la vetta dieci decibel sopra il
+/// 99,5° percentile: il traffico ordinario — una fonia che arriva venti
+/// decibel sopra il fondo, una digitale che ne arriva dieci — vive nel primo
+/// terzo abbondante di quell'intervallo, mentre la metà alta la raggiungono
+/// solo le stazioni locali e i disturbi. Il salto va lì, dove sta il traffico.
+///
+/// Il prezzo è che i segnali forti si accalcano nella parte calda della rampa,
+/// e infatti da questo punto in su le tabelle qui sotto tengono gli stop
+/// larghi: `tst_waterfall` verifica che due livelli a un quarto di scala di
+/// distanza restino distinguibili, ed è quel test a dire fin dove si può
+/// spingere questa scelta.
+constexpr float kTrafficPivot = 0.40f;
+
 /// Le palette, nell'ordine in cui la UI le elenca.
 ///
 /// Tutte crescono in intensità percepita, ma non tutte in pura luminanza: nel
 /// tratto finale il rosso acceso è più scuro dell'ambra che lo precede, e in
 /// Turbo la scala è portata quasi per intero dalla tinta. È una convenzione che
 /// vale la pena rispettare — sui ricevitori il rosso significa "forte" da
-/// sempre. Quello che invece nessuna palette può fare è dare lo stesso colore a
-/// livelli lontani: `tst_waterfall` verifica che due punti a un quarto di scala
-/// di distanza restino distinguibili.
+/// sempre.
+///
+/// In tutte, il passaggio dal freddo al caldo è centrato su `kTrafficPivot`:
+/// gli stop che lo delimitano gli stanno attorno, il tratto freddo sotto è
+/// compresso e il tratto caldo sopra è tirato per non perdere risoluzione dove
+/// stanno i segnali forti.
 const std::vector<std::vector<ColorStop>> &palettes()
 {
     static const std::vector<std::vector<ColorStop>> table = {
-        // DECODIUM: nero → indaco → ciano → verde → ambra → rosso → bianco
+        // DECODIUM: nero → indaco → ciano → verde → chartreuse → ambra → rosso
+        // → bianco. Il salto è fra il verde a 0,34 e la chartreuse a 0,46.
         {
-            {0.00f, 0.02f, 0.03f, 0.06f}, {0.18f, 0.05f, 0.09f, 0.35f},
-            {0.36f, 0.05f, 0.42f, 0.62f}, {0.52f, 0.10f, 0.72f, 0.60f},
-            {0.68f, 0.55f, 0.85f, 0.25f}, {0.82f, 0.98f, 0.72f, 0.15f},
-            {0.93f, 1.00f, 0.35f, 0.15f}, {1.00f, 1.00f, 0.96f, 0.92f},
+            {0.00f, 0.02f, 0.03f, 0.06f}, {0.12f, 0.05f, 0.09f, 0.35f},
+            {0.24f, 0.05f, 0.42f, 0.62f}, {0.34f, 0.10f, 0.72f, 0.60f},
+            {0.46f, 0.55f, 0.85f, 0.25f}, {0.62f, 0.98f, 0.72f, 0.15f},
+            {0.80f, 1.00f, 0.35f, 0.15f}, {1.00f, 1.00f, 0.96f, 0.92f},
         },
-        // Raptor: il blu → verde → giallo → rosso classico dei ricevitori
+        // Raptor: il blu → verde → giallo → rosso classico dei ricevitori.
+        // L'arancio a 0,70 è nuovo: senza, dal giallo al rosso restava un solo
+        // tratto lunghissimo e mezza scala alta finiva indistinguibile.
         {
-            {0.00f, 0.00f, 0.00f, 0.00f}, {0.20f, 0.00f, 0.00f, 0.55f},
-            {0.40f, 0.00f, 0.55f, 0.55f}, {0.60f, 0.00f, 0.75f, 0.00f},
-            {0.80f, 0.95f, 0.95f, 0.00f}, {1.00f, 1.00f, 0.10f, 0.00f},
+            {0.00f, 0.00f, 0.00f, 0.00f}, {0.14f, 0.00f, 0.00f, 0.55f},
+            {0.27f, 0.00f, 0.55f, 0.55f}, {0.34f, 0.00f, 0.75f, 0.00f},
+            {0.46f, 0.95f, 0.95f, 0.00f}, {0.70f, 1.00f, 0.55f, 0.00f},
+            {1.00f, 1.00f, 0.10f, 0.00f},
         },
-        // Turbo: molte tinte distinte, per separare livelli vicini
+        // Turbo: molte tinte distinte, per separare livelli vicini. Nasce come
+        // scala percettivamente uniforme, e uniforme resta nell'ordine dei
+        // colori: cambiano solo le quote a cui li si incontra.
         {
-            {0.00f, 0.19f, 0.07f, 0.23f}, {0.14f, 0.24f, 0.36f, 0.81f},
-            {0.29f, 0.10f, 0.72f, 0.85f}, {0.43f, 0.20f, 0.92f, 0.55f},
-            {0.57f, 0.60f, 0.99f, 0.23f}, {0.71f, 0.94f, 0.85f, 0.15f},
-            {0.86f, 0.99f, 0.48f, 0.09f}, {1.00f, 0.73f, 0.09f, 0.02f},
+            {0.00f, 0.19f, 0.07f, 0.23f}, {0.15f, 0.24f, 0.36f, 0.81f},
+            {0.27f, 0.10f, 0.72f, 0.85f}, {0.34f, 0.20f, 0.92f, 0.55f},
+            {0.42f, 0.60f, 0.99f, 0.23f}, {0.58f, 0.94f, 0.85f, 0.15f},
+            {0.78f, 0.99f, 0.48f, 0.09f}, {1.00f, 0.73f, 0.09f, 0.02f},
         },
-        // Fuoco: nero → rosso → giallo → bianco
+        // Fuoco: nero → rosso → arancio → giallo → bianco. Qui il salto è dal
+        // rosso all'arancio, e cade fra 0,24 e 0,48.
         {
-            {0.00f, 0.00f, 0.00f, 0.00f}, {0.35f, 0.60f, 0.00f, 0.00f},
-            {0.65f, 1.00f, 0.55f, 0.00f}, {0.88f, 1.00f, 0.95f, 0.30f},
+            {0.00f, 0.00f, 0.00f, 0.00f}, {0.24f, 0.60f, 0.00f, 0.00f},
+            {0.48f, 1.00f, 0.55f, 0.00f}, {0.72f, 1.00f, 0.95f, 0.30f},
             {1.00f, 1.00f, 1.00f, 1.00f},
         },
         // Scala di grigi: nessuna tinta a distrarre, utile in stampa e per chi
-        // distingue male i colori
+        // distingue male i colori. Non ha un salto da spostare — è una rampa
+        // sola, e spezzarla per compiacere questa regola la renderebbe peggiore
+        // proprio in ciò per cui la si sceglie.
         {
             {0.00f, 0.00f, 0.00f, 0.00f}, {1.00f, 1.00f, 1.00f, 1.00f},
         },

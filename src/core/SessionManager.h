@@ -55,6 +55,8 @@ class SessionManager : public QObject
     Q_PROPERTY(qint64 centerFrequency READ centerFrequency WRITE setCenterFrequency
                    NOTIFY centerFrequencyChanged)
     Q_PROPERTY(double sampleRate READ sampleRate WRITE setSampleRate NOTIFY sampleRateChanged)
+    Q_PROPERTY(int spectrumAveraging READ spectrumAveraging WRITE setSpectrumAveraging
+                   NOTIFY spectrumAveragingChanged)
 
 public:
     explicit SessionManager(QObject *parent = nullptr);
@@ -82,6 +84,16 @@ public:
     void setCenterFrequency(qint64 hz);
     double sampleRate() const { return m_sampleRate; }
     void setSampleRate(double rate);
+
+    /// Quante FFT si mediano per riga di waterfall.
+    ///
+    /// Il valore vive in `SpectrumFeed`, che sta sul thread del DSP: la UI non
+    /// può legarcisi direttamente — QML rifiuta di connettersi a un oggetto di
+    /// un altro thread, e avrebbe ragione. Passa di qui, dove una copia sul
+    /// thread della UI risponde alle letture e il feed riceve solo la scrittura,
+    /// che è atomica di suo.
+    int spectrumAveraging() const { return m_spectrumAveraging; }
+    void setSpectrumAveraging(int frames);
 
     // ── Azioni dalla UI ─────────────────────────────────────────────────
 
@@ -131,6 +143,7 @@ signals:
     void statusMessageChanged();
     void centerFrequencyChanged();
     void sampleRateChanged();
+    void spectrumAveragingChanged();
     void errorReported(const QString &message, bool fatal);
 
 private:
@@ -158,6 +171,7 @@ private:
     QString m_statusMessage;
     qint64 m_centerFrequency = 0;
     double m_sampleRate = 0.0;
+    int m_spectrumAveraging = SpectrumFeed::kDefaultAveraging;
     bool m_connected = false;
     bool m_discovering = false;
     bool m_transmitting = false;

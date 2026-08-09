@@ -66,6 +66,8 @@ private slots:
     void paletteIsReadable();
     void paletteStartsFromTheBackground_data();
     void paletteStartsFromTheBackground();
+    void paletteTurnsWarmWhereTheTrafficIs_data();
+    void paletteTurnsWarmWhereTheTrafficIs();
     void paletteIndexIsClamped();
     void autoRangeFollowsTheSignal();
     void noiseStaysBelowTheBlackThreshold();
@@ -147,6 +149,47 @@ void WaterfallTest::paletteStartsFromTheBackground()
     QVERIFY2(maxComponent - minComponent < 24,
              qPrintable(QStringLiteral("il livello zero è una tinta (%1,%2,%3), non un fondo")
                             .arg(data[0]).arg(data[1]).arg(data[2])));
+}
+
+void WaterfallTest::paletteTurnsWarmWhereTheTrafficIs_data()
+{
+    paletteIsReadable_data();
+}
+
+void WaterfallTest::paletteTurnsWarmWhereTheTrafficIs()
+{
+    QFETCH(int, palette);
+
+    const QByteArray map = buildWaterfallColorMap(palette);
+    const auto *data = reinterpret_cast<const uchar *>(map.constData());
+
+    // Il salto dal freddo al caldo è la cosa che l'occhio trova per prima in
+    // un waterfall, e va speso dove sta il traffico. Con l'auto-range il fondo
+    // della scala si posa poco sopra il rumore e la vetta dieci decibel sopra
+    // il picco: la fonia e le digitali ordinarie vivono nel primo terzo, la
+    // metà alta la raggiungono solo le stazioni locali. Un passaggio a metà
+    // scala — dove lo mettono le tabelle nate per le mappe di calore — lascia
+    // tutto il traffico normale nel blu.
+    //
+    // Il criterio è il sorpasso del rosso sul verde: è lì che la tinta smette
+    // di leggersi come fredda. La scala di grigi lo supera per definizione
+    // (r == g ovunque), e va bene così: non ha un salto da collocare.
+    int warmAt = -1;
+    for (int i = 0; i < kColorMapSize; ++i) {
+        if (data[i * 4] >= data[i * 4 + 1]) {
+            warmAt = i;
+            break;
+        }
+    }
+
+    QVERIFY2(warmAt >= 0, "la palette non diventa mai calda: la cima non dice «forte»");
+
+    const float position = static_cast<float>(warmAt) / (kColorMapSize - 1);
+    QVERIFY2(position <= kWarmBreakLimit,
+             qPrintable(QStringLiteral("la palette diventa calda a %1 della scala, "
+                                       "sopra il limite %2: il traffico ordinario "
+                                       "resta nel freddo")
+                            .arg(position).arg(kWarmBreakLimit)));
 }
 
 void WaterfallTest::paletteIndexIsClamped()

@@ -73,6 +73,8 @@ void PanadapterRenderer::initialize(QRhiCommandBuffer *cb)
         m_waterfallUbuf.reset();
         m_traceUbuf.reset();
         m_fillUbuf.reset();
+        m_peakUbuf.reset();
+        m_peakSrb.reset();
         m_linearSampler.reset();
         m_colorMapTexture.reset();
         m_uploadedPalette = -1;
@@ -121,6 +123,8 @@ bool PanadapterRenderer::createPipelines()
     m_traceUbuf->create();
     m_fillUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 96));
     m_fillUbuf->create();
+    m_peakUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 96));
+    m_peakUbuf->create();
 
     m_linearSampler.reset(m_rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear,
                                             QRhiSampler::None,
@@ -171,6 +175,14 @@ bool PanadapterRenderer::createPipelines()
     });
     m_fillSrb->create();
 
+    m_peakSrb.reset(m_rhi->newShaderResourceBindings());
+    m_peakSrb->setBindings({
+        QRhiShaderResourceBinding::uniformBuffer(
+            0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+            m_peakUbuf.get()),
+    });
+    m_peakSrb->create();
+
     QRhiGraphicsPipeline::TargetBlend blend;
     blend.enable = true;
     blend.srcColor = QRhiGraphicsPipeline::One; // colori pre-moltiplicati
@@ -213,6 +225,10 @@ void PanadapterRenderer::releaseSpectrumResources()
     m_reliefPipeline.reset();
     m_traceVbuf.reset();
     m_fillVbuf.reset();
+    m_peakVbuf.reset();
+    m_peakRow.clear();
+    m_peakSeeded = false;
+    m_peakClock.invalidate();
     m_binCount = 0;
     m_writeRow = 0;
 }
@@ -236,7 +252,10 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
     m_reliefScale = static_cast<float>(item->reliefScale());
     m_traceColor = item->traceColor();
     m_fillColor = item->fillColor();
+    m_peakColor = item->peakColor();
     m_backgroundColor = item->backgroundColor();
+    m_peakHold = item->peakHold();
+    m_peakDecayDb = static_cast<float>(item->peakDecayDb());
 
     m_pendingRows = 0;
     if (!m_feed)
@@ -344,6 +363,9 @@ bool PanadapterRenderer::ensureSpectrumResources(QRhiResourceUpdateBatch *batch)
     m_fillVbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, traceBytes * 2));
     m_fillVbuf->create();
 
+    m_peakVbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, traceBytes));
+    m_peakVbuf->create();
+
     return true;
 }
 
@@ -409,7 +431,10 @@ bool PanadapterRenderer::ensureReliefResources(QRhiResourceUpdateBatch *batch)
     }
 
     if (!m_reliefUbuf) {
-        m_reliefUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 96));
+        // Più capiente degli altri: oltre alla matrice e ai livelli porta i
+        // passi della griglia, che servono allo shader per ricavare la normale
+        // dai vertici vicini.
+        m_reliefUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 128));
         if (!m_reliefUbuf->create()) {
             m_reliefUnavailable = true;
             return false;
@@ -530,6 +555,58 @@ void PanadapterRenderer::updateTraceGeometry(QRhiResourceUpdateBatch *batch)
     m_traceDirty = false;
 }
 
+void PanadapterRenderer::updatePeakGeometry(QRhiResourceUpdateBatch *batch)
+{
+    if (!m_peakHold || m_binCount <= 0 || !m_peakVbuf || m_latestRow.empty()) {
+        // Spenta la tenuta, il cronometro riparte da zero: riaccendendola non
+        // deve arrivare tutta in una volta la discesa del tempo in cui era
+        // ferma, che azzererebbe la riga al primo fotogramma.
+        m_peakClock.invalidate();
+        m_peakSeeded = false;
+        return;
+    }
+
+    const auto bins = static_cast<std::size_t>(m_binCount);
+    if (m_latestRow.size() != bins)
+        return;
+
+    // Alla prima riga i massimi *sono* la riga: partire da meno infinito
+    // mostrerebbe la tenuta salire dal fondo per qualche secondo, come se lo
+    // spettro stesse crescendo davvero.
+    if (!m_peakSeeded || m_peakRow.size() != bins) {
+        m_peakRow = m_latestRow;
+        m_peakSeeded = true;
+        m_peakClock.start();
+    } else {
+        float decayDb = 0.0f;
+        if (m_peakClock.isValid()) {
+            decayDb = m_peakDecayDb
+                * static_cast<float>(m_peakClock.nsecsElapsed()) * 1e-9f;
+            m_peakClock.restart();
+        } else {
+            m_peakClock.start();
+        }
+
+        // La riga non scende mai sotto la traccia istantanea: sotto di essa non
+        // sarebbe più una tenuta, sarebbe una traccia in ritardo.
+        for (std::size_t i = 0; i < bins; ++i)
+            m_peakRow[i] = std::max(m_peakRow[i] - decayDb, m_latestRow[i]);
+    }
+
+    const float span = std::max(m_ceilingDb - m_floorDb, 1.0f);
+    const float step = (m_binCount > 1) ? 1.0f / static_cast<float>(m_binCount - 1) : 1.0f;
+
+    m_peakVertices.resize(bins * 2);
+    for (std::size_t i = 0; i < bins; ++i) {
+        m_peakVertices[i * 2] = static_cast<float>(i) * step;
+        m_peakVertices[i * 2 + 1] = std::clamp((m_peakRow[i] - m_floorDb) / span, 0.0f, 1.0f);
+    }
+
+    batch->updateDynamicBuffer(m_peakVbuf.get(), 0,
+                               static_cast<quint32>(m_peakVertices.size() * sizeof(float)),
+                               m_peakVertices.data());
+}
+
 void PanadapterRenderer::render(QRhiCommandBuffer *cb)
 {
     if (!m_rhi)
@@ -540,6 +617,7 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
     if (ready) {
         uploadRows(batch);
         updateTraceGeometry(batch);
+        updatePeakGeometry(batch);
     }
 
     const QSize outputSize = renderTarget()->pixelSize();
@@ -640,6 +718,11 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
             scene *= model;
 
             const float depth = kReliefDepth;
+            // I passi della griglia: lo shader li usa per campionare i vertici
+            // vicini e ricavarne la normale. Li conosce solo chi la griglia
+            // l'ha costruita, cioè questo file.
+            constexpr float stepX = 1.0f / (kReliefGridWidth - 1);
+            constexpr float stepZ = 1.0f / (kReliefGridDepth - 1);
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 0, 64, scene.constData());
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 64, 4, &rowOffset);
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 68, 4, &uMin);
@@ -648,6 +731,8 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 80, 4, &depth);
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 84, 4, &m_blackThreshold);
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 88, 4, &m_gamma);
+            batch->updateDynamicBuffer(m_reliefUbuf.get(), 92, 4, &stepX);
+            batch->updateDynamicBuffer(m_reliefUbuf.get(), 96, 4, &stepZ);
         }
 
         const float traceRgba[4] = {
@@ -656,6 +741,9 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
         const float fillRgba[4] = {
             static_cast<float>(m_fillColor.redF()), static_cast<float>(m_fillColor.greenF()),
             static_cast<float>(m_fillColor.blueF()), static_cast<float>(m_fillColor.alphaF())};
+        const float peakRgba[4] = {
+            static_cast<float>(m_peakColor.redF()), static_cast<float>(m_peakColor.greenF()),
+            static_cast<float>(m_peakColor.blueF()), static_cast<float>(m_peakColor.alphaF())};
         const float noGradient = 0.0f;
         const float withGradient = 1.0f;
 
@@ -670,6 +758,12 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
         batch->updateDynamicBuffer(m_fillUbuf.get(), 80, 4, &withGradient);
         batch->updateDynamicBuffer(m_fillUbuf.get(), 84, 4, &m_viewStart);
         batch->updateDynamicBuffer(m_fillUbuf.get(), 88, 4, &m_viewSpan);
+
+        batch->updateDynamicBuffer(m_peakUbuf.get(), 0, 64, mvp.constData());
+        batch->updateDynamicBuffer(m_peakUbuf.get(), 64, 16, peakRgba);
+        batch->updateDynamicBuffer(m_peakUbuf.get(), 80, 4, &noGradient);
+        batch->updateDynamicBuffer(m_peakUbuf.get(), 84, 4, &m_viewStart);
+        batch->updateDynamicBuffer(m_peakUbuf.get(), 88, 4, &m_viewSpan);
     }
 
     cb->beginPass(renderTarget(), m_backgroundColor, {1.0f, 0}, batch);
@@ -713,6 +807,15 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
             const QRhiCommandBuffer::VertexInput traceBinding(m_traceVbuf.get(), 0);
             cb->setVertexInput(0, 1, &traceBinding);
             cb->draw(static_cast<quint32>(m_binCount));
+
+            // I massimi sopra la traccia: la pipeline è la stessa, cambia solo
+            // il gruppo di risorse — stesso layout, altro colore.
+            if (m_peakHold && !m_peakVertices.empty()) {
+                cb->setShaderResources(m_peakSrb.get());
+                const QRhiCommandBuffer::VertexInput peakBinding(m_peakVbuf.get(), 0);
+                cb->setVertexInput(0, 1, &peakBinding);
+                cb->draw(static_cast<quint32>(m_binCount));
+            }
         }
     }
 
