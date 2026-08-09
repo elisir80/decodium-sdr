@@ -76,8 +76,8 @@ class TestSoapyProfile : public QObject
 private slots:
     void backendIsRegistered();
     void receiveOnlyDeviceDeclaresNoTransmit();
-    void transmitCapableDeviceDeclaresPtt();
-    void fullDuplexDeviceDeclaresFullDuplex();
+    void physicalTransmitDeviceRemainsRxOnlyUntilTxPathExists();
+    void physicalFullDuplexDeviceRemainsRxOnlyUntilTxPathExists();
     void coherentOnlyWithMultipleHardwareChannels();
     void frequencyCoverageFollowsTheDevice();
     void sampleRatesAreSortedAndDefaultIsSane();
@@ -116,17 +116,20 @@ void TestSoapyProfile::receiveOnlyDeviceDeclaresNoTransmit()
     QVERIFY(caps.isRawIq());
 }
 
-void TestSoapyProfile::transmitCapableDeviceDeclaresPtt()
+void TestSoapyProfile::physicalTransmitDeviceRemainsRxOnlyUntilTxPathExists()
 {
     const BackendCapabilities caps = capabilitiesFrom(hackRfProfile());
-    QCOMPARE(caps.tx, TxSupport::Ptt);
-    QVERIFY(caps.canTransmit());
+    // Il profilo hardware dichiara TX, ma il worker Soapy attuale non apre
+    // uno stream TX: non bisogna esporre un PTT che non produce RF.
+    QCOMPARE(caps.tx, TxSupport::None);
+    QVERIFY(!caps.canTransmit());
 }
 
-void TestSoapyProfile::fullDuplexDeviceDeclaresFullDuplex()
+void TestSoapyProfile::physicalFullDuplexDeviceRemainsRxOnlyUntilTxPathExists()
 {
     const BackendCapabilities caps = capabilitiesFrom(coherentProfile());
-    QCOMPARE(caps.tx, TxSupport::FullDuplex);
+    QCOMPARE(caps.tx, TxSupport::None);
+    QVERIFY(!caps.canTransmit());
 }
 
 void TestSoapyProfile::coherentOnlyWithMultipleHardwareChannels()

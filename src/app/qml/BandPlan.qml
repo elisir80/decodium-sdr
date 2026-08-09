@@ -26,6 +26,7 @@ QtObject {
         { name: "12m",  start: 24890000, end: 24990000, home: 24940000 },
         { name: "10m",  start: 28000000, end: 29700000, home: 28400000 },
         { name: "6m",   start: 50000000, end: 52000000, home: 50150000 },
+        { name: "FM 88–108", start: 88000000, end: 108000000, home: 100000000 },
     ]
 
     /// Segmenti d'uso dentro le bande, secondo il piano IARU Regione 1.

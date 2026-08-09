@@ -17,6 +17,7 @@
 
 class QAudioSink;
 class QIODevice;
+class QTimer;
 
 namespace dsdr::audio {
 
@@ -60,13 +61,17 @@ private:
     class RingSource;
 
     void applyVolume();
+    void startSinkWhenPrimed();
 
     std::unique_ptr<QAudioSink> m_sink;
     std::unique_ptr<RingSource> m_source;
+    QTimer *m_diagnosticTimer = nullptr;
     QString m_deviceName;
     QAudioFormat m_format;
     float m_volume = 0.8f;
     int m_latencyMs = 0;
+    QTimer *m_primeTimer = nullptr;
+    int m_primeAttempts = 0;
     bool m_muted = false;
 };
 

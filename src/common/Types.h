@@ -37,6 +37,7 @@ enum class DemodMode {
     DigU,
     DigL,
     Iq,
+    Dsb,    ///< Double-sideband suppressed-carrier AM
 };
 Q_ENUM_NS(DemodMode)
 
@@ -75,6 +76,14 @@ enum class AgcMode {
     Long,
 };
 Q_ENUM_NS(AgcMode)
+
+/// Tabella PTY per il multiplex RDS: Europa (IEC 62106) o Nord America
+/// (RBDS). I codici del gruppo restano uguali, cambia solo la legenda.
+enum class RdsRegion {
+    Europe,
+    NorthAmerica,
+};
+Q_ENUM_NS(RdsRegion)
 
 /// Frequenza di lavoro interna dell'AudioRouter.
 inline constexpr int kInternalAudioRate = 48000;

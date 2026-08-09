@@ -26,6 +26,11 @@ senza il quale l'applicazione non trova il plugin della piattaforma ed **esce
 in silenzio**: il deploy di Qt usa un layout `bin/` + `share/`, mentre Qt su
 Windows cerca i plugin accanto all'eseguibile.
 
+Su macOS il bundle installato contiene anche il modulo SoapyRTLSDR e il
+runtime `librtlsdr`/`libusb` quando `DSDR_BUNDLE_RTLSDR=ON` (impostazione
+predefinita su macOS). Il percorso del plugin viene impostato dall'app verso
+`Contents/PlugIns/SoapySDR/modules0.8`, quindi il DMG non dipende da Homebrew.
+
 ### Verificare che sia davvero autosufficiente
 
 Non basta che parta sulla macchina di sviluppo, dove l'ambiente è nel PATH.
@@ -41,11 +46,26 @@ che avviene prima che il programma possa scrivere alcunché.
 
 ## Dipendenze non-Qt
 
-Il deploy di Qt porta con sé solo le librerie Qt. Il runtime del compilatore,
-FFTW e SoapySDR li raccoglie `file(GET_RUNTIME_DEPENDENCIES)` in
-`src/app/CMakeLists.txt`. L'ordine delle directory di ricerca conta: quelle
-delle dipendenze esplicite vengono **prima** di quella del compilatore, perché
-una libreria presente in entrambe va presa dove l'abbiamo linkata.
+Il deploy di Qt porta con sé le librerie Qt. FFTW e SoapySDR vengono raccolti
+dal deploy macOS perché sono collegati dall'eseguibile; il modulo SoapyRTLSDR
+e le sue dipendenze USB vengono copiati esplicitamente da
+`src/app/CMakeLists.txt`. L'installazione richiede quindi, per una build macOS
+completa:
+
+```sh
+brew install qt@6 fftw ninja soapysdr soapyrtlsdr
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDSDR_QT_CMAKE_DEPLOY=OFF
+cmake --build build
+cmake --install build --prefix staging
+macdeployqt staging/decodium-sdr.app -qmldir="$PWD/src/app/qml" -no-codesign -always-overwrite
+cmake -DCMAKE_INSTALL_PREFIX="$PWD/staging" -P build/BundleMacOSSoapyRtlSdr.cmake
+find staging/decodium-sdr.app/Contents -type f \
+  \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \) \
+  -exec codesign --remove-signature {} \; 2>/dev/null || true
+```
+
+Prima di creare il DMG, verificare la presenza di
+`staging/decodium-sdr.app/Contents/PlugIns/SoapySDR/modules0.8/librtlsdrSupport.so`.
 
 ## Quello che manca
 

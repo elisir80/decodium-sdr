@@ -325,12 +325,19 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
         openRtlTcp(host, port);
 }
 
-/// Emette il descrittore del frame. Comune ai due protocolli: cambia chi
-/// produce i campioni, non che cosa se ne dice ai consumatori.
+/// Emette il descrittore del frame nel thread del backend. Comune ai due
+/// protocolli: cambia chi produce i campioni, non che cosa se ne dice ai
+/// consumatori. I campioni restano nel ring SPSC.
 #define DSDR_CONNECT_SAMPLES(clientPtr, ClientType)                                    \
     connect(clientPtr, &ClientType::samplesProduced, this,                             \
             [this](quint32 frames, quint32 dropped, quint64 timestampNs) {             \
                 if (frames == 0 && dropped == 0)                                       \
+                    return;                                                            \
+                /* Con la consegna accodata, fra l'emissione e l'arrivo può     */     \
+                /* starci una chiusura: i frame già in coda descriverebbero un  */     \
+                /* device che non c'è più, e il consumatore andrebbe a leggere  */     \
+                /* un ring smontato. Si scartano.                               */     \
+                if (!m_open)                                                           \
                     return;                                                            \
                 IqFrame frame;                                                         \
                 frame.channel = kInvalidChannel;                                       \
@@ -342,7 +349,7 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
                 frame.timestampNs = timestampNs;                                        \
                 emit iqFrameReady(frame);                                              \
             },                                                                          \
-            Qt::DirectConnection)
+            Qt::QueuedConnection)
 
 void NetTcpBackend::openRtlTcp(const QString &host, quint16 port)
 {

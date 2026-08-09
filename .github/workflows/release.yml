@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           brew update
-          brew install qt@6 fftw ninja soapysdr
+          brew install qt@6 fftw ninja soapysdr soapyrtlsdr
           echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
 
       - name: Dipendenze (Windows/MSYS2)
@@ -94,7 +94,13 @@ jobs:
       # ── Build e installazione ───────────────────────────────────────────
       - name: Compila
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          QT_DEPLOY_ARG=""
+          if [ "${{ matrix.os }}" = "macos-14" ]; then
+            # Qt 6.11/macdeployqt has a broken CMake-generated QML plugin
+            # symlink path on this runner; deploy the finished app explicitly.
+            QT_DEPLOY_ARG="-DDSDR_QT_CMAKE_DEPLOY=OFF"
+          fi
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release $QT_DEPLOY_ARG
           cmake --build build
 
       - name: Test
@@ -114,6 +120,21 @@ jobs:
             PREFIX="$(cygpath -m "$PREFIX")"
           fi
           cmake --install build --prefix "$PREFIX"
+
+          if [ "${{ matrix.os }}" = "macos-14" ]; then
+            macdeployqt "$PREFIX/decodium-sdr.app" \
+              -qmldir="$PWD/src/app/qml" -no-codesign -always-overwrite
+            cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -P build/BundleMacOSSoapyRtlSdr.cmake
+            # macdeployqt and the custom RTL-SDR step both rewrite Mach-O
+            # files. Remove any linker/ad-hoc signatures left by Homebrew or
+            # Qt after those rewrites; otherwise macOS can terminate the
+            # bundle with "Code Signature Invalid". A notarized release must
+            # replace this with one final Developer ID signing pass.
+            find "$PREFIX/decodium-sdr.app/Contents" -type f \
+              \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \) \
+              -exec codesign --remove-signature {} \; 2>/dev/null || true
+          fi
 
       # ── Confezionamento ─────────────────────────────────────────────────
       - name: AppImage (Linux)
@@ -167,6 +188,14 @@ jobs:
           if [ -z "$APP" ]; then
             echo "::error::bundle .app non trovato in staging/"; exit 1
           fi
+
+          RTLSDR_MODULE="$APP/Contents/PlugIns/SoapySDR/modules0.8/librtlsdrSupport.so"
+          if [ ! -f "$RTLSDR_MODULE" ]; then
+            echo "::error::modulo SoapyRTLSDR assente dal bundle macOS"; exit 1
+          fi
+          test -f "$APP/Contents/Frameworks/librtlsdr.0.dylib"
+          test -f "$APP/Contents/Frameworks/libusb-1.0.0.dylib"
+          echo "SoapyRTLSDR e runtime USB presenti nel bundle"
 
           mkdir -p dmgroot
           cp -R "$APP" dmgroot/

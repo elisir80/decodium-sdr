@@ -10,7 +10,9 @@
 #include "core/SpectrumFeed.h"
 
 #include <QElapsedTimer>
+#include <QHostAddress>
 #include <QSignalSpy>
+#include <QTcpSocket>
 #include <QTest>
 
 #include <algorithm>
@@ -27,6 +29,9 @@ private slots:
     void connectsToDemoAndProducesSpectrum();
     void audioKeepsUpWithRealTime();
     void channelLimitMatchesCapabilities();
+    void scannerCompletesAndPublishesState();
+    void rigctlTunesAndChangesMode();
+    void changingChannelModeKeepsAudioAlive();
     void disconnectStopsEverything();
     void movingTheCentreKeepsChannelFrequencies();
     void tuningTakesTheReceiverAlong();
@@ -134,14 +139,110 @@ void TestSessionDemo::channelLimitMatchesCapabilities()
     QCOMPARE(session.channels()->rowCount(), limit);
 }
 
+void TestSessionDemo::rigctlTunesAndChangesMode()
+{
+    SessionManager session;
+    QVERIFY(connectSession(session));
+    QVERIFY(session.rigctlRunning());
+    QVERIFY(session.rigctlPort() > 0);
+
+    QTcpSocket socket;
+    socket.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(session.rigctlPort()));
+    QVERIFY2(socket.waitForConnected(1000), "server rigctl non raggiungibile");
+
+    socket.write("f\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha risposto alla lettura frequenza");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("7100000"));
+
+    socket.write("F 7105000\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha confermato la sintonia");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("RPRT 0"));
+    QCOMPARE(session.channels()->at(0)->frequencyHz, qint64(7'105'000));
+
+    socket.write("M WFM 180000\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha confermato il modo");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("RPRT 0"));
+    QCOMPARE(session.channels()->at(0)->settings.mode, DemodMode::Fm);
+    QCOMPARE(session.channels()->at(0)->settings.filterHighHz
+                 - session.channels()->at(0)->settings.filterLowHz,
+             180000);
+
+    socket.write("t\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha risposto alla lettura PTT");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("0"));
+
+    socket.write("T 1\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha confermato PTT ON");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("RPRT 0"));
+    QVERIFY(session.isTransmitting());
+
+    socket.write("t\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha restituito PTT ON");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("1"));
+
+    socket.write("L AF 0.42\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha confermato il volume AF");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("RPRT 0"));
+    QVERIFY(qFuzzyCompare(session.audio()->volume(), 0.42f));
+
+    socket.write("l AF\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha restituito il volume AF");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("0.420000"));
+
+    socket.write("T 0\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha confermato PTT OFF");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("RPRT 0"));
+    QVERIFY(!session.isTransmitting());
+}
+
+void TestSessionDemo::scannerCompletesAndPublishesState()
+{
+    SessionManager session;
+    QVERIFY(connectSession(session));
+
+    QVERIFY(session.startScan(7'100'000, 7'105'000, 5'000, 150));
+    QVERIFY(session.isScanning());
+    QVERIFY2(waitFor([&] { return !session.isScanning(); }, 2000),
+             "lo scanner non ha completato la banda richiesta");
+    QVERIFY(session.scanResults().size() <= 2);
+}
+
+void TestSessionDemo::changingChannelModeKeepsAudioAlive()
+{
+    SessionManager session;
+    QVERIFY(connectSession(session));
+    session.setChannelMode(0, static_cast<int>(DemodMode::Fm));
+    session.setChannelFmStereo(0, true);
+    session.setChannelFmRds(0, true);
+    session.setChannelMode(0, static_cast<int>(DemodMode::Nfm));
+    session.setChannelMode(0, static_cast<int>(DemodMode::Usb));
+
+    QVERIFY2(waitFor([&] {
+        const ChannelEntry *entry = session.channels()->at(0);
+        return entry && entry->signalDb > -139.0f;
+    }, 3000), "il canale non è sopravvissuto alle riconfigurazioni stereo");
+}
+
 void TestSessionDemo::disconnectStopsEverything()
 {
     SessionManager session;
     QVERIFY(connectSession(session));
     QTest::qWait(300);
 
+    session.setPtt(true);
+    QVERIFY(session.isTransmitting());
     session.disconnectDevice();
     QVERIFY(!session.isConnected());
+    QVERIFY(!session.isTransmitting());
     QCOMPARE(session.channels()->rowCount(), 0);
 
     // Riconnessione: deve funzionare come la prima volta.

@@ -19,12 +19,17 @@
 
 #include <QObject>
 #include <QVariantList>
+#include <QTimer>
+#include <QTcpServer>
+
+#include <vector>
 
 namespace dsdr::hal {
 class IRadioBackend;
 }
 
 class QThread;
+class QTcpSocket;
 
 namespace dsdr::core {
 
@@ -33,6 +38,8 @@ class DspEngine;
 class SessionManager : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(QStringList iqModuleNames READ iqModuleNames NOTIFY iqModuleNamesChanged)
+    Q_PROPERTY(QVariantList iqModuleCatalog READ iqModuleCatalog NOTIFY iqModuleCatalogChanged)
 
     Q_PROPERTY(QVariantList availableBackends READ availableBackends CONSTANT)
     Q_PROPERTY(QString backendId READ backendId NOTIFY backendChanged)
@@ -44,6 +51,7 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
     Q_PROPERTY(dsdr::audio::AudioRouter *audio READ audio CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *recorder READ recorder CONSTANT)
+    Q_PROPERTY(dsdr::core::IqRecorder *audioRecorder READ audioRecorder CONSTANT)
     Q_PROPERTY(dsdr::core::LanguageManager *language READ language CONSTANT)
 
     Q_PROPERTY(bool connected READ isConnected NOTIFY connectionChanged)
@@ -51,6 +59,10 @@ class SessionManager : public QObject
     Q_PROPERTY(bool transmitting READ isTransmitting NOTIFY transmittingChanged)
     Q_PROPERTY(QString deviceName READ deviceName NOTIFY connectionChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
+    Q_PROPERTY(bool scanning READ isScanning NOTIFY scanningChanged)
+    Q_PROPERTY(QVariantList scanResults READ scanResults NOTIFY scanResultsChanged)
+    Q_PROPERTY(bool rigctlRunning READ rigctlRunning NOTIFY rigctlChanged)
+    Q_PROPERTY(int rigctlPort READ rigctlPort NOTIFY rigctlChanged)
 
     Q_PROPERTY(qint64 centerFrequency READ centerFrequency WRITE setCenterFrequency
                    NOTIFY centerFrequencyChanged)
@@ -103,6 +115,7 @@ public:
     SpectrumFeed *spectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
     IqRecorder *recorder() { return &m_recorder; }
+    IqRecorder *audioRecorder() { return &m_audioRecorder; }
     LanguageManager *language() { return &m_language; }
 
     bool isConnected() const { return m_connected; }
@@ -110,6 +123,10 @@ public:
     bool isTransmitting() const { return m_transmitting; }
     QString deviceName() const { return m_deviceName; }
     QString statusMessage() const { return m_statusMessage; }
+    bool isScanning() const { return m_scanning; }
+    QVariantList scanResults() const { return m_scanResults; }
+    bool rigctlRunning() const { return m_rigctlServer.isListening(); }
+    int rigctlPort() const { return m_rigctlServer.serverPort(); }
 
     qint64 centerFrequency() const { return m_centerFrequency; }
     void setCenterFrequency(qint64 hz);
@@ -132,6 +149,11 @@ public:
     Q_INVOKABLE void startDiscovery();
     Q_INVOKABLE void connectToDevice(int deviceRow);
     Q_INVOKABLE void disconnectDevice();
+    Q_INVOKABLE bool startScan(qint64 startHz, qint64 endHz, qint64 stepHz,
+                               int dwellMs = 350);
+    Q_INVOKABLE void stopScan();
+    Q_INVOKABLE bool startRigctl(int port = 4532);
+    Q_INVOKABLE void stopRigctl();
 
     double replayDelaySeconds() const { return m_replayDelay; }
     double replayHistorySeconds() const { return m_replayHistory; }
@@ -184,6 +206,9 @@ public:
     Q_INVOKABLE void setChannelPassbandShift(int row, double hz);
     Q_INVOKABLE void setChannelAgcMode(int row, int mode);
     Q_INVOKABLE void setChannelAgcThreshold(int row, double thresholdDb);
+    Q_INVOKABLE void setChannelAgcAttack(int row, double milliseconds);
+    Q_INVOKABLE void setChannelAgcDecay(int row, double milliseconds);
+    Q_INVOKABLE void setChannelAmCarrierAgc(int row, bool enabled);
     Q_INVOKABLE void setChannelVolume(int row, double volume);
     Q_INVOKABLE void setChannelMuted(int row, bool muted);
     Q_INVOKABLE void setChannelSquelch(int row, bool enabled, double thresholdDb);
@@ -191,14 +216,37 @@ public:
     // ── Filtri di disturbo ──────────────────────────────────────────────
     //
     // Uno per comando, e ognuno acceso o spento dall'operatore. Nessuno è
-    // gratis: il blanker tronca, la riduzione di rumore colora la voce, il
-    // notch automatico si porta via anche le note CW. Accenderli tutti di
-    // fabbrica farebbe suonare meglio il ricevitore in vetrina e peggio in
-    // aria.
+    // gratis: la riduzione di rumore colora la voce, il notch automatico si
+    // porta via anche le note CW. Accenderli tutti di fabbrica farebbe suonare
+    // meglio il ricevitore in vetrina e peggio in aria.
+    //
+    // Il noise blanker non è fra questi: agisce su tutta la banda e sta nella
+    // catena, non nel canale (SPEC-003 §4) — vedi `setNoiseBlanker`.
     Q_INVOKABLE void setChannelNoiseReduction(int row, bool enabled, double strength);
     Q_INVOKABLE void setChannelAutoNotch(int row, bool enabled);
     Q_INVOKABLE void setChannelNotch(int row, bool enabled, double frequencyHz,
                                      double widthHz);
+
+    // ── Catena FM broadcast, RDS e CTCSS ────────────────────────────────
+    Q_INVOKABLE void setChannelAudioHighPassEnabled(int row, bool enabled);
+    Q_INVOKABLE void setChannelAudioHighPassHz(int row, double hertz);
+    Q_INVOKABLE void setChannelFmStereo(int row, bool enabled);
+    Q_INVOKABLE void setChannelFmAudioLowPass(int row, bool enabled);
+    Q_INVOKABLE void setChannelFmDeemphasis(int row, double microseconds);
+    Q_INVOKABLE void setChannelFmRds(int row, bool enabled);
+    Q_INVOKABLE void setChannelRdsAutomaticAf(int row, bool enabled);
+    Q_INVOKABLE void setChannelRdsRegion(int row, int region);
+    /// Passa alla prima alternativa RDS diversa dalla frequenza corrente.
+    /// È un cambio manuale: il client non interrompe l'ascolto sondando
+    /// automaticamente le frequenze, comportamento potenzialmente invasivo.
+    Q_INVOKABLE void followRdsAf(int row);
+    Q_INVOKABLE void setChannelSquelchEnabled(int row, bool enabled);
+    Q_INVOKABLE void setChannelSquelchThreshold(int row, double thresholdDb);
+    Q_INVOKABLE void setChannelCtcssEnabled(int row, bool enabled);
+    Q_INVOKABLE void setChannelCtcssDecodeOnly(int row, bool enabled);
+    Q_INVOKABLE void setChannelCtcssTone(int row, double toneHz);
+    Q_INVOKABLE void setChannelFmIfNoiseReductionEnabled(int row, bool enabled);
+    Q_INVOKABLE void setChannelFmIfNoiseReductionPreset(int row, int preset);
 
     Q_INVOKABLE void setPtt(bool transmit);
 
@@ -213,6 +261,14 @@ public:
     Q_INVOKABLE bool startRecording(const QString &path = QString());
     Q_INVOKABLE void stopRecording();
     Q_INVOKABLE bool toggleRecording();
+    Q_INVOKABLE bool startAudioRecording(const QString &path = QString());
+    Q_INVOKABLE void stopAudioRecording();
+    Q_INVOKABLE bool toggleAudioRecording();
+    Q_INVOKABLE bool loadIqModule(const QString &path);
+    Q_INVOKABLE void unloadIqModules();
+    Q_INVOKABLE void loadIqModulesFromStandardPaths();
+    QStringList iqModuleNames() const { return m_iqModuleNames; }
+    QVariantList iqModuleCatalog() const { return m_iqModuleCatalog; }
 
     /// Nomi dei modi, per popolare i selettori senza duplicare la tabella in QML.
     Q_INVOKABLE QStringList modeNames() const;
@@ -222,9 +278,14 @@ public:
     Q_INVOKABLE QVariant nativeCommand(const QString &command, const QVariantMap &args);
 
 signals:
+    void iqModuleNamesChanged();
+    void iqModuleCatalogChanged();
     void backendChanged();
     void connectionChanged();
     void discoveringChanged();
+    void scanningChanged();
+    void scanResultsChanged();
+    void rigctlChanged();
     void transmittingChanged();
     void statusMessageChanged();
     void centerFrequencyChanged();
@@ -241,6 +302,11 @@ private:
     void teardownBackend();
     void pushChannelToEngine(int row);
     void refreshChannelOffsets();
+    void advanceScan();
+    void handleAutomaticRdsAf(ChannelId id, bool synced, const QString &pi);
+    void probeNextRdsAf();
+    void finishRdsAfProbe(bool keepCandidate);
+    void handleRigctlLine(QTcpSocket *socket, const QByteArray &line);
     void onBackendError(const hal::BackendError &error);
 
     hal::IRadioBackend *m_backend = nullptr;
@@ -250,6 +316,7 @@ private:
     ChannelModel m_channels;
     CapabilitiesInfo m_capabilities;
     IqRecorder m_recorder;
+    IqRecorder m_audioRecorder;
     LanguageManager m_language;
 
     DspEngine *m_engine = nullptr;
@@ -272,6 +339,31 @@ private:
     bool m_connected = false;
     bool m_discovering = false;
     bool m_transmitting = false;
+    QTimer m_scanTimer;
+    QTimer m_rdsAfProbeTimer;
+    std::vector<qint64> m_rdsAfCandidates;
+    std::size_t m_rdsAfCandidateIndex = 0;
+    int m_rdsAfProbeRow = -1;
+    qint64 m_rdsAfOriginalFrequency = 0;
+    qint64 m_rdsAfCandidateFrequency = 0;
+    double m_rdsAfOriginalSignalDb = -160.0;
+    QString m_rdsAfOriginalPi;
+    QString m_rdsAfProbeList;
+    QString m_rdsAfRejectedPi;
+    QString m_rdsAfRejectedList;
+    qint64 m_rdsAfRejectedFrequency = 0;
+    bool m_rdsAfProbeActive = false;
+    QStringList m_iqModuleNames;
+    QVariantList m_iqModuleCatalog;
+    bool m_scanning = false;
+    int m_scanRow = -1;
+    qint64 m_scanFrequency = 0;
+    qint64 m_scanEnd = 0;
+    qint64 m_scanStep = 0;
+    qint64 m_scanLastHit = -1;
+    double m_scanThresholdDb = -75.0;
+    QVariantList m_scanResults;
+    QTcpServer m_rigctlServer;
 };
 
 } // namespace dsdr::core

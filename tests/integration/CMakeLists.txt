@@ -9,6 +9,20 @@ dsdr_add_test(tst_iq_recorder
     SOURCES tst_iq_recorder.cpp
     LIBRARIES dsdr::core)
 
+add_library(dsdr_test_iq_module SHARED test_iq_module.cpp)
+target_include_directories(dsdr_test_iq_module PRIVATE
+    "${CMAKE_SOURCE_DIR}/src")
+set_target_properties(dsdr_test_iq_module PROPERTIES
+    PREFIX "")
+
+dsdr_add_test(tst_iq_module
+    SOURCES tst_iq_module.cpp
+    LIBRARIES dsdr::core)
+add_dependencies(tst_iq_module dsdr_test_iq_module)
+set_tests_properties(tst_iq_module PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_IQ_MODULE=$<TARGET_FILE:dsdr_test_iq_module>"
+    TIMEOUT 120)
+
 # Registratore e lettore stanno in strati diversi e sono scritti in momenti
 # diversi: che combacino va verificato da fuori, contro un file vero.
 dsdr_add_test(tst_iqfile_playback

@@ -54,6 +54,18 @@ void Agc::setThresholdDb(double db)
     m_thresholdDb = std::clamp(db, -140.0, 0.0);
 }
 
+void Agc::setAttackMs(double ms)
+{
+    m_attackMs = std::clamp(ms, 0.1, 5000.0);
+    recomputeCoefficients();
+}
+
+void Agc::setDecayMs(double ms)
+{
+    m_decayMs = std::clamp(ms, 0.0, 10000.0);
+    recomputeCoefficients();
+}
+
 void Agc::setMaxGainDb(double db)
 {
     m_maxGainDb = std::clamp(db, 0.0, 120.0);
@@ -67,11 +79,9 @@ void Agc::setManualGainDb(double db)
 void Agc::recomputeCoefficients()
 {
     const ModeTiming t = timingFor(m_mode);
-    // L'attacco è volutamente indipendente dalla modalità: un colpo di
-    // statica va domato in pochi millisecondi in tutte le modalità; è il
-    // rilascio che distingue Fast da Long.
-    m_attackCoeff = onePoleCoeff(0.002, m_sampleRate);
-    m_decayCoeff = onePoleCoeff(t.decaySeconds, m_sampleRate);
+    const double decaySeconds = m_decayMs > 0.0 ? m_decayMs / 1000.0 : t.decaySeconds;
+    m_attackCoeff = onePoleCoeff(m_attackMs / 1000.0, m_sampleRate);
+    m_decayCoeff = onePoleCoeff(decaySeconds, m_sampleRate);
     m_gainSmoothCoeff = onePoleCoeff(0.005, m_sampleRate);
     m_hangSamples = static_cast<unsigned>(t.hangSeconds * m_sampleRate);
 }

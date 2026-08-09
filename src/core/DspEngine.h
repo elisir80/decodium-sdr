@@ -10,6 +10,7 @@
 #pragma once
 
 #include "core/IqRecorder.h"
+#include "core/IqModuleApi.h"
 #include "core/SpectrumFeed.h"
 #include "dsp/ChannelProcessor.h"
 #include "dsp/NoiseBlanker.h"
@@ -20,6 +21,8 @@
 #include "hal/Frames.h"
 
 #include <QElapsedTimer>
+#include <QString>
+#include <QStringList>
 #include <QObject>
 
 #include <atomic>
@@ -100,6 +103,16 @@ public:
     int overloadMode() const { return m_overloadMode.load(std::memory_order_acquire); }
     bool overloaded() const { return m_overloaded.load(std::memory_order_acquire); }
     double peakDbfs() const { return m_peakDbfs.load(std::memory_order_acquire); }
+    /// Collega un registratore al mix audio stereo, dopo il DSP dei canali e
+    /// prima del sink globale. Usa lo stesso contratto lock-free del recorder IQ.
+    void setAudioRecorder(IqRecorder *recorder);
+
+    /// Carica un modulo IQ C ABI. La chiamata va eseguita nel thread DSP;
+    /// SessionManager la invoca con una BlockingQueuedConnection dal thread UI.
+    Q_INVOKABLE bool loadIqModule(const QString &path);
+    Q_INVOKABLE void unloadIqModules();
+    Q_INVOKABLE QStringList iqModuleNames() const;
+
 
 public slots:
     void onIqFrameReady(const dsdr::hal::IqFrame &frame);
@@ -110,8 +123,13 @@ public slots:
 
 signals:
     /// Misure per la UI, aggregate: un'emissione per blocco, non per campione.
-    void metersUpdated(dsdr::ChannelId id, float signalDb, float agcGainDb,
-                       float noiseFloorDb);
+    void metersUpdated(dsdr::ChannelId id, float signalDb, float noiseFloorDb,
+                       float snrDb, float audioLevelDb, float agcGainDb);
+    void rdsUpdated(dsdr::ChannelId id, bool synced, const QString &pi,
+                    int countryCode, int programCoverage, int referenceNumber,
+                    const QString &callsign,
+                    const QString &programType, const QString &alternateFrequencies,
+                    const QString &programService, const QString &radioText);
     void overrunDetected(quint64 lostFrames);
 
     /// Stato della macchina del tempo, aggregato come i meter: la storia
@@ -132,7 +150,20 @@ private:
         std::vector<float> audio;
         dsp::ChannelSettings settings;
         qint64 lastMeterNs = 0;
+        qint64 lastRdsNs = 0;
+        bool lastRdsSynced = false;
+        QString lastRdsPi;
+        int lastRdsCountryCode = -1;
+        int lastRdsProgramCoverage = -1;
+        int lastRdsReferenceNumber = -1;
+        QString lastRdsCallsign;
+        QString lastRdsProgramType;
+        QString lastRdsAlternateFrequencies;
+        QString lastRdsProgramService;
+        QString lastRdsRadioText;
     };
+
+    struct LoadedIqModule;
 
     // Sorgente: puntatori atomici perché il thread UI può sostituirla mentre
     // il thread DSP sta lavorando.
@@ -141,6 +172,7 @@ private:
     std::atomic<qint64> m_centerHz{0};
     std::atomic<bool> m_needsReconfigure{true};
     std::atomic<IqRecorder *> m_recorder{nullptr};
+    std::atomic<IqRecorder *> m_audioRecorder{nullptr};
 
     // Macchina del tempo. Il buffer appartiene al thread DSP; queste tre
     // atomiche sono la sola superficie che la UI tocca.
@@ -174,10 +206,16 @@ private:
     std::vector<float> m_interleaved;   ///< lettura grezza dal ring
     std::vector<dsp::Complex> m_iq;     ///< versione complessa
     std::vector<float> m_mix;           ///< audio mixato
+    std::vector<float> m_moduleIq;      ///< conversione Complex -> I/Q C ABI
+    std::vector<std::unique_ptr<LoadedIqModule>> m_iqModules;
     QElapsedTimer m_uptime;             ///< base dei tempi per il throttling
     quint64 m_totalDropped = 0;
     qint64 m_lastOverrunReportNs = 0;
     qint64 m_lastReplayReportNs = 0;
+    qint64 m_lastStatsNs = 0;
+    quint64 m_statsIqFrames = 0;
+    quint64 m_statsAudioFrames = 0;
+    quint64 m_statsBlocks = 0;
 };
 
 } // namespace dsdr::core

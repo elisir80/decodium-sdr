@@ -10,13 +10,19 @@
 
 #include "common/Types.h"
 #include "dsp/Agc.h"
+#include "dsp/AudioHighPass.h"
+#include "dsp/BroadcastFmStereo.h"
 #include "dsp/ComplexFir.h"
+#include "dsp/CtcssDetector.h"
 #include "dsp/DecimatorChain.h"
 #include "dsp/Demodulator.h"
 #include "dsp/LmsFilter.h"
 #include "dsp/Nco.h"
 #include "dsp/NotchFilter.h"
+#include "dsp/FmIfNoiseReducer.h"
+#include "dsp/RdsDecoder.h"
 
+#include <cmath>
 #include <vector>
 
 namespace dsdr::dsp {
@@ -38,16 +44,27 @@ struct ChannelSettings
     AgcMode agcMode = AgcMode::Medium;
     double agcThresholdDb = -100.0;
     double agcMaxGainDb = 90.0;
+    double agcAttackMs = 2.0;
+    double agcDecayMs = 0.0;
+    bool amCarrierAgc = false;
     double cwPitchHz = 600.0;
     float volume = 0.7f;
     bool muted = false;
-
-    /// Soglia dello squelch, in dB sul livello del canale. Sotto, l'audio
-    /// tace. `squelchEnabled` a falso lo spegne del tutto: una soglia
-    /// bassissima non è la stessa cosa, perché il rumore impulsivo la
-    /// supererebbe comunque e l'audio si aprirebbe a scatti.
+    bool audioHighPassEnabled = false;
+    double audioHighPassHz = 300.0;
+    bool fmStereo = true;
+    bool fmAudioLowPass = true;
+    double fmDeemphasisUs = 50.0;
+    bool fmRds = true;
+    bool rdsAutomaticAf = false;
+    RdsRegion rdsRegion = RdsRegion::Europe;
     bool squelchEnabled = false;
-    double squelchThresholdDb = -95.0;
+    double squelchThresholdDb = -80.0;
+    bool ctcssEnabled = false;
+    bool ctcssDecodeOnly = false;
+    double ctcssToneHz = 100.0;
+    bool fmIfNoiseReductionEnabled = false;
+    int fmIfNoiseReductionPreset = 0;
 
     // ── Filtri di disturbo ──────────────────────────────────────────────
     //
@@ -95,9 +112,19 @@ public:
     /// `out` deve avere spazio per `maxAudioFrames(n)` campioni.
     std::size_t process(const Complex *iq, std::size_t n, float *out) noexcept;
 
+    /// Come `process()`, ma restituisce L/R interleaved. I modi non stereo
+    /// vengono duplicati sui due canali; Wide-FM usa il decoder MPX.
+    std::size_t processStereo(const Complex *iq, std::size_t n,
+                              float *outInterleaved) noexcept;
+
     std::size_t maxAudioFrames(std::size_t inputFrames) const noexcept
     {
-        return m_chain.maxOutput(inputFrames) + 8;
+        const std::size_t channelFrames = m_chain.maxOutput(inputFrames);
+        if (!m_resampleAudio || m_channelRate <= 0.0)
+            return channelFrames + 8;
+        return static_cast<std::size_t>(std::ceil(
+                   static_cast<double>(channelFrames) * m_audioRate / m_channelRate))
+            + 8;
     }
 
     double channelRate() const noexcept { return m_channelRate; }
@@ -106,23 +133,39 @@ public:
     /// Livello del segnale filtrato, pre-AGC, in dBFS (S-meter).
     float signalLevelDb() const noexcept { return m_signalLevelDb; }
 
-    /// Fondo di rumore stimato nella banda del canale, in dBFS (SPEC-003 §9).
-    ///
-    /// Per minima statistica: il fondo è il livello più basso che il canale
-    /// tocca, non la sua media — una media la alzano i segnali stessi, e su
-    /// una frequenza occupata si finirebbe a chiamare «rumore» il parlato.
+    /// Stima adattiva del fondo rumore del canale, in dBFS (SPEC-003 §9).
     float noiseFloorDb() const noexcept { return m_noiseFloorDb; }
-
-    /// Quanto il segnale emerge dal fondo, in dB. È il numero che trasforma le
-    /// impressioni in confronti: «si sente meglio» non si può discutere,
-    /// «dodici dB invece di sei» sì.
-    float snrDb() const noexcept { return m_signalLevelDb - m_noiseFloorDb; }
+    /// Differenza fra livello RF e fondo rumore, in dB. È il numero che
+    /// trasforma le impressioni in confronti: «si sente meglio» non si può
+    /// discutere, «dodici dB invece di sei» sì.
+    float snrDb() const noexcept { return m_snrDb; }
+    /// Livello RMS dell'audio effettivamente emesso dal canale, dopo volume.
+    float audioLevelDb() const noexcept { return m_audioLevelDb; }
 
     /// Vero quando lo squelch sta tenendo chiuso l'audio. Serve alla UI per
     /// dirlo: uno squelch chiuso e una radio guasta suonano identici, e senza
     /// una spia si finisce a cercare il problema nel cavo dell'antenna.
     bool squelchClosed() const noexcept { return m_squelchClosed; }
     float agcGainDb() const noexcept { return m_agc.gainDb(); }
+    float agcAttackMs() const noexcept { return static_cast<float>(m_agc.attackMs()); }
+    float agcDecayMs() const noexcept { return static_cast<float>(m_agc.decayMs()); }
+    float ctcssLevelDb() const noexcept { return m_ctcss.levelDb(); }
+    bool ctcssDetected() const noexcept { return m_ctcss.detected(); }
+    int fmIfNoiseReductionPreset() const noexcept { return m_fmIfNoiseReducer.preset(); }
+    bool rdsSynced() const noexcept { return m_rds.synced(); }
+    std::uint16_t rdsPiCode() const noexcept { return m_rds.piCode(); }
+    std::uint8_t rdsCountryCode() const noexcept { return m_rds.countryCode(); }
+    std::uint8_t rdsProgramCoverage() const noexcept { return m_rds.programCoverage(); }
+    std::uint8_t rdsProgramReferenceNumber() const noexcept
+    { return m_rds.programReferenceNumber(); }
+    std::string rdsCallsign() const { return m_rds.callsign(); }
+    std::string rdsProgramType() const { return m_rds.programTypeName(); }
+    RdsRegion rdsRegion() const noexcept { return m_rds.region(); }
+    bool rdsTrafficProgram() const noexcept { return m_rds.trafficProgram(); }
+    bool rdsTrafficAnnouncement() const noexcept { return m_rds.trafficAnnouncement(); }
+    std::string rdsAlternateFrequencies() const { return m_rds.alternateFrequencies(); }
+    std::string rdsProgramService() const { return m_rds.programService(); }
+    std::string rdsRadioText() const { return m_rds.radioText(); }
 
     /// Il notch automatico sta davvero lavorando.
     ///
@@ -144,9 +187,23 @@ public:
     std::size_t lastBasebandFrames() const noexcept { return m_lastBasebandFrames; }
 
 private:
+    bool configureForMode();
+    /// Notch manuale, notch automatico e riduzione di rumore, nell'ordine in
+    /// cui devono agire. Sono tre righe ripetute in due rami della catena
+    /// audio: raccoglierle qui evita che uno dei due resti indietro.
+    void applyAudioFilters(float *audio, std::size_t count) noexcept;
+
     void redesignFilter();
     void computeFilterEdges(double &loHz, double &hiHz) const;
     double tuningOffsetHz() const;
+    float processAudioLowpass(float sample) noexcept;
+    std::size_t resampleAudio(const float *input, std::size_t count, float *output) noexcept;
+    std::size_t processInternal(const Complex *iq, std::size_t n,
+                                float *monoOut, float *stereoOut) noexcept;
+    float processDeemphasis(float sample, float &state) noexcept;
+    std::size_t resampleAudioStereo(const float *inputInterleaved,
+                                    std::size_t count,
+                                    float *outputInterleaved) noexcept;
 
     ChannelSettings m_settings;
 
@@ -158,22 +215,51 @@ private:
     NotchFilter m_notch;
     LmsFilter m_anf;
     LmsFilter m_nr;
+    AudioHighPass m_audioHighPassLeft;
+    AudioHighPass m_audioHighPassRight;
 
     std::vector<Complex> m_mixed;
     std::vector<Complex> m_decimated;
     std::vector<Complex> m_filtered;
     std::vector<Complex> m_filterTaps;
+    std::vector<float> m_demodulated;
+    std::vector<float> m_audioFilterTaps;
+    std::vector<float> m_audioFilterDelay;
+    std::vector<float> m_resampleBuffer;
+    std::vector<float> m_stereoAudio;
+    std::vector<float> m_stereoAudioFilterDelay;
+    std::vector<float> m_stereoResampleBuffer;
+
+    BroadcastFmStereo m_broadcastFmStereo;
+    CtcssDetector m_ctcss;
+    FmIfNoiseReducer m_fmIfNoiseReducer;
+    RdsDecoder m_rds;
 
     double m_deviceRate = 0.0;
     double m_channelRate = 0.0;
     double m_audioRate = 48000.0;
+    double m_resampleStep = 1.0;
+    double m_resamplePosition = 0.0;
+    double m_stereoResamplePosition = 0.0;
     float m_signalLevelDb = -160.0f;
-    float m_noiseFloorDb = -160.0f;
-    float m_floorRiseRate = 0.0f;   ///< quanto il fondo può risalire, per blocco
     bool m_squelchClosed = false;
     float m_squelchGain = 0.0f;   ///< apertura corrente, 0..1, per non scattare
+    float m_deemphasisLeft = 0.0f;
+    float m_deemphasisRight = 0.0f;
     std::size_t m_lastBasebandFrames = 0;
+    std::size_t m_audioFilterPosition = 0;
+    std::size_t m_stereoAudioFilterPosition = 0;
+    bool m_squelchOpen = true;
+    bool m_wideFm = false;
+    bool m_resampleAudio = false;
     bool m_configured = false;
+    float m_noiseFloorDb = -160.0f;
+    float m_snrDb = 0.0f;
+    float m_audioPower = 0.0f;
+    float m_audioLevelDb = -160.0f;
+    bool m_noiseFloorInitialized = false;
+
+    void updateAudioMeter(float sample) noexcept;
 };
 
 } // namespace dsdr::dsp

@@ -156,6 +156,19 @@ ApplicationWindow {
 
             // Registrazione IQ: compare solo se la sorgente la consente.
             DsdrButton {
+                visible: Session.connected && Session.audio.active
+                text: Session.audioRecorder.recording
+                      ? qsTr("■ WAV") : qsTr("● WAV")
+                checkable: true
+                checked: Session.audioRecorder.recording
+                danger: Session.audioRecorder.recording
+                implicitWidth: 76
+                enabled: Session.connected && Session.audio.active
+                onToggled: Session.toggleAudioRecording()
+            }
+
+            // Registrazione IQ: compare solo se la sorgente la consente.
+            DsdrButton {
                 visible: Session.capabilities.supportsRecording
                 text: Session.recorder.recording
                       ? qsTr("■ %1").arg(Qt.formatTime(new Date(Session.recorder.durationMs), "mm:ss"))
@@ -281,6 +294,26 @@ ApplicationWindow {
                 font.pixelSize: Theme.fontSmall
                 font.family: Theme.monoFamily
                 color: Theme.textDisabled
+            }
+
+            Text {
+                visible: Session.iqModuleNames.length > 0
+                text: qsTr("moduli IQ %1").arg(Session.iqModuleNames.join(", "))
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textDisabled
+                elide: Text.ElideRight
+            }
+
+            Text {
+                visible: Session.iqModuleCatalog.length > 0
+                text: qsTr("catalogo IQ %1")
+                      .arg(Session.iqModuleCatalog.map(m => m.name).join(", "))
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textDisabled
+                elide: Text.ElideRight
+                HoverHandler { id: moduleHover }
+                ToolTip.visible: moduleHover.hovered
+                ToolTip.text: Session.iqModuleCatalog.map(m => m.path).join("\n")
             }
 
             Text {

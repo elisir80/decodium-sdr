@@ -210,6 +210,9 @@ void SoapyWorker::openAndRun(const QString &deviceArgs, qint64 frequencyHz, doub
 {
     SoapySDR::Device *device = nullptr;
 
+    qCInfo(dsdrHal) << "soapy: apertura" << deviceArgs
+                    << "center" << frequencyHz << "sample rate richiesto" << sampleRate;
+
     // Nessuna eccezione attraversa il seam della HAL (§4.1): SoapySDR ne lancia
     // per qualunque cosa, e qui è dove si fermano.
     try {
@@ -246,6 +249,13 @@ void SoapyWorker::openAndRun(const QString &deviceArgs, qint64 frequencyHz, doub
     }
     // L'elenco antenne serve al ciclo per tradurre gli indici richiesti.
     m_antennas = profile.antennas;
+    qCInfo(dsdrHal) << "soapy: profilo" << profile.driver << profile.hardware
+                    << "label" << profile.label
+                    << "sample rates" << profile.sampleRates
+                    << "rate effettivo" << profile.preferredSampleRate
+                    << "frequenza" << profile.minFrequencyHz << profile.maxFrequencyHz
+                    << "gain" << profile.minGainDb << profile.maxGainDb
+                    << "AGC hardware" << profile.hasAgc;
     emit opened(profile);
 
     runLoop(device);
@@ -275,7 +285,12 @@ void SoapyWorker::runLoop(SoapySDR::Device *device)
     if (m_ring)
         m_ring->clear();
 
+    qCInfo(dsdrHal) << "soapy: stream attivo, formato CF32, blocco" << kReadFrames;
+
     int consecutiveErrors = 0;
+    quint64 totalFrames = 0;
+    quint64 totalDropped = 0;
+    qint64 lastStatsNs = 0;
 
     while (m_running.load(std::memory_order_acquire)) {
         applyPendingCommands(device);
@@ -292,6 +307,7 @@ void SoapyWorker::runLoop(SoapySDR::Device *device)
 
         if (read == SOAPY_SDR_OVERFLOW) {
             // Il device ha perso campioni perché non li abbiamo letti in tempo.
+            totalDropped += kReadFrames;
             emit samplesProduced(0, static_cast<quint32>(kReadFrames), 0);
             continue;
         }
@@ -311,6 +327,19 @@ void SoapyWorker::runLoop(SoapySDR::Device *device)
         const std::size_t floats = static_cast<std::size_t>(read) * 2;
         const std::size_t written = m_ring ? m_ring->write(m_buffer.data(), floats) : 0;
         const std::size_t writtenFrames = written / 2;
+        totalFrames += writtenFrames;
+        totalDropped += static_cast<std::size_t>(read) - writtenFrames;
+
+        const qint64 nowNs = m_clock.nsecsElapsed();
+        if (nowNs - lastStatsNs >= 1'000'000'000) {
+            const double seconds = static_cast<double>(nowNs - lastStatsNs) / 1e9;
+            qCDebug(dsdrHal) << "soapy: flusso" << (totalFrames / seconds) << "IQ/s"
+                             << "scarti" << totalDropped
+                             << "ring" << (m_ring ? m_ring->available() : 0) << "float";
+            totalFrames = 0;
+            totalDropped = 0;
+            lastStatsNs = nowNs;
+        }
 
         emit samplesProduced(static_cast<quint32>(writtenFrames),
                              static_cast<quint32>(static_cast<std::size_t>(read) - writtenFrames),

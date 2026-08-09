@@ -23,8 +23,20 @@ struct ChannelEntry
     QString label;
     QColor color;
     float signalDb = -140.0f;
+    float noiseFloorDb = -140.0f;
+    float snrDb = 0.0f;
+    float audioLevelDb = -140.0f;
     float agcGainDb = 0.0f;
-    float noiseFloorDb = -140.0f;   ///< fondo stimato nella banda del canale
+    bool rdsSynced = false;
+    QString rdsPi;
+    int rdsCountryCode = -1;
+    int rdsProgramCoverage = -1;
+    int rdsReferenceNumber = -1;
+    QString rdsCallsign;
+    QString rdsProgramType;
+    QString rdsAlternateFrequencies;
+    QString rdsProgramService;
+    QString rdsRadioText;
 };
 
 class ChannelModel : public QAbstractListModel
@@ -45,19 +57,46 @@ public:
         PassbandShiftRole,
         AgcModeRole,
         AgcThresholdRole,
+        AgcAttackRole,
+        AgcDecayRole,
+        AmCarrierAgcRole,
         VolumeRole,
         MutedRole,
-        SquelchEnabledRole,
-        SquelchThresholdRole,
         NrEnabledRole,
         AnfEnabledRole,
         NotchEnabledRole,
         NotchFrequencyRole,
         NotchWidthRole,
+        AudioHighPassEnabledRole,
+        AudioHighPassHzRole,
+        FmStereoRole,
+        FmAudioLowPassRole,
+        FmDeemphasisRole,
+        FmRdsRole,
+        RdsAutomaticAfRole,
+        RdsRegionRole,
+        RdsSyncedRole,
+        RdsPiRole,
+        RdsCountryCodeRole,
+        RdsProgramCoverageRole,
+        RdsReferenceNumberRole,
+        RdsCallsignRole,
+        RdsProgramTypeRole,
+        RdsAlternateFrequenciesRole,
+        RdsProgramServiceRole,
+        RdsRadioTextRole,
+        SquelchEnabledRole,
+        SquelchThresholdRole,
+        CtcssEnabledRole,
+        CtcssDecodeOnlyRole,
+        CtcssToneRole,
+        FmIfNoiseReductionEnabledRole,
+        FmIfNoiseReductionPresetRole,
         SignalDbRole,
-        AgcGainDbRole,
         NoiseFloorDbRole,
         SnrDbRole,
+        AudioLevelDbRole,
+        AgcGainDbRole,
         ColorRole,
         LabelRole,
     };
@@ -85,7 +124,13 @@ public:
     /// Notifica il cambio di un'entry già modificata in place.
     void entryChanged(int row, const QList<int> &roles = {});
 
-    void updateMeters(ChannelId id, float signalDb, float agcGainDb, float noiseFloorDb);
+    void updateMeters(ChannelId id, float signalDb, float noiseFloorDb,
+                      float snrDb, float audioLevelDb, float agcGainDb);
+    void updateRds(ChannelId id, bool synced, const QString &pi,
+                   int countryCode, int programCoverage, int referenceNumber,
+                   const QString &callsign,
+                   const QString &programType, const QString &alternateFrequencies,
+                   const QString &programService, const QString &radioText);
 
     /// Colore successivo della palette dei canali (stile slice).
     QColor nextColor() const;

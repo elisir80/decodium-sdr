@@ -2,6 +2,8 @@
 #include "core/DspEngine.h"
 
 #include <QLoggingCategory>
+#include <QFileInfo>
+#include <QLibrary>
 
 #include <algorithm>
 #include <cmath>
@@ -14,9 +16,10 @@ using dsp::Complex;
 
 namespace {
 
-/// ~1.3 s di audio a 48 kHz: assorbe una pausa lunga della scheda audio senza
+/// ~1.3 s di audio stereo a 48 kHz: assorbe una pausa lunga della scheda audio senza
 /// far crescere la latenza percepita, che resta governata dal buffer del sink.
-constexpr std::size_t kAudioRingFloats = 1 << 16;
+constexpr std::size_t kAudioRingFloats = 1 << 17;
+constexpr std::size_t kAudioChannels = 2;
 
 /// Quanti campioni IQ si elaborano per giro. Coincide con il blocco massimo
 /// dei ChannelProcessor: nessuna suddivisione ulteriore, nessuna allocazione.
@@ -65,11 +68,22 @@ DspEngine::DspEngine(QObject *parent)
 {
     m_interleaved.resize(kProcessBlock * 2);
     m_iq.resize(kProcessBlock);
-    m_mix.resize(kProcessBlock);
+    m_mix.resize(kProcessBlock * kAudioChannels);
+    m_moduleIq.resize(kProcessBlock * 2);
     m_uptime.start();
 }
 
-DspEngine::~DspEngine() = default;
+struct DspEngine::LoadedIqModule
+{
+    std::unique_ptr<QLibrary> library;
+    dsdr_iq_module_v1 *module = nullptr;
+    QString path;
+};
+
+DspEngine::~DspEngine()
+{
+    unloadIqModules();
+}
 
 void DspEngine::setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz)
 {
@@ -166,6 +180,74 @@ void DspEngine::setRecorder(IqRecorder *recorder)
     m_recorder.store(recorder, std::memory_order_release);
 }
 
+void DspEngine::setAudioRecorder(IqRecorder *recorder)
+{
+    m_audioRecorder.store(recorder, std::memory_order_release);
+}
+
+bool DspEngine::loadIqModule(const QString &path)
+{
+    const QString absolutePath = QFileInfo(path).absoluteFilePath();
+    if (path.isEmpty() || !QFileInfo::exists(absolutePath)) {
+        qCWarning(dsdrDsp) << "modulo IQ non trovato:" << path;
+        return false;
+    }
+
+    auto library = std::make_unique<QLibrary>(absolutePath);
+    if (!library->load()) {
+        qCWarning(dsdrDsp) << "caricamento modulo IQ fallito:" << absolutePath
+                           << library->errorString();
+        return false;
+    }
+
+    const auto creator = reinterpret_cast<dsdr_create_iq_module_v1_fn>(
+        library->resolve("dsdr_create_iq_module_v1"));
+    if (!creator) {
+        qCWarning(dsdrDsp) << "modulo IQ senza dsdr_create_iq_module_v1:" << absolutePath;
+        library->unload();
+        return false;
+    }
+
+    dsdr_iq_module_v1 *module = creator();
+    if (!module || module->abi_version != DSDR_IQ_MODULE_ABI_VERSION
+        || !module->process_iq || !module->name || !*module->name) {
+        qCWarning(dsdrDsp) << "ABI modulo IQ non valido:" << absolutePath;
+        if (module && module->destroy)
+            module->destroy(module->user);
+        library->unload();
+        return false;
+    }
+
+    auto loaded = std::make_unique<LoadedIqModule>();
+    loaded->library = std::move(library);
+    loaded->module = module;
+    loaded->path = absolutePath;
+    qCInfo(dsdrDsp) << "modulo IQ caricato:" << module->name << absolutePath;
+    m_iqModules.push_back(std::move(loaded));
+    return true;
+}
+
+void DspEngine::unloadIqModules()
+{
+    for (auto it = m_iqModules.rbegin(); it != m_iqModules.rend(); ++it) {
+        if ((*it)->module && (*it)->module->destroy)
+            (*it)->module->destroy((*it)->module->user);
+        if ((*it)->library)
+            (*it)->library->unload();
+    }
+    m_iqModules.clear();
+}
+
+QStringList DspEngine::iqModuleNames() const
+{
+    QStringList result;
+    for (const auto &loaded : m_iqModules) {
+        if (loaded && loaded->module && loaded->module->name)
+            result.append(QString::fromUtf8(loaded->module->name));
+    }
+    return result;
+}
+
 void DspEngine::setFftSize(int size)
 {
     if (size < 256 || (size & (size - 1)) != 0) {
@@ -187,12 +269,18 @@ void DspEngine::reconfigure()
     m_analyzer.setOverlap(0.5f);
 
     m_spectrum->configure(m_fftSize, m_activeRate, m_centerHz.load(std::memory_order_acquire));
+    const std::size_t expectedAudioFrames = static_cast<std::size_t>(std::ceil(
+        static_cast<double>(kProcessBlock) * kInternalAudioRate / m_activeRate)) + 8;
+    m_mix.assign(expectedAudioFrames * kAudioChannels,
+                 0.0f);
 
     for (auto &[id, channel] : m_channels) {
         Q_UNUSED(id)
         channel.processor->configure(m_activeRate, kInternalAudioRate);
         channel.processor->applySettings(channel.settings);
-        channel.audio.assign(channel.processor->maxAudioFrames(kProcessBlock), 0.0f);
+        channel.audio.assign(channel.processor->maxAudioFrames(kProcessBlock)
+                                 * kAudioChannels,
+                             0.0f);
     }
 
     // La memoria di scorrimento si alloca qui, dove si conosce il ritmo di
@@ -208,6 +296,10 @@ void DspEngine::reconfigure()
 
     m_audioRing->clear();
     m_needsReconfigure.store(false, std::memory_order_release);
+    m_lastStatsNs = m_uptime.nsecsElapsed();
+    m_statsIqFrames = 0;
+    m_statsAudioFrames = 0;
+    m_statsBlocks = 0;
 
     qCInfo(dsdrDsp) << "DSP riconfigurato:" << m_activeRate << "Hz, FFT" << m_fftSize
                     << "canali:" << m_channels.size()
@@ -226,7 +318,9 @@ void DspEngine::addChannel(ChannelId id, const dsp::ChannelSettings &settings)
     if (m_activeRate > 0.0) {
         channel.processor->configure(m_activeRate, kInternalAudioRate);
         channel.processor->applySettings(settings);
-        channel.audio.assign(channel.processor->maxAudioFrames(kProcessBlock), 0.0f);
+        channel.audio.assign(channel.processor->maxAudioFrames(kProcessBlock)
+                                 * kAudioChannels,
+                             0.0f);
     }
 
     m_channels.emplace(id, std::move(channel));
@@ -238,9 +332,29 @@ void DspEngine::updateChannel(ChannelId id, const dsp::ChannelSettings &settings
     if (it == m_channels.end())
         return;
 
+    const bool tuningChanged = settings.offsetHz != it->second.settings.offsetHz
+        || settings.mode != it->second.settings.mode
+        || settings.fmRds != it->second.settings.fmRds
+        || settings.rdsRegion != it->second.settings.rdsRegion;
     it->second.settings = settings;
-    if (m_activeRate > 0.0)
+    if (tuningChanged) {
+        it->second.lastRdsSynced = false;
+        it->second.lastRdsPi.clear();
+        it->second.lastRdsCountryCode = -1;
+        it->second.lastRdsProgramCoverage = -1;
+        it->second.lastRdsReferenceNumber = -1;
+        it->second.lastRdsCallsign.clear();
+        it->second.lastRdsProgramType.clear();
+        it->second.lastRdsAlternateFrequencies.clear();
+        it->second.lastRdsProgramService.clear();
+        it->second.lastRdsRadioText.clear();
+    }
+    if (m_activeRate > 0.0) {
         it->second.processor->applySettings(settings);
+        it->second.audio.assign(it->second.processor->maxAudioFrames(kProcessBlock)
+                                   * kAudioChannels,
+                               0.0f);
+    }
 }
 
 void DspEngine::removeChannel(ChannelId id)
@@ -282,9 +396,6 @@ void DspEngine::processAvailable()
         m_replayDelayFrames.store(0, std::memory_order_release);
     }
 
-    const int decimation =
-        std::max(1, static_cast<int>(std::lround(m_activeRate / kInternalAudioRate)));
-
     while (true) {
         const std::size_t availableFrames = source->available() / 2;
         if (availableFrames == 0)
@@ -295,6 +406,9 @@ void DspEngine::processAvailable()
         const std::size_t count = got / 2;
         if (count == 0)
             break;
+
+        m_statsIqFrames += count;
+        ++m_statsBlocks;
 
         // Tap di registrazione prima di qualunque elaborazione: su disco
         // finisce ciò che la radio ha consegnato, non ciò che il DSP ne ha
@@ -378,11 +492,16 @@ void DspEngine::processAvailable()
             m_spectrum->publish(m_analyzer.magnitudesDb().data());
 
         // ── Ramo audio ──────────────────────────────────────────────────
-        const std::size_t audioFrames = toProcess / static_cast<std::size_t>(decimation);
-        if (audioFrames == 0)
+        // `toProcess` e non `count`: durante il riascolto i campioni sono
+        // quelli ripescati dalla memoria, e possono essere meno di quelli
+        // appena arrivati.
+        const std::size_t audioCapacity = static_cast<std::size_t>(std::ceil(
+            static_cast<double>(toProcess) * kInternalAudioRate / m_activeRate));
+        if (audioCapacity == 0)
             continue;
 
-        std::fill_n(m_mix.begin(), audioFrames, 0.0f);
+        std::fill_n(m_mix.begin(), audioCapacity * kAudioChannels, 0.0f);
+        std::size_t audioFrames = 0;
         bool hasAudio = false;
 
         for (auto &[channelId, channel] : m_channels) {
@@ -390,32 +509,166 @@ void DspEngine::processAvailable()
                 continue;
 
             const std::size_t produced =
-                channel.processor->process(m_iq.data(), toProcess, channel.audio.data());
-            const std::size_t usable = std::min(produced, audioFrames);
-            for (std::size_t i = 0; i < usable; ++i)
+                channel.processor->processStereo(m_iq.data(), toProcess,
+                                                 channel.audio.data());
+            const std::size_t usable = std::min(produced, audioCapacity);
+            for (std::size_t i = 0; i < usable * kAudioChannels; ++i)
                 m_mix[i] += channel.audio[i];
+            audioFrames = std::max(audioFrames, usable);
             hasAudio = hasAudio || usable > 0;
+
+            if (!m_iqModules.empty() && channel.processor->lastBasebandFrames() > 0) {
+                const std::size_t moduleFrames = std::min(
+                    channel.processor->lastBasebandFrames(), kProcessBlock);
+                const Complex *baseband = channel.processor->lastBaseband();
+                for (std::size_t i = 0; i < moduleFrames; ++i) {
+                    m_moduleIq[i * 2] = baseband[i].real();
+                    m_moduleIq[i * 2 + 1] = baseband[i].imag();
+                }
+                for (const auto &loaded : m_iqModules) {
+                    if (loaded && loaded->module && loaded->module->process_iq) {
+                        loaded->module->process_iq(
+                            loaded->module->user, channelId, m_moduleIq.data(),
+                            moduleFrames, channel.processor->channelRate(),
+                            m_centerHz.load(std::memory_order_acquire),
+                            channel.settings.offsetHz);
+                    }
+                }
+            }
 
             const qint64 now = m_uptime.nsecsElapsed();
             if (now - channel.lastMeterNs >= kMeterIntervalNs) {
                 channel.lastMeterNs = now;
                 emit metersUpdated(channelId,
                                    channel.processor->signalLevelDb(),
-                                   channel.processor->agcGainDb(),
-                                   channel.processor->noiseFloorDb());
+                                   channel.processor->noiseFloorDb(),
+                                   channel.processor->snrDb(),
+                                   channel.processor->audioLevelDb(),
+                                   channel.processor->agcGainDb());
+            }
+
+            if (channel.settings.mode == DemodMode::Fm && channel.settings.fmRds
+                && now - channel.lastRdsNs >= 250'000'000) {
+                channel.lastRdsNs = now;
+                const bool synced = channel.processor->rdsSynced();
+                const QString pi = synced
+                    ? QStringLiteral("%1").arg(channel.processor->rdsPiCode(), 4, 16,
+                                                QChar('0')).toUpper()
+                    : QString();
+                const int countryCode = synced
+                    ? static_cast<int>(channel.processor->rdsCountryCode()) : -1;
+                const int programCoverage = synced
+                    ? static_cast<int>(channel.processor->rdsProgramCoverage()) : -1;
+                const int referenceNumber = synced
+                    ? static_cast<int>(channel.processor->rdsProgramReferenceNumber()) : -1;
+                const QString callsign = synced
+                    ? QString::fromStdString(channel.processor->rdsCallsign()) : QString();
+                const QString pty = synced
+                    ? QString::fromStdString(channel.processor->rdsProgramType())
+                    : QString();
+                const QString af = synced
+                    ? QString::fromStdString(channel.processor->rdsAlternateFrequencies())
+                    : QString();
+                const QString ps = QString::fromStdString(
+                    channel.processor->rdsProgramService());
+                const QString text = QString::fromStdString(
+                    channel.processor->rdsRadioText());
+                if (synced != channel.lastRdsSynced || pi != channel.lastRdsPi
+                    || countryCode != channel.lastRdsCountryCode
+                    || programCoverage != channel.lastRdsProgramCoverage
+                    || referenceNumber != channel.lastRdsReferenceNumber
+                    || callsign != channel.lastRdsCallsign
+                    || pty != channel.lastRdsProgramType
+                    || af != channel.lastRdsAlternateFrequencies
+                    || ps != channel.lastRdsProgramService
+                    || text != channel.lastRdsRadioText) {
+                    channel.lastRdsSynced = synced;
+                    channel.lastRdsPi = pi;
+                    channel.lastRdsCountryCode = countryCode;
+                    channel.lastRdsProgramCoverage = programCoverage;
+                    channel.lastRdsReferenceNumber = referenceNumber;
+                    channel.lastRdsCallsign = callsign;
+                    channel.lastRdsProgramType = pty;
+                    channel.lastRdsAlternateFrequencies = af;
+                    channel.lastRdsProgramService = ps;
+                    channel.lastRdsRadioText = text;
+                    emit rdsUpdated(channelId, synced, pi, countryCode, programCoverage,
+                                    referenceNumber, callsign, pty, af, ps, text);
+                }
             }
         }
 
+        // Se non c'è ancora un canale pronto, manteniamo l'uscita silenziosa
+        // con la capacità temporale attesa. Con almeno un canale, invece,
+        // scriviamo solo i campioni realmente prodotti: il ricampionatore
+        // conserva la frazione residua fra un blocco e l'altro.
+        if (!hasAudio)
+            audioFrames = audioCapacity;
+
+        m_statsAudioFrames += audioFrames;
+
         if (hasAudio) {
-            for (std::size_t i = 0; i < audioFrames; ++i)
+            for (std::size_t i = 0; i < audioFrames * kAudioChannels; ++i)
                 m_mix[i] = std::clamp(m_mix[i], -1.0f, 1.0f);
         }
 
         // Se il consumatore audio è in ritardo scartiamo il campione più
         // vecchio: meglio un micro-salto che una latenza che cresce senza fine.
-        if (m_audioRing->space() < audioFrames)
-            m_audioRing->discard(audioFrames - m_audioRing->space());
-        m_audioRing->write(m_mix.data(), audioFrames);
+        const std::size_t audioSamples = audioFrames * kAudioChannels;
+        if (IqRecorder *recorder = m_audioRecorder.load(std::memory_order_acquire))
+            recorder->feed(m_mix.data(), audioSamples);
+        if (m_audioRing->space() < audioSamples)
+            m_audioRing->discard(audioSamples - m_audioRing->space());
+        m_audioRing->write(m_mix.data(), audioSamples);
+
+        const qint64 now = m_uptime.nsecsElapsed();
+        if (now - m_lastStatsNs >= 1'000'000'000) {
+            const double seconds = static_cast<double>(now - m_lastStatsNs) / 1e9;
+            qCDebug(dsdrDsp) << "flusso DSP:"
+                             << (m_statsIqFrames / seconds) << "IQ/s"
+                             << (m_statsAudioFrames / seconds) << "audio/s"
+                             << "blocchi" << m_statsBlocks
+                             << "ring audio" << (m_audioRing->available() / kAudioChannels)
+                             << "stereo frames";
+            for (const auto &[id, channel] : m_channels) {
+                if (channel.processor)
+                    qCDebug(dsdrDsp) << "  canale" << id
+                                     << "RF" << channel.processor->signalLevelDb() << "dBFS"
+                                     << "noise floor" << channel.processor->noiseFloorDb() << "dBFS"
+                                     << "SNR" << channel.processor->snrDb() << "dB"
+                                     << "audio" << channel.processor->audioLevelDb() << "dBFS"
+                                     << "AGC gain" << channel.processor->agcGainDb() << "dB";
+                if (channel.processor && channel.settings.ctcssEnabled)
+                    qCDebug(dsdrDsp) << "    CTCSS"
+                                     << channel.processor->ctcssLevelDb() << "dB"
+                                     << (channel.processor->ctcssDetected() ? "detected" : "not detected");
+                if (channel.processor && channel.settings.fmIfNoiseReductionEnabled)
+                    qCDebug(dsdrDsp) << "    FM IF noise reduction preset"
+                                     << channel.settings.fmIfNoiseReductionPreset;
+                if (channel.processor && channel.settings.mode == DemodMode::Fm
+                    && channel.settings.fmRds)
+                    qCDebug(dsdrDsp) << "    RDS"
+                                     << (channel.processor->rdsSynced() ? "sync" : "no sync")
+                                     << "PI" << channel.processor->rdsPiCode()
+                                     << "country" << channel.processor->rdsCountryCode()
+                                     << "coverage" << channel.processor->rdsProgramCoverage()
+                                     << "ref" << channel.processor->rdsProgramReferenceNumber()
+                                     << "callsign" << QString::fromStdString(
+                                            channel.processor->rdsCallsign())
+                                     << "PTY" << QString::fromStdString(
+                                            channel.processor->rdsProgramType())
+                                     << "AF" << QString::fromStdString(
+                                            channel.processor->rdsAlternateFrequencies())
+                                     << "PS" << QString::fromStdString(
+                                            channel.processor->rdsProgramService())
+                                     << "RadioText" << QString::fromStdString(
+                                            channel.processor->rdsRadioText());
+            }
+            m_lastStatsNs = now;
+            m_statsIqFrames = 0;
+            m_statsAudioFrames = 0;
+            m_statsBlocks = 0;
+        }
     }
 
     // Il centro può essere cambiato mentre eravamo dentro il ciclo: la

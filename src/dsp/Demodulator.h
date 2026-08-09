@@ -35,6 +35,8 @@ public:
 
     /// Deviazione usata per normalizzare l'uscita FM.
     void setFmDeviation(double hz);
+    /// AGC lento della portante AM, distinto dall'AGC audio del canale.
+    void setAmCarrierAgc(bool enabled);
 
     void reset() noexcept;
 
@@ -58,6 +60,8 @@ private:
     DcBlocker m_dcBlocker;
     Complex m_previous{0.0f, 0.0f};
     float m_fmScale = 1.0f;
+    bool m_amCarrierAgc = false;
+    float m_amCarrierLevel = 0.0f;
 
     // PLL della AM sincrona.
     double m_samPhase = 0.0;

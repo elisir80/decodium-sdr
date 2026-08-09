@@ -213,7 +213,9 @@ bool IqRecorderWriter::writeSidecar()
     // Il WAV sa dire quanti campioni al secondo, non su quale frequenza:
     // senza il sidecar una registrazione IQ è un file di numeri senza senso.
     QJsonObject root;
-    root.insert(QStringLiteral("format"), QStringLiteral("decodium-iq/1"));
+    root.insert(QStringLiteral("format"), m_info.audio
+                ? QStringLiteral("decodium-audio/1")
+                : QStringLiteral("decodium-iq/1"));
     root.insert(QStringLiteral("centerFrequencyHz"), m_info.centerFrequencyHz);
     root.insert(QStringLiteral("sampleRate"), m_info.sampleRate);
     root.insert(QStringLiteral("sampleFormat"), QStringLiteral("float32"));

@@ -22,7 +22,7 @@ l'unica che può essere provata in CI. Le regole che presidia:
 
 | Regola | Perché |
 |---|---|
-| TX solo con canali TX reali | Dichiararlo per un RTL-SDR farebbe comparire un PTT che non può funzionare |
+| TX solo con percorso TX reale | I canali TX fisici vengono rilevati, ma il worker attuale è RX-only e non mostra PTT simulati |
 | `coherentRx` solo con più canali hardware | Un canale solo non è coerente con nessuno |
 | Copertura dalla frequenza del device | Altrimenti la UI promette bande che il ferro non ha |
 | Default ≤ 2,4 MS/s | Oltre, molti device perdono campioni su USB e l'utente lo legge come un difetto del programma |
@@ -79,14 +79,14 @@ Il backend si esclude dalla build con `-DDSDR_BACKEND_SOAPY=OFF`.
 
 ## Limiti noti
 
-- **La trasmissione è dichiarata ma non implementata**: `setPtt()` registra lo
-  stato senza che esca alcuna portante. La catena TX arriva in Fase 2; il
-  backend dichiara `Ptt` perché la capability descrive l'hardware, non lo stato
-  del nostro codice — ma finché la Fase 2 non è chiusa il pulsante non fa nulla
-  di utile.
-- **Guadagno e antenna non sono ancora in UI**: si impostano solo via comando
-  nativo. Serve il caricamento dei pannelli backend-specifici dichiarati in
-  `capabilities().nativePanels`.
+- **La trasmissione fisica è ancora backlog**: il profilo rileva i canali TX
+  Soapy, ma finché non esistono uno stream TX e una sorgente audio/IQ di
+  trasmissione il backend espone volutamente `TxSupport::None`. Così il PTT
+  non compare e rigctl rifiuta `T 1` invece di registrare uno stato che non
+  produce alcuna portante.
+- **Guadagno, AGC hardware e antenna sono nel pannello Soapy della UI**; il
+  pannello viene caricato tramite `capabilities().nativePanels` e usa i
+  comandi nativi solo all’interno del seam backend-specifico.
 - **Un solo canale hardware usato** (`channel 0`), anche su device che ne hanno
   di più. La coerenza fra canali viene dichiarata ma non ancora sfruttata:
   arriverà con QuadBeam in Fase 3.

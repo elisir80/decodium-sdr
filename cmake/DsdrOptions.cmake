@@ -15,6 +15,13 @@ option(DSDR_BACKEND_TCI     "Backend TCI / SunSDR (RF-05)"                      
 option(DSDR_BACKEND_KIWI    "Backend KiwiSDR (RF-06)"                           OFF)
 option(DSDR_BACKEND_HAMLIB  "Bridge CAT Hamlib (RF-08)"                         OFF)
 
+# Il DMG macOS deve portarsi dietro il modulo SoapyRTLSDR: senza di esso
+# SoapySDR è presente ma una RTL-SDR V4 non può comparire né funzionare su una
+# macchina che non ha Homebrew. È attivo di default su macOS e può essere
+# disattivato per una build tecnica con `-DDSDR_BUNDLE_RTLSDR=OFF`.
+option(DSDR_BUNDLE_RTLSDR   "Includi SoapyRTLSDR e runtime nel bundle macOS"   ${APPLE})
+option(DSDR_QT_CMAKE_DEPLOY "Usa il deploy Qt generato da CMake in install"  ON)
+
 # §6.1: il path CPU dello spettro è una decisione di build, non un fallback runtime.
 option(DSDR_GPU_SPECTRUM    "Spettro/waterfall su GPU via QQuickRhiItem"         ON)
 
@@ -142,6 +149,7 @@ function(dsdr_print_configuration)
     message(STATUS "  Qt              : ${Qt6_VERSION}")
     message(STATUS "  Build type      : ${CMAKE_BUILD_TYPE}")
     message(STATUS "  Spettro GPU     : ${DSDR_GPU_SPECTRUM}")
+    message(STATUS "  Bundle RTL-SDR  : ${DSDR_BUNDLE_RTLSDR}")
     message(STATUS "  Backend attivi  :")
     foreach(be DEMO SOAPY NETTCP COLIBRI IQFILE HPSDR DLINK FLEX TCI KIWI HAMLIB)
         if(DSDR_BACKEND_${be})

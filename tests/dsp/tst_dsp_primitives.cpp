@@ -2,6 +2,7 @@
 // Vettori noti per le primitive DSP (RNF-07).
 
 #include "dsp/Agc.h"
+#include "dsp/AudioHighPass.h"
 #include "dsp/ComplexFir.h"
 #include "dsp/FirDesign.h"
 #include "dsp/Nco.h"
@@ -56,6 +57,7 @@ private slots:
     void lowpassHasUnityDcGain();
     void lowpassIsSymmetric();
     void tapEstimateGrowsWithNarrowerTransition();
+    void audioHighPassRejectsLowFrequency();
 
     // ── NCO ──────────────────────────────────────────────────────────────
 
@@ -70,6 +72,7 @@ private slots:
 
     void agcConvergesTowardsTargetLevel();
     void agcThresholdStopsNoiseAmplification();
+    void agcAcceptsCustomTiming();
 };
 
 void TestDspPrimitives::ringRoundTrip()
@@ -143,6 +146,39 @@ void TestDspPrimitives::tapEstimateGrowsWithNarrowerTransition()
     QVERIFY(narrow > wide);
     QVERIFY(wide >= 15);
     QCOMPARE(narrow % 2, 1);
+}
+
+void TestDspPrimitives::audioHighPassRejectsLowFrequency()
+{
+    constexpr double kRate = 48000.0;
+    constexpr std::size_t kSamples = 48000;
+    AudioHighPass filter;
+    QVERIFY(filter.configure(kRate, 300.0, 100.0));
+
+    std::vector<float> low(kSamples);
+    for (std::size_t i = 0; i < kSamples; ++i)
+        low[i] = std::sin(kTwoPi * 100.0 * static_cast<double>(i) / kRate);
+    for (float &sample : low)
+        sample = filter.process(sample);
+
+    double lowPower = 0.0;
+    for (std::size_t i = 4096; i < low.size(); ++i)
+        lowPower += static_cast<double>(low[i]) * low[i];
+
+    filter.reset();
+    std::vector<float> high(kSamples);
+    for (std::size_t i = 0; i < kSamples; ++i)
+        high[i] = std::sin(kTwoPi * 1000.0 * static_cast<double>(i) / kRate);
+    for (float &sample : high)
+        sample = filter.process(sample);
+
+    double highPower = 0.0;
+    for (std::size_t i = 4096; i < high.size(); ++i)
+        highPower += static_cast<double>(high[i]) * high[i];
+
+    QVERIFY2(highPower > lowPower * 20.0,
+             qPrintable(QStringLiteral("potenza 100 Hz=%1, 1 kHz=%2")
+                            .arg(lowPower).arg(highPower)));
 }
 
 void TestDspPrimitives::ncoTranslatesToneToBaseband()
@@ -259,6 +295,20 @@ void TestDspPrimitives::agcThresholdStopsNoiseAmplification()
              qPrintable(QStringLiteral("gated=%1 dB, open=%2 dB")
                             .arg(gated.gainDb())
                             .arg(open.gainDb())));
+}
+
+void TestDspPrimitives::agcAcceptsCustomTiming()
+{
+    Agc agc;
+    agc.configure(48000.0);
+    agc.setMode(AgcMode::Medium);
+    agc.setAttackMs(35.0);
+    agc.setDecayMs(875.0);
+    QCOMPARE(agc.attackMs(), 35.0);
+    QCOMPARE(agc.decayMs(), 875.0);
+
+    agc.setDecayMs(0.0);
+    QCOMPARE(agc.decayMs(), 0.0);
 }
 
 QTEST_APPLESS_MAIN(TestDspPrimitives)

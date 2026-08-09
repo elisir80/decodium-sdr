@@ -16,12 +16,11 @@ BackendCapabilities capabilitiesFrom(const SoapyDeviceProfile &profile)
     caps.coherentRx = profile.rxChannels > 1;
     caps.maxPanadapters = 4;
 
-    // TX solo se il device lo ha davvero: dichiararlo per un RTL-SDR farebbe
-    // comparire un PTT che non può funzionare.
-    if (profile.txChannels > 0)
-        caps.tx = profile.fullDuplex ? TxSupport::FullDuplex : TxSupport::Ptt;
-    else
-        caps.tx = TxSupport::None;
+    // Il profilo rileva anche i canali TX fisici, ma questo backend espone
+    // oggi soltanto il percorso RX: il worker non ha ancora uno stream TX e
+    // un PTT visibile senza portante sarebbe più pericoloso di una capability
+    // incompleta. La capability tornerà Ptt/FullDuplex insieme al percorso TX.
+    caps.tx = TxSupport::None;
 
     caps.demod = DspLocation::Client;
     caps.spectrum = DspLocation::Client;

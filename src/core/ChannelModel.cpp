@@ -47,19 +47,46 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case PassbandShiftRole: return entry.settings.passbandShiftHz;
     case AgcModeRole:      return static_cast<int>(entry.settings.agcMode);
     case AgcThresholdRole: return entry.settings.agcThresholdDb;
+    case AgcAttackRole:    return entry.settings.agcAttackMs;
+    case AgcDecayRole:     return entry.settings.agcDecayMs;
+    case AmCarrierAgcRole: return entry.settings.amCarrierAgc;
     case VolumeRole:       return entry.settings.volume;
     case MutedRole:        return entry.settings.muted;
-    case SquelchEnabledRole:   return entry.settings.squelchEnabled;
-    case SquelchThresholdRole: return entry.settings.squelchThresholdDb;
     case NrEnabledRole:        return entry.settings.nrEnabled;
     case AnfEnabledRole:       return entry.settings.anfEnabled;
     case NotchEnabledRole:     return entry.settings.notchEnabled;
     case NotchFrequencyRole:   return entry.settings.notchFrequencyHz;
     case NotchWidthRole:       return entry.settings.notchWidthHz;
+    case AudioHighPassEnabledRole: return entry.settings.audioHighPassEnabled;
+    case AudioHighPassHzRole: return entry.settings.audioHighPassHz;
+    case FmStereoRole:     return entry.settings.fmStereo;
+    case FmAudioLowPassRole: return entry.settings.fmAudioLowPass;
+    case FmDeemphasisRole: return entry.settings.fmDeemphasisUs;
+    case FmRdsRole:        return entry.settings.fmRds;
+    case RdsAutomaticAfRole: return entry.settings.rdsAutomaticAf;
+    case RdsRegionRole:    return static_cast<int>(entry.settings.rdsRegion);
+    case RdsSyncedRole:    return entry.rdsSynced;
+    case RdsPiRole:        return entry.rdsPi;
+    case RdsCountryCodeRole: return entry.rdsCountryCode;
+    case RdsProgramCoverageRole: return entry.rdsProgramCoverage;
+    case RdsReferenceNumberRole: return entry.rdsReferenceNumber;
+    case RdsCallsignRole: return entry.rdsCallsign;
+    case RdsProgramTypeRole: return entry.rdsProgramType;
+    case RdsAlternateFrequenciesRole: return entry.rdsAlternateFrequencies;
+    case RdsProgramServiceRole: return entry.rdsProgramService;
+    case RdsRadioTextRole: return entry.rdsRadioText;
+    case SquelchEnabledRole:   return entry.settings.squelchEnabled;
+    case SquelchThresholdRole: return entry.settings.squelchThresholdDb;
+    case CtcssEnabledRole:     return entry.settings.ctcssEnabled;
+    case CtcssDecodeOnlyRole:  return entry.settings.ctcssDecodeOnly;
+    case CtcssToneRole:        return entry.settings.ctcssToneHz;
+    case FmIfNoiseReductionEnabledRole: return entry.settings.fmIfNoiseReductionEnabled;
+    case FmIfNoiseReductionPresetRole: return entry.settings.fmIfNoiseReductionPreset;
     case SignalDbRole:     return entry.signalDb;
-    case AgcGainDbRole:    return entry.agcGainDb;
     case NoiseFloorDbRole: return entry.noiseFloorDb;
-    case SnrDbRole:        return entry.signalDb - entry.noiseFloorDb;
+    case SnrDbRole:       return entry.snrDb;
+    case AudioLevelDbRole: return entry.audioLevelDb;
+    case AgcGainDbRole:    return entry.agcGainDb;
     case ColorRole:        return entry.color;
     case LabelRole:        return entry.label;
     default:               return QVariant();
@@ -79,19 +106,46 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {PassbandShiftRole, "passbandShiftHz"},
         {AgcModeRole, "agcMode"},
         {AgcThresholdRole, "agcThresholdDb"},
+        {AgcAttackRole, "agcAttackMs"},
+        {AgcDecayRole, "agcDecayMs"},
+        {AmCarrierAgcRole, "amCarrierAgc"},
         {VolumeRole, "volume"},
         {MutedRole, "muted"},
-        {SquelchEnabledRole, "squelchEnabled"},
-        {SquelchThresholdRole, "squelchThresholdDb"},
         {NrEnabledRole, "nrEnabled"},
         {AnfEnabledRole, "anfEnabled"},
         {NotchEnabledRole, "notchEnabled"},
         {NotchFrequencyRole, "notchFrequencyHz"},
         {NotchWidthRole, "notchWidthHz"},
+        {AudioHighPassEnabledRole, "audioHighPassEnabled"},
+        {AudioHighPassHzRole, "audioHighPassHz"},
+        {FmStereoRole, "fmStereo"},
+        {FmAudioLowPassRole, "fmAudioLowPass"},
+        {FmDeemphasisRole, "fmDeemphasisUs"},
+        {FmRdsRole, "fmRds"},
+        {RdsAutomaticAfRole, "rdsAutomaticAf"},
+        {RdsRegionRole, "rdsRegion"},
+        {RdsSyncedRole, "rdsSynced"},
+        {RdsPiRole, "rdsPi"},
+        {RdsCountryCodeRole, "rdsCountryCode"},
+        {RdsProgramCoverageRole, "rdsProgramCoverage"},
+        {RdsReferenceNumberRole, "rdsReferenceNumber"},
+        {RdsCallsignRole, "rdsCallsign"},
+        {RdsProgramTypeRole, "rdsProgramType"},
+        {RdsAlternateFrequenciesRole, "rdsAlternateFrequencies"},
+        {RdsProgramServiceRole, "rdsProgramService"},
+        {RdsRadioTextRole, "rdsRadioText"},
+        {SquelchEnabledRole, "squelchEnabled"},
+        {SquelchThresholdRole, "squelchThresholdDb"},
+        {CtcssEnabledRole, "ctcssEnabled"},
+        {CtcssDecodeOnlyRole, "ctcssDecodeOnly"},
+        {CtcssToneRole, "ctcssToneHz"},
+        {FmIfNoiseReductionEnabledRole, "fmIfNoiseReductionEnabled"},
+        {FmIfNoiseReductionPresetRole, "fmIfNoiseReductionPreset"},
         {SignalDbRole, "signalDb"},
-        {AgcGainDbRole, "agcGainDb"},
         {NoiseFloorDbRole, "noiseFloorDb"},
         {SnrDbRole, "snrDb"},
+        {AudioLevelDbRole, "audioLevelDb"},
+        {AgcGainDbRole, "agcGainDb"},
         {ColorRole, "channelColor"},
         {LabelRole, "label"},
     };
@@ -181,8 +235,8 @@ void ChannelModel::entryChanged(int row, const QList<int> &roles)
     emit dataChanged(idx, idx, roles);
 }
 
-void ChannelModel::updateMeters(ChannelId id, float signalDb, float agcGainDb,
-                                float noiseFloorDb)
+void ChannelModel::updateMeters(ChannelId id, float signalDb, float noiseFloorDb,
+                                float snrDb, float audioLevelDb, float agcGainDb)
 {
     const int row = indexOf(id);
     if (row < 0)
@@ -190,9 +244,51 @@ void ChannelModel::updateMeters(ChannelId id, float signalDb, float agcGainDb,
 
     ChannelEntry &entry = m_entries[static_cast<std::size_t>(row)];
     entry.signalDb = signalDb;
-    entry.agcGainDb = agcGainDb;
     entry.noiseFloorDb = noiseFloorDb;
-    entryChanged(row, {SignalDbRole, AgcGainDbRole, NoiseFloorDbRole, SnrDbRole});
+    entry.snrDb = snrDb;
+    entry.audioLevelDb = audioLevelDb;
+    entry.agcGainDb = agcGainDb;
+    entryChanged(row, {SignalDbRole, NoiseFloorDbRole, SnrDbRole,
+                       AudioLevelDbRole, AgcGainDbRole});
+}
+
+void ChannelModel::updateRds(ChannelId id, bool synced, const QString &pi,
+                             int countryCode, int programCoverage, int referenceNumber,
+                             const QString &callsign,
+                             const QString &programType, const QString &alternateFrequencies,
+                             const QString &programService, const QString &radioText)
+{
+    const int row = indexOf(id);
+    if (row < 0)
+        return;
+
+    ChannelEntry &entry = m_entries[static_cast<std::size_t>(row)];
+    if (entry.rdsSynced == synced && entry.rdsPi == pi
+        && entry.rdsCountryCode == countryCode
+        && entry.rdsProgramCoverage == programCoverage
+        && entry.rdsReferenceNumber == referenceNumber
+        && entry.rdsCallsign == callsign
+        && entry.rdsProgramType == programType
+        && entry.rdsAlternateFrequencies == alternateFrequencies
+        && entry.rdsProgramService == programService
+        && entry.rdsRadioText == radioText)
+        return;
+
+    entry.rdsSynced = synced;
+    entry.rdsPi = pi;
+    entry.rdsCountryCode = countryCode;
+    entry.rdsProgramCoverage = programCoverage;
+    entry.rdsReferenceNumber = referenceNumber;
+    entry.rdsCallsign = callsign;
+    entry.rdsProgramType = programType;
+    entry.rdsAlternateFrequencies = alternateFrequencies;
+    entry.rdsProgramService = programService;
+    entry.rdsRadioText = radioText;
+    entryChanged(row, {RdsSyncedRole, RdsPiRole, RdsCountryCodeRole,
+                       RdsProgramCoverageRole, RdsReferenceNumberRole,
+                       RdsCallsignRole, RdsProgramTypeRole,
+                       RdsAlternateFrequenciesRole, RdsProgramServiceRole,
+                       RdsRadioTextRole});
 }
 
 QColor ChannelModel::nextColor() const
