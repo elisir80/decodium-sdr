@@ -48,6 +48,8 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case AgcThresholdRole: return entry.settings.agcThresholdDb;
     case VolumeRole:       return entry.settings.volume;
     case MutedRole:        return entry.settings.muted;
+    case SquelchEnabledRole:   return entry.settings.squelchEnabled;
+    case SquelchThresholdRole: return entry.settings.squelchThresholdDb;
     case SignalDbRole:     return entry.signalDb;
     case AgcGainDbRole:    return entry.agcGainDb;
     case ColorRole:        return entry.color;
@@ -70,6 +72,8 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {AgcThresholdRole, "agcThresholdDb"},
         {VolumeRole, "volume"},
         {MutedRole, "muted"},
+        {SquelchEnabledRole, "squelchEnabled"},
+        {SquelchThresholdRole, "squelchThresholdDb"},
         {SignalDbRole, "signalDb"},
         {AgcGainDbRole, "agcGainDb"},
         {ColorRole, "channelColor"},

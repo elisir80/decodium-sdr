@@ -32,6 +32,13 @@ struct ChannelSettings
     float volume = 0.7f;
     bool muted = false;
 
+    /// Soglia dello squelch, in dB sul livello del canale. Sotto, l'audio
+    /// tace. `squelchEnabled` a falso lo spegne del tutto: una soglia
+    /// bassissima non è la stessa cosa, perché il rumore impulsivo la
+    /// supererebbe comunque e l'audio si aprirebbe a scatti.
+    bool squelchEnabled = false;
+    double squelchThresholdDb = -95.0;
+
     bool operator==(const ChannelSettings &o) const noexcept;
     bool operator!=(const ChannelSettings &o) const noexcept { return !(*this == o); }
 };
@@ -68,6 +75,11 @@ public:
 
     /// Livello del segnale filtrato, pre-AGC, in dBFS (S-meter).
     float signalLevelDb() const noexcept { return m_signalLevelDb; }
+
+    /// Vero quando lo squelch sta tenendo chiuso l'audio. Serve alla UI per
+    /// dirlo: uno squelch chiuso e una radio guasta suonano identici, e senza
+    /// una spia si finisce a cercare il problema nel cavo dell'antenna.
+    bool squelchClosed() const noexcept { return m_squelchClosed; }
     float agcGainDb() const noexcept { return m_agc.gainDb(); }
 
     /// Banda base del canale dopo il filtro: è il tap da cui deriva il flusso
@@ -97,6 +109,8 @@ private:
     double m_channelRate = 0.0;
     double m_audioRate = 48000.0;
     float m_signalLevelDb = -160.0f;
+    bool m_squelchClosed = false;
+    float m_squelchGain = 0.0f;   ///< apertura corrente, 0..1, per non scattare
     std::size_t m_lastBasebandFrames = 0;
     bool m_configured = false;
 };

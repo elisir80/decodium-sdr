@@ -45,6 +45,8 @@ public:
         AgcThresholdRole,
         VolumeRole,
         MutedRole,
+        SquelchEnabledRole,
+        SquelchThresholdRole,
         SignalDbRole,
         AgcGainDbRole,
         ColorRole,

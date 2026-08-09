@@ -70,6 +70,7 @@ private slots:
     void channelDemodulatesUsbTone();
     void channelRejectsOppositeSideband();
     void channelSurvivesSettingsChangeMidStream();
+    void squelchSilencesWeakSignalsAndOpensOnStrongOnes();
 };
 
 void TestDspChain::factorizationPrefersLargeStagesFirst()
@@ -263,6 +264,61 @@ void TestDspChain::channelSurvivesSettingsChangeMidStream()
     QVERIFY(produced > 0);
     for (std::size_t i = 0; i < produced; ++i)
         QVERIFY(std::isfinite(audio[i]));
+}
+
+void TestDspChain::squelchSilencesWeakSignalsAndOpensOnStrongOnes()
+{
+    constexpr double kDeviceRate = 192000.0;
+    constexpr double kChannelOffset = 20000.0;
+    constexpr double kAudioTone = 1000.0;
+
+    const auto rms = [](const float *data, std::size_t n) {
+        double sum = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+            sum += double(data[i]) * data[i];
+        return std::sqrt(sum / double(n));
+    };
+
+    const auto runWith = [&](float amplitude, bool squelchOn) {
+        const std::vector<Complex> input =
+            makeTone(kChannelOffset + kAudioTone, kDeviceRate, 192000, amplitude);
+
+        ChannelProcessor channel;
+        channel.configure(kDeviceRate, 48000.0);
+
+        ChannelSettings settings;
+        settings.offsetHz = kChannelOffset;
+        settings.mode = DemodMode::Usb;
+        settings.agcMode = AgcMode::Off;   // con l'AGC il debole verrebbe tirato su
+        settings.volume = 1.0f;
+        settings.squelchEnabled = squelchOn;
+        settings.squelchThresholdDb = -40.0;
+        channel.applySettings(settings);
+
+        std::vector<float> audio(channel.maxAudioFrames(input.size()));
+        const std::size_t produced = channel.process(input.data(), input.size(), audio.data());
+
+        // Si misura sulla coda: l'apertura e la chiusura sono graduali per non
+        // farsi sentire come un colpo secco, e all'inizio il guadagno sta
+        // ancora salendo.
+        const std::size_t skip = produced / 2;
+        return rms(audio.data() + skip, produced - skip);
+    };
+
+    // Un segnale ben sopra la soglia passa, con o senza squelch.
+    const double strongOpen = runWith(0.30f, true);
+    const double strongOff = runWith(0.30f, false);
+    QVERIFY2(strongOpen > 0.5 * strongOff,
+             qPrintable(QStringLiteral("lo squelch strozza un segnale forte: %1 contro %2")
+                            .arg(strongOpen).arg(strongOff)));
+
+    // Uno molto sotto la soglia viene tacitato — ed è il punto dell'esercizio.
+    const double weakSquelched = runWith(0.0005f, true);
+    const double weakOpen = runWith(0.0005f, false);
+    QVERIFY2(weakOpen > 0.0, "il segnale debole non arriva nemmeno senza squelch");
+    QVERIFY2(weakSquelched < weakOpen * 0.05,
+             qPrintable(QStringLiteral("lo squelch non chiude: %1 contro %2 a squelch spento")
+                            .arg(weakSquelched).arg(weakOpen)));
 }
 
 QTEST_APPLESS_MAIN(TestDspChain)

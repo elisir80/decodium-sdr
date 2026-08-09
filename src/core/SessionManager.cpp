@@ -512,6 +512,20 @@ void SessionManager::setChannelMuted(int row, bool muted)
     pushChannelToEngine(row);
 }
 
+void SessionManager::setChannelSquelch(int row, bool enabled, double thresholdDb)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+    entry->settings.squelchEnabled = enabled;
+    // Gli estremi sono quelli del cursore: fuori di lì la soglia o non chiude
+    // mai o non apre mai, e in entrambi i casi il comando sembra rotto.
+    entry->settings.squelchThresholdDb = std::clamp(thresholdDb, -140.0, -20.0);
+    m_channels.entryChanged(row, {ChannelModel::SquelchEnabledRole,
+                                  ChannelModel::SquelchThresholdRole});
+    pushChannelToEngine(row);
+}
+
 void SessionManager::setPtt(bool transmit)
 {
     if (!m_backend)

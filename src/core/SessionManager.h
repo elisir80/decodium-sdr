@@ -100,6 +100,7 @@ public:
     Q_INVOKABLE void setChannelAgcThreshold(int row, double thresholdDb);
     Q_INVOKABLE void setChannelVolume(int row, double volume);
     Q_INVOKABLE void setChannelMuted(int row, bool muted);
+    Q_INVOKABLE void setChannelSquelch(int row, bool enabled, double thresholdDb);
 
     Q_INVOKABLE void setPtt(bool transmit);
 

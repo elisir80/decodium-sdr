@@ -104,6 +104,8 @@ Rectangle {
                 required property real agcThresholdDb
                 required property real volume
                 required property bool muted
+                required property bool squelchEnabled
+                required property real squelchThresholdDb
                 required property real signalDb
                 required property real agcGainDb
 
@@ -268,6 +270,49 @@ Rectangle {
                             color: Theme.textSecondary
                             Layout.preferredWidth: 52
                         }
+                    }
+
+                    // ── Squelch ──────────────────────────────────────────
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacingTight
+
+                        DsdrButton {
+                            text: qsTr("SQL")
+                            implicitWidth: 52
+                            implicitHeight: 24
+                            checkable: true
+                            checked: entry.squelchEnabled
+                            onToggled: Session.setChannelSquelch(
+                                           entry.index, checked, entry.squelchThresholdDb)
+                        }
+
+                        DsdrSlider {
+                            Layout.fillWidth: true
+                            from: -140; to: -20
+                            enabled: entry.squelchEnabled
+                            value: entry.squelchThresholdDb
+                            onMoved: Session.setChannelSquelch(entry.index, true, value)
+                        }
+
+                        Text {
+                            text: Math.round(entry.squelchThresholdDb) + " dB"
+                            font.pixelSize: Theme.fontSmall
+                            font.family: Theme.monoFamily
+                            color: entry.squelchEnabled ? Theme.textPrimary : Theme.textDisabled
+                            Layout.preferredWidth: 52
+                        }
+                    }
+
+                    // Uno squelch chiuso e una radio guasta suonano identici:
+                    // senza una spia si finisce a cercare il problema nel cavo
+                    // dell'antenna.
+                    Text {
+                        visible: entry.squelchEnabled
+                                 && entry.signalDb < entry.squelchThresholdDb
+                        text: qsTr("squelch chiuso")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.warning
                     }
 
                     // I due cursori del passabanda se ne sono andati: i

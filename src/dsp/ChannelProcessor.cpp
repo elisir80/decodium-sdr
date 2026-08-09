@@ -7,12 +7,29 @@
 
 namespace dsdr::dsp {
 
+namespace {
+
+/// Quanto deve risalire il segnale sopra la soglia perché lo squelch riapra.
+/// Senza, un segnale che respira attorno alla soglia — il caso normale in HF —
+/// farebbe sbattere l'audio più volte al secondo.
+constexpr float kSquelchHysteresisDb = 3.0f;
+
+/// Velocità di apertura e chiusura, per campione a 48 kHz. L'apertura è
+/// rapida — non si vuole perdere la prima sillaba — e la chiusura più lenta,
+/// così una pausa nel parlato non taglia la frase in due.
+constexpr float kSquelchAttack = 0.02f;
+constexpr float kSquelchRelease = 0.002f;
+
+} // namespace
+
 bool ChannelSettings::operator==(const ChannelSettings &o) const noexcept
 {
     return offsetHz == o.offsetHz && mode == o.mode && filterLowHz == o.filterLowHz
         && filterHighHz == o.filterHighHz && agcMode == o.agcMode
         && agcThresholdDb == o.agcThresholdDb && agcMaxGainDb == o.agcMaxGainDb
-        && cwPitchHz == o.cwPitchHz && volume == o.volume && muted == o.muted;
+        && cwPitchHz == o.cwPitchHz && volume == o.volume && muted == o.muted
+        && squelchEnabled == o.squelchEnabled
+        && squelchThresholdDb == o.squelchThresholdDb;
 }
 
 ChannelProcessor::ChannelProcessor()
@@ -202,9 +219,35 @@ std::size_t ChannelProcessor::process(const Complex *iq, std::size_t n, float *o
         m_demod.process(m_filtered.data(), decimated, audio);
         m_agc.process(audio, decimated);
 
+        // ── Squelch ──────────────────────────────────────────────────────
+        //
+        // Si decide sul livello *prima* dell'AGC: dopo, il guadagno
+        // automatico ha già tirato su il rumore fino al livello del parlato,
+        // e ogni soglia diventerebbe una monetina lanciata.
+        //
+        // L'isteresi non è un lusso. Con una soglia secca, un segnale che
+        // respira attorno a quel valore — cioè il caso normale in HF — apre e
+        // chiude l'audio più volte al secondo, ed è più faticoso da ascoltare
+        // del rumore che si voleva togliere.
+        if (m_settings.squelchEnabled) {
+            const auto threshold = static_cast<float>(m_settings.squelchThresholdDb);
+            const float open = m_squelchClosed ? threshold + kSquelchHysteresisDb
+                                               : threshold;
+            m_squelchClosed = m_signalLevelDb < open;
+        } else {
+            m_squelchClosed = false;
+        }
+
+        // L'apertura non salta da zero a uno: un gradino sul campione
+        // successivo si sente come un colpo secco in cuffia.
+        const float target = m_squelchClosed ? 0.0f : 1.0f;
+        const float step = (target > m_squelchGain) ? kSquelchAttack : kSquelchRelease;
+
         const float gain = m_settings.muted ? 0.0f : m_settings.volume;
-        for (std::size_t i = 0; i < decimated; ++i)
-            audio[i] = std::clamp(audio[i] * gain, -1.0f, 1.0f);
+        for (std::size_t i = 0; i < decimated; ++i) {
+            m_squelchGain += (target - m_squelchGain) * step;
+            audio[i] = std::clamp(audio[i] * gain * m_squelchGain, -1.0f, 1.0f);
+        }
 
         produced += decimated;
         offset += chunk;
