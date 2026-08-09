@@ -57,10 +57,19 @@ void Demodulator::setFmDeviation(double hz)
     m_fmScale = static_cast<float>(m_sampleRate / (kTwoPi * m_fmDeviation));
 }
 
+void Demodulator::setAmCarrierAgc(bool enabled)
+{
+    if (m_amCarrierAgc == enabled)
+        return;
+    m_amCarrierAgc = enabled;
+    m_amCarrierLevel = 0.0f;
+}
+
 void Demodulator::reset() noexcept
 {
     m_dcBlocker.reset();
     m_previous = Complex(0.0f, 0.0f);
+    m_amCarrierLevel = 0.0f;
     m_samPhase = 0.0;
     m_samFrequency = 0.0;
 }
@@ -74,6 +83,7 @@ std::size_t Demodulator::process(const Complex *in, std::size_t n, float *out) n
     case DemodMode::Cwr:
     case DemodMode::DigU:
     case DemodMode::DigL:
+    case DemodMode::Dsb:
         return demodSsb(in, n, out);
     case DemodMode::Am:
         return demodAm(in, n, out);
@@ -101,7 +111,16 @@ std::size_t Demodulator::demodSsb(const Complex *in, std::size_t n, float *out) 
 std::size_t Demodulator::demodAm(const Complex *in, std::size_t n, float *out) noexcept
 {
     for (std::size_t i = 0; i < n; ++i) {
-        const float envelope = std::sqrt(magnitudeSquared(in[i]));
+        float envelope = std::sqrt(magnitudeSquared(in[i]));
+        if (m_amCarrierAgc) {
+            // La portante varia lentamente con fading e gain RF; la
+            // modulazione audio è molto più rapida e resta conservata.
+            m_amCarrierLevel += (envelope - m_amCarrierLevel) * 0.002f;
+            const float gain = std::clamp(0.5f
+                                              / std::max(m_amCarrierLevel, 1e-3f),
+                                          0.05f, 20.0f);
+            envelope *= gain;
+        }
         out[i] = m_dcBlocker.process(envelope);
     }
     return n;

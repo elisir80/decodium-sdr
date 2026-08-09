@@ -33,6 +33,31 @@ FFTW3 (single precision, fftw3f)
     Sito    : https://www.fftw.org
     Note    : "or later" rende la combinazione con GPL-3.0 lecita.
 
+RUNTIME REDISTRIBUITI NEL BUNDLE macOS
+--------------------------------------
+
+SoapySDR
+    Licenza : BSL-1.0 (Boost Software License 1.0)
+    Sito    : https://github.com/pothosware/SoapySDR
+    Note    : libreria dinamica usata dalla HAL per caricare i driver SDR.
+
+SoapyRTLSDR
+    Licenza : MIT
+    Sito    : https://github.com/pothosware/SoapyRTLSDR
+    Note    : modulo Soapy incluso nel DMG per rilevare e usare RTL-SDR V4.
+
+rtl-sdr / librtlsdr
+    Licenza : GPL-2.0-or-later
+    Sito    : https://osmocom.org/projects/rtl-sdr
+    Note    : runtime USB del ricevitore RTL-SDR; "or later" è compatibile
+              con GPL-3.0.
+
+libusb
+    Licenza : LGPL-2.1-or-later
+    Sito    : https://libusb.info/
+    Note    : accesso USB usato da librtlsdr; resta una libreria dinamica
+              sostituibile dall'utente.
+
 
 CODICE PROPRIO RIUSATO DA ALTRI PROGETTI
 -----------------------------------------

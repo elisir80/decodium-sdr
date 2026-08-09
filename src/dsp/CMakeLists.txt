@@ -29,6 +29,18 @@ add_library(dsdr_dsp STATIC
     Agc.cpp
     Demodulator.h
     Demodulator.cpp
+    AudioHighPass.h
+    AudioHighPass.cpp
+    BroadcastFmStereo.h
+    BroadcastFmStereo.cpp
+    RdsDecoder.h
+    RdsDecoder.cpp
+    CtcssDetector.h
+    CtcssDetector.cpp
+    NoiseBlanker.h
+    NoiseBlanker.cpp
+    FmIfNoiseReducer.h
+    FmIfNoiseReducer.cpp
     SpectrumAnalyzer.h
     SpectrumAnalyzer.cpp
     ChannelProcessor.h

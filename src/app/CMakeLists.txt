@@ -3,6 +3,7 @@
 # Il modulo è una libreria e non parte dell'eseguibile perché i test Qt Quick
 # devono poterlo importare senza tirarsi dietro main().
 
+set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/DecodiumSdr")
 qt_add_library(dsdr_qml STATIC)
 
 # I file QML stanno in qml/ per ordine, ma un tipo è visibile al modulo solo se
@@ -59,6 +60,12 @@ qt_add_qml_module(dsdr_qml
     # non è funzionante. Andrà riattivata se si passerà a un Qt statico.
     NO_IMPORT_SCAN
 )
+
+# Qt 6.11 validates that a QML module's generated output directory ends in its
+# URI path. Keeping the generated DecodiumSdr directory explicit also gives
+# the deploy script stable plugin paths on macOS.
+set_target_properties(dsdr_qml PROPERTIES
+    QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/DecodiumSdr")
 
 # §6.1: shader compilati con Qt Shader Tools, non a runtime.
 qt_add_shaders(dsdr_qml "dsdr_panadapter_shaders"
@@ -147,13 +154,94 @@ install(TARGETS dsdr_app
 # linkato, dove i plugin QML non sono ancora stati installati, e riempirebbe il
 # log di `install_name_tool: can't open file` senza far fallire nulla. Il
 # deploy che conta è quello dell'install, sul bundle completo.
-qt_generate_deploy_qml_app_script(
-    TARGET dsdr_app
-    OUTPUT_SCRIPT DSDR_DEPLOY_SCRIPT
-    NO_UNSUPPORTED_PLATFORM_ERROR
-    DEPLOY_USER_QML_MODULES_ON_UNSUPPORTED_PLATFORM
-)
-install(SCRIPT ${DSDR_DEPLOY_SCRIPT})
+if(DSDR_QT_CMAKE_DEPLOY)
+    qt_generate_deploy_qml_app_script(
+        TARGET dsdr_app
+        OUTPUT_SCRIPT DSDR_DEPLOY_SCRIPT
+        NO_UNSUPPORTED_PLATFORM_ERROR
+        DEPLOY_USER_QML_MODULES_ON_UNSUPPORTED_PLATFORM
+    )
+    install(SCRIPT ${DSDR_DEPLOY_SCRIPT})
+endif()
+
+# SoapySDR discovers hardware drivers through shared modules at runtime. Qt's
+# deploy tool can copy libSoapySDR because the application links it, but it
+# cannot know which Soapy modules the user wants. The macOS release explicitly
+# bundles the RTL-SDR module and its USB runtime so a downloaded DMG works
+# without Homebrew.
+if(APPLE AND DSDR_BACKEND_SOAPY AND DSDR_BUNDLE_RTLSDR)
+    find_program(DSDR_BREW_EXECUTABLE brew)
+    if(DSDR_BREW_EXECUTABLE)
+        execute_process(
+            COMMAND ${DSDR_BREW_EXECUTABLE} --prefix
+            OUTPUT_VARIABLE DSDR_BREW_PREFIX
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+    endif()
+    if(NOT DSDR_BREW_PREFIX)
+        set(DSDR_BREW_PREFIX "/opt/homebrew")
+    endif()
+
+    set(DSDR_MACOS_ROOTS "${DSDR_BREW_PREFIX}" "/opt/homebrew" "/usr/local")
+    list(REMOVE_DUPLICATES DSDR_MACOS_ROOTS)
+
+    set(DSDR_SOAPY_MODULE_PATHS)
+    set(DSDR_RTLSDR_LIBRARY_PATHS)
+    set(DSDR_LIBUSB_LIBRARY_PATHS)
+    foreach(dsdr_root IN LISTS DSDR_MACOS_ROOTS)
+        list(APPEND DSDR_SOAPY_MODULE_PATHS
+            "${dsdr_root}/lib/SoapySDR/modules0.8"
+            "${dsdr_root}/opt/soapyrtlsdr/lib/SoapySDR/modules0.8")
+        list(APPEND DSDR_RTLSDR_LIBRARY_PATHS
+            "${dsdr_root}/opt/librtlsdr/lib"
+            "${dsdr_root}/lib")
+        list(APPEND DSDR_LIBUSB_LIBRARY_PATHS
+            "${dsdr_root}/opt/libusb/lib"
+            "${dsdr_root}/lib")
+    endforeach()
+
+    find_file(DSDR_SOAPY_RTLSDR_MODULE
+        NAMES librtlsdrSupport.so
+        PATHS ${DSDR_SOAPY_MODULE_PATHS}
+        NO_DEFAULT_PATH)
+    find_file(DSDR_LIBRTLSDR_LIBRARY
+        NAMES librtlsdr.0.dylib
+        PATHS ${DSDR_RTLSDR_LIBRARY_PATHS}
+        NO_DEFAULT_PATH)
+    find_file(DSDR_LIBUSB_LIBRARY
+        NAMES libusb-1.0.0.dylib
+        PATHS ${DSDR_LIBUSB_LIBRARY_PATHS}
+        NO_DEFAULT_PATH)
+
+    if(NOT DSDR_SOAPY_RTLSDR_MODULE OR NOT DSDR_LIBRTLSDR_LIBRARY OR NOT DSDR_LIBUSB_LIBRARY)
+        message(FATAL_ERROR
+            "DSDR_BUNDLE_RTLSDR=ON ma il runtime RTL-SDR non è completo.\n"
+            "  macOS: brew install soapysdr soapyrtlsdr\n"
+            "  modulo: ${DSDR_SOAPY_RTLSDR_MODULE}\n"
+            "  librtlsdr: ${DSDR_LIBRTLSDR_LIBRARY}\n"
+            "  libusb: ${DSDR_LIBUSB_LIBRARY}")
+    endif()
+
+    get_filename_component(DSDR_RTLSDR_BASENAME "${DSDR_LIBRTLSDR_LIBRARY}" NAME)
+    get_filename_component(DSDR_LIBUSB_BASENAME "${DSDR_LIBUSB_LIBRARY}" NAME)
+    set(DSDR_RTLSDR_SOURCE_NAME
+        "${DSDR_BREW_PREFIX}/opt/librtlsdr/lib/${DSDR_RTLSDR_BASENAME}")
+    set(DSDR_SOAPY_SOURCE_NAME
+        "${DSDR_BREW_PREFIX}/opt/soapysdr/lib/libSoapySDR.0.8.dylib")
+    set(DSDR_LIBUSB_SOURCE_NAME
+        "${DSDR_BREW_PREFIX}/opt/libusb/lib/${DSDR_LIBUSB_BASENAME}")
+    set(DSDR_LOADER_PATH "@loader_path")
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/cmake/BundleMacOSSoapyRtlSdr.cmake.in"
+        "${CMAKE_BINARY_DIR}/BundleMacOSSoapyRtlSdr.cmake"
+        @ONLY)
+    # When Qt deployment is disabled, the release workflow runs this script
+    # after macdeployqt. macdeployqt must see a bundle without Soapy modules;
+    # otherwise it tries to scan the third-party plugin as if it were QML.
+    if(DSDR_QT_CMAKE_DEPLOY)
+        install(SCRIPT "${CMAKE_BINARY_DIR}/BundleMacOSSoapyRtlSdr.cmake")
+    endif()
+endif()
 
 # Il deploy di Qt porta con sé solo le librerie Qt. Restano fuori il runtime
 # del compilatore, FFTW e SoapySDR: senza, il pacchetto non parte su una

@@ -9,6 +9,7 @@ Item {
     required property real levelDb
     property real floorDb: -140
     property real ceilingDb: -20
+    property bool showSUnits: true
 
     implicitHeight: 26
 
@@ -17,6 +18,8 @@ Item {
 
     /// S9 convenzionalmente a metà scala; oltre si conta in dB "più".
     readonly property string readout: {
+        if (!showSUnits)
+            return qsTr("AF")
         const sUnits = fraction * 12
         if (sUnits <= 9)
             return "S" + Math.max(0, Math.round(sUnits))

@@ -23,10 +23,19 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Backend **nettcp**: rtl_tcp e SpyServer, con riconoscimento automatico | ✅ |
 | Backend **colibri**: ColibriNANO USB, 0,1–55 MHz | ✅ |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
+| Modi RX: USB, LSB, DSB, CW/CW-R, AM/SAM con carrier-AGC, Wide-FM stereo con low-pass, NFM con low-pass, DIGU/DIGL e IQ/RAW monitor | ✅ |
+| De-enfasi FM 0/22/50/75 µs, RDS PI/PS/RadioText/PTY/AF automatico, power squelch, CTCSS NFM mute/decode, noise blanker e IF noise reduction | ✅ |
+| High-pass audio FIR e tempi AGC regolabili per canale | ✅ |
+| Telemetria separata RF/fondo rumore/SNR/audio e log diagnostici verbosi | ✅ |
+| API C ABI per moduli IQ esterni, caricabili a runtime | ✅ |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |
 | Uscita audio a bassa latenza | ✅ |
 | Registrazione IQ (WAV float32 + sidecar JSON, RF64 oltre 4 GB) | ✅ |
+| Registrazione audio stereo del mix (WAV float32 + sidecar JSON) | ✅ |
+| Band-stack persistente e memorie di frequenza | ✅ |
+| Scanner di banda con soglia S-meter e risultati richiamabili | ✅ |
+| Server rigctl/Hamlib locale (`127.0.0.1:4532`) con sintonia, modi, AF e PTT capability-aware | ✅ |
 | i18n: pipeline a 14 lingue, italiano e inglese completi | ✅ |
 | Pannelli per i controlli specifici di ogni radio | ✅ |
 | Pacchetti AppImage, DMG e ZIP portable | ✅ |
@@ -40,11 +49,15 @@ li validerà senza che sia necessario scrivere un test in più.
 ### Usare hardware vero
 
 **Collegato via USB** — serve SoapySDR con il driver del proprio device
-(`soapysdr-module-rtlsdr`, `-airspy`, `-hackrf`…):
+(`SoapyRTLSDR` per RTL-SDR; su macOS il pacchetto Homebrew è
+`soapyrtlsdr`, oltre a `soapysdr`):
 
 ```sh
 ./build/bin/decodium-sdr --backend soapy
 ```
+
+Il DMG macOS ufficiale include già SoapyRTLSDR, `librtlsdr` e `libusb`: chi
+scarica l'applicazione non deve installare Homebrew per usare una RTL-SDR V4.
 
 **Su un'altra macchina**, via rtl_tcp:
 
@@ -66,6 +79,13 @@ FFTW3 in singola precisione.
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build
 ctest --test-dir build --output-on-failure
+```
+
+Su macOS, per usare una RTL-SDR V4 collegata via USB durante lo sviluppo,
+servono anche il modulo SoapyRTLSDR e il runtime USB:
+
+```sh
+brew install qt@6 fftw ninja soapysdr soapyrtlsdr
 ```
 
 Su MSYS2 (Windows):
@@ -101,6 +121,28 @@ cmake -S . -B build -DDSDR_BACKEND_SOAPY=ON -DDSDR_GPU_SPECTRUM=ON
 
 Opzioni diagnostiche: `--no-panadapter` stacca il rendering GPU dalla sorgente,
 utile per separare i costi fra DSP e scene graph.
+Per seguire tutto il percorso RTL-SDR → DSP → audio usare `--verbose`:
+
+```sh
+./build/bin/decodium-sdr --backend soapy --auto-connect --verbose
+```
+
+Il log mostra discovery, profilo RTL-SDR, frequenza e rate, modalità/filtro/AGC,
+decimazione, campioni IQ→audio, RF/fondo rumore/SNR/audio, RDS, scanner, rigctl
+e stato dell'uscita audio.
+
+Un modulo IQ esterno può ricevere il baseband filtrato di ogni canale tramite
+l'ABI documentata in [IqModuleApi.h](src/core/IqModuleApi.h):
+
+```sh
+./build/bin/decodium-sdr --backend soapy --auto-connect \
+  --iq-module /percorso/al/modulo.dylib
+```
+
+Il parametro `--iq-module` può essere ripetuto. Senza parametro, l'app cerca
+anche in `Contents/PlugIns/DecodiumSdr` del bundle macOS e in
+`QStandardPaths::AppLocalDataLocation/modules`. Il callback del modulo gira
+nel thread DSP e deve restare non bloccante.
 
 ### Comandi rapidi nell'interfaccia
 
@@ -119,6 +161,7 @@ la disponibilità.
 
 Documenti: [architettura](docs/architecture.md) ·
 [threading del DSP](docs/dsp-threading.md) ·
+[confronto con SDR++](docs/SDRPP_GAP_ANALYSIS.md) ·
 [principi non negoziabili](CONSTITUTION.md)
 
 ## Licenza

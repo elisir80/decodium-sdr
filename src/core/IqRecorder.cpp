@@ -46,6 +46,12 @@ QString IqRecorder::suggestedFileName(const IqRecordingInfo &info)
     const double mhz = info.centerFrequencyHz / 1e6;
 
     // Data prima della frequenza: così l'ordine alfabetico è anche cronologico.
+    if (info.audio) {
+        return QStringLiteral("%1_audio_%2kSps.wav")
+            .arg(when.toString(QStringLiteral("yyyyMMdd_HHmmss")))
+            .arg(info.sampleRate / 1000.0, 0, 'f', 0);
+    }
+
     return QStringLiteral("%1_%2MHz_%3kSps.wav")
         .arg(when.toString(QStringLiteral("yyyyMMdd_HHmmss")))
         .arg(mhz, 0, 'f', 3)
@@ -64,6 +70,7 @@ bool IqRecorder::start(const IqRecordingInfo &info, const QString &path)
     IqRecordingInfo effective = info;
     if (!effective.startedAt.isValid())
         effective.startedAt = QDateTime::currentDateTime();
+    m_audio.store(effective.audio, std::memory_order_release);
 
     m_currentFile = path.isEmpty()
         ? defaultDirectory() + QLatin1Char('/') + suggestedFileName(effective)
@@ -105,12 +112,26 @@ bool IqRecorder::start(const IqRecordingInfo &info, const QString &path)
     return true;
 }
 
+bool IqRecorder::startAudio(double sampleRate, qint64 centerFrequencyHz,
+                            const QString &deviceName, const QString &path)
+{
+    IqRecordingInfo info;
+    info.centerFrequencyHz = centerFrequencyHz;
+    info.sampleRate = sampleRate;
+    info.backendId = QStringLiteral("audio");
+    info.deviceName = deviceName;
+    info.startedAt = QDateTime::currentDateTime();
+    info.audio = true;
+    return start(info, path);
+}
+
 void IqRecorder::stop()
 {
     if (!isRecording() && !m_thread)
         return;
 
     m_recording.store(false, std::memory_order_release);
+    m_audio.store(false, std::memory_order_release);
 
     if (m_progressTimer)
         m_progressTimer->stop();

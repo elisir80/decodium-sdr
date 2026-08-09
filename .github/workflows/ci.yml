@@ -118,7 +118,7 @@ jobs:
         shell: bash
         run: |
           brew update
-          brew install qt@6 fftw ninja soapysdr
+          brew install qt@6 fftw ninja soapysdr soapyrtlsdr
           echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
 
       - name: Dipendenze (Windows/MSYS2)

@@ -325,8 +325,9 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
         openRtlTcp(host, port);
 }
 
-/// Emette il descrittore del frame. Comune ai due protocolli: cambia chi
-/// produce i campioni, non che cosa se ne dice ai consumatori.
+/// Emette il descrittore del frame nel thread del backend. Comune ai due
+/// protocolli: cambia chi produce i campioni, non che cosa se ne dice ai
+/// consumatori. I campioni restano nel ring SPSC.
 #define DSDR_CONNECT_SAMPLES(clientPtr, ClientType)                                    \
     connect(clientPtr, &ClientType::samplesProduced, this,                             \
             [this](quint32 frames, quint32 dropped, quint64 timestampNs) {             \
@@ -342,7 +343,7 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
                 frame.timestampNs = timestampNs;                                        \
                 emit iqFrameReady(frame);                                              \
             },                                                                          \
-            Qt::DirectConnection)
+            Qt::QueuedConnection)
 
 void NetTcpBackend::openRtlTcp(const QString &host, quint16 port)
 {

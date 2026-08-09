@@ -122,6 +122,9 @@ void SoapyBackend::startDiscovery()
             const QString driver = kwargValue(kwargs, "driver");
             const QString serial = kwargValue(kwargs, "serial");
             const QString label = kwargValue(kwargs, "label");
+            const QString manufacturer = kwargValue(kwargs, "manufacturer");
+            const QString product = kwargValue(kwargs, "product");
+            const QString tuner = kwargValue(kwargs, "tuner");
 
             // Il seriale è l'unico identificatore stabile fra un riavvio e
             // l'altro; senza, si ripiega sull'indice, che cambia se l'utente
@@ -133,11 +136,23 @@ void SoapyBackend::startDiscovery()
             device.displayName = label.isEmpty()
                 ? QStringLiteral("SoapySDR %1").arg(driver)
                 : label;
+            // SoapyRTLSDR reports the V4 as `product=Blog V4` but gives the
+            // generic RTL2832U label precedence. Keep both: the product is
+            // what the operator needs to recognise in a multi-radio list.
+            if (!product.isEmpty()
+                && !device.displayName.contains(product, Qt::CaseInsensitive)) {
+                device.displayName = product + QStringLiteral(" — ") + device.displayName;
+            }
             device.model = kwargValue(kwargs, "hardware");
+            if (device.model.isEmpty())
+                device.model = product;
             device.serial = serial;
             device.transport = QStringLiteral("soapy");
             device.extra.insert(QStringLiteral("args"), argsFromKwargs(kwargs));
             device.extra.insert(QStringLiteral("driver"), driver);
+            device.extra.insert(QStringLiteral("manufacturer"), manufacturer);
+            device.extra.insert(QStringLiteral("product"), product);
+            device.extra.insert(QStringLiteral("tuner"), tuner);
 
             emit deviceFound(device);
         }
@@ -183,6 +198,12 @@ void SoapyBackend::open(const DeviceDescriptor &device)
     m_thread->setObjectName(QStringLiteral("dsdr-soapy-ingest"));
     worker->moveToThread(m_thread);
     connect(m_thread, &QThread::finished, worker, &QObject::deleteLater);
+    // `openAndRun()` occupa il thread finché lo stream non è stato chiuso,
+    // quindi l'event loop non può ricevere un quit queued. Il segnale viene
+    // emesso dal worker alla fine della routine e deve fermare direttamente
+    // il QThread prima che il chiamante di close() lo attenda.
+    connect(worker, &SoapyWorker::finished, m_thread, &QThread::quit,
+            Qt::DirectConnection);
 
     connect(worker, &SoapyWorker::opened, this, &SoapyBackend::onDeviceOpened);
 
@@ -254,11 +275,15 @@ void SoapyBackend::close()
     if (m_thread) {
         if (m_worker)
             m_worker->requestStop();   // atomica: il ciclo esce da solo
+        m_thread->requestInterruption();
         m_thread->quit();
-        if (!m_thread->wait(3000)) {
+        // Un driver USB può impiegare più di un timeout di readStream per
+        // completare deactivateStream/closeStream. Attendere abbastanza evita
+        // di distruggere un QThread ancora vivo, che Qt considera fatale.
+        if (!m_thread->wait(10000)) {
             qCWarning(dsdrHal) << "soapy: il thread di ingest non si è fermato in tempo";
             m_thread->terminate();
-            m_thread->wait(1000);
+            m_thread->wait(5000);
         }
         delete m_thread;
         m_thread = nullptr;

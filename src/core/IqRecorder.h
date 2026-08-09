@@ -41,6 +41,7 @@ struct IqRecordingInfo
     QString antenna;
     QString operatorCall;
     QDateTime startedAt;
+    bool audio = false; ///< false = IQ del device, true = audio L/R
 };
 
 class IqRecorderWriter;
@@ -61,9 +62,12 @@ public:
     /// Avvia una registrazione. `path` vuoto genera un nome dalla data e
     /// dalla frequenza, nella cartella predefinita.
     bool start(const IqRecordingInfo &info, const QString &path = QString());
+    bool startAudio(double sampleRate, qint64 centerFrequencyHz,
+                    const QString &deviceName, const QString &path = QString());
     void stop();
 
     bool isRecording() const { return m_recording.load(std::memory_order_acquire); }
+    bool isAudio() const { return m_audio.load(std::memory_order_acquire); }
     QString currentFile() const { return m_currentFile; }
     qint64 bytesWritten() const;
     qint64 durationMs() const;
@@ -93,6 +97,7 @@ private:
 
     QString m_currentFile;
     std::atomic<bool> m_recording{false};
+    std::atomic<bool> m_audio{false};
     std::atomic<int> m_dropped{0};
 };
 

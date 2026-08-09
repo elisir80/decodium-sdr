@@ -51,10 +51,11 @@ struct SoapyDeviceProfile
 
 /// Traduce il profilo nelle capability della HAL.
 ///
-/// Le regole sono poche ma importanti: si dichiara TX solo se il device ha
-/// davvero canali in trasmissione (una chiavetta RTL non trasmette, un HackRF
-/// sì), e si dichiara `coherentRx` solo con più canali — che per SoapySDR
-/// significa più canali dello stesso device, quindi campionati insieme.
+/// Le regole sono poche ma importanti: il profilo rileva i canali TX fisici,
+/// ma la capability HAL li espone solo quando il worker ha anche un percorso
+/// TX realmente operativo; oggi Soapy è quindi RX-only. Si dichiara inoltre
+/// `coherentRx` solo con più canali dello stesso device, quindi campionati
+/// insieme.
 BackendCapabilities capabilitiesFrom(const SoapyDeviceProfile &profile);
 
 /// Numero massimo di canali RX logici offerti al DSP client.

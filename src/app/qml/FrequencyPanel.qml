@@ -8,6 +8,7 @@
 // Il bandstack è il comportamento che ogni operatore si aspetta: ogni banda
 // ricorda dove l'avevi lasciata, così tornarci non significa ripartire dal
 // bordo inferiore, che di solito è vuoto.
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -18,10 +19,16 @@ PanelFrame {
 
     title: qsTr("SINTONIA")
 
-    /// Dove si era rimasti su ogni banda. In memoria per ora: la persistenza
-    /// arriva con il SettingsStore, e allora questa mappa diventerà il suo
-    /// contenuto invece di sparire alla chiusura.
+    /// Dove si era rimasti su ogni banda, salvato fra un avvio e l'altro.
     property var bandStack: ({})
+    property var favorites: []
+
+    Settings {
+        id: frequencySettings
+        category: "frequency-manager"
+        property string bandStackJson: "{}"
+        property string favoritesJson: "[]"
+    }
 
     readonly property var currentBand: BandPlan.bandAt(Session.centerFrequency)
 
@@ -45,7 +52,38 @@ PanelFrame {
             bandStack[leaving.name] = Session.centerFrequency
 
         Session.centerFrequency = Math.round(hz)
+        persist()
         return true
+    }
+
+    function persist() {
+        frequencySettings.bandStackJson = JSON.stringify(bandStack)
+        frequencySettings.favoritesJson = JSON.stringify(favorites)
+    }
+
+    function favoriteKey(hz) {
+        return String(Math.round(hz))
+    }
+
+    function addFavorite() {
+        if (!Session.connected)
+            return
+        const hz = Math.round(Session.centerFrequency)
+        const key = favoriteKey(hz)
+        for (let i = 0; i < favorites.length; ++i) {
+            if (favorites[i].frequency === hz)
+                return
+        }
+        const next = favorites.slice()
+        next.push({ frequency: hz, label: (hz / 1e6).toFixed(6) + " MHz" })
+        favorites = next
+        persist()
+    }
+
+    function removeFavorite(hz) {
+        const next = favorites.filter(item => item.frequency !== hz)
+        favorites = next
+        persist()
     }
 
     function selectBand(band) {
@@ -55,6 +93,23 @@ PanelFrame {
             ? band.home
             : (bandStack[band.name] !== undefined ? bandStack[band.name] : band.home)
         goTo(target)
+    }
+
+    Component.onCompleted: {
+        try {
+            const savedBands = JSON.parse(frequencySettings.bandStackJson)
+            if (savedBands && typeof savedBands === "object")
+                bandStack = savedBands
+        } catch (error) {
+            bandStack = ({})
+        }
+        try {
+            const savedFavorites = JSON.parse(frequencySettings.favoritesJson)
+            if (Array.isArray(savedFavorites))
+                favorites = savedFavorites
+        } catch (error) {
+            favorites = []
+        }
     }
 
     // ── Bande ────────────────────────────────────────────────────────────
@@ -82,6 +137,56 @@ PanelFrame {
                 checked: root.currentBand && root.currentBand.name === modelData.name
 
                 onClicked: root.selectBand(modelData)
+            }
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacingTight
+
+        DsdrButton {
+            text: Session.scanning ? qsTr("■ Stop scanner") : qsTr("Scanner banda")
+            checkable: true
+            checked: Session.scanning
+            enabled: Session.connected && root.currentBand !== null
+            onClicked: {
+                if (Session.scanning) {
+                    Session.stopScan()
+                    return
+                }
+                const band = root.currentBand
+                const step = band.name === "FM 88–108" ? 100000
+                           : band.name === "6m" ? 25000 : 5000
+                Session.startScan(band.start, band.end, step, 350)
+            }
+        }
+
+        Text {
+            text: Session.scanResults.length > 0
+                  ? qsTr("%1 segnali").arg(Session.scanResults.length)
+                  : qsTr("soglia S-meter −75 dBFS")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textSecondary
+            Layout.fillWidth: true
+        }
+    }
+
+    Flow {
+        Layout.fillWidth: true
+        spacing: Theme.spacingTight
+        visible: Session.scanResults.length > 0
+
+        Repeater {
+            model: Session.scanResults
+
+            delegate: DsdrButton {
+                required property var modelData
+                text: (modelData.frequencyHz / 1e6).toFixed(6) + " MHz"
+                      + " (" + Math.round(modelData.signalDb) + " dB)"
+                implicitHeight: 22
+                onClicked: Session.setChannelFrequency(
+                               Session.channels.currentIndex, modelData.frequencyHz)
             }
         }
     }
@@ -138,6 +243,13 @@ PanelFrame {
             enabled: Session.connected && entry.text.trim().length > 0
             onClicked: entry.accepted()
         }
+
+        DsdrButton {
+            text: qsTr("★")
+            implicitWidth: 36
+            enabled: Session.connected
+            onClicked: root.addFavorite()
+        }
     }
 
     Text {
@@ -147,6 +259,45 @@ PanelFrame {
         font.pixelSize: Theme.fontSmall
         color: Theme.danger
         wrapMode: Text.WordWrap
+    }
+
+    // ── Frequenze memorizzate ───────────────────────────────────────────
+    RowLayout {
+        Layout.fillWidth: true
+        visible: root.favorites.length > 0
+
+        Text {
+            text: qsTr("Memorie")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textSecondary
+        }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+
+            Repeater {
+                model: root.favorites
+
+                delegate: Row {
+                    required property var modelData
+                    spacing: 2
+
+                    DsdrButton {
+                        text: modelData.label
+                        implicitHeight: 22
+                        onClicked: root.goTo(modelData.frequency)
+                    }
+
+                    DsdrButton {
+                        text: "×"
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        onClicked: root.removeFavorite(modelData.frequency)
+                    }
+                }
+            }
+        }
     }
 
     // ── Riferimenti ──────────────────────────────────────────────────────

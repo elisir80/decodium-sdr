@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(decodium-sdr
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "DECODIUM SDR — client SDR universale dell'ecosistema DECODIUM"
     HOMEPAGE_URL "https://decodium.it"
     LANGUAGES CXX)

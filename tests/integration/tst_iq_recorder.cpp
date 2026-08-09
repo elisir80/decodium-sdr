@@ -49,7 +49,9 @@ class TestIqRecorder : public QObject
 
 private slots:
     void suggestedNameIsSortableAndInformative();
+    void suggestedAudioNameIsExplicit();
     void producesReadableWavWithCorrectHeader();
+    void recordsAudioMixWithAudioSidecar();
     void writesSidecarWithTuningMetadata();
     void recordingStopsCleanlyOnDisconnect();
 
@@ -90,6 +92,17 @@ void TestIqRecorder::suggestedNameIsSortableAndInformative()
     QVERIFY2(name.startsWith(QStringLiteral("20260807_140509")), qPrintable(name));
     QVERIFY2(name.contains(QStringLiteral("7.100MHz")), qPrintable(name));
     QVERIFY2(name.endsWith(QStringLiteral(".wav")), qPrintable(name));
+}
+
+void TestIqRecorder::suggestedAudioNameIsExplicit()
+{
+    IqRecordingInfo info;
+    info.sampleRate = 48000.0;
+    info.audio = true;
+    info.startedAt = QDateTime(QDate(2026, 8, 7), QTime(14, 5, 9));
+
+    const QString name = IqRecorder::suggestedFileName(info);
+    QVERIFY2(name.contains(QStringLiteral("audio_48kSps")), qPrintable(name));
 }
 
 void TestIqRecorder::producesReadableWavWithCorrectHeader()
@@ -159,6 +172,38 @@ void TestIqRecorder::producesReadableWavWithCorrectHeader()
         anyNonZero = anyNonZero || samples[i] != 0.0f;
     }
     QVERIFY2(anyNonZero, "il file contiene solo silenzio");
+}
+
+void TestIqRecorder::recordsAudioMixWithAudioSidecar()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    SessionManager session;
+    QVERIFY2(connectDemo(session), "connessione al backend demo fallita");
+
+    const QString path = dir.filePath(QStringLiteral("audio.wav"));
+    QVERIFY2(session.startAudioRecording(path), "avvio registrazione audio fallito");
+    QVERIFY(session.audioRecorder()->isRecording());
+    QVERIFY2(waitFor([&] { return session.audioRecorder()->bytesWritten() > 10000; }),
+             "nessun audio finito su disco");
+    session.stopAudioRecording();
+
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray wav = file.readAll();
+    QCOMPARE(wav.left(4), QByteArray("RIFF"));
+    QCOMPARE(wav.mid(8, 4), QByteArray("WAVE"));
+    const QByteArray fmt = findChunk(wav, "fmt ");
+    QCOMPARE(qFromLittleEndian<quint16>(fmt.constData() + 2), quint16(2));
+    QCOMPARE(qFromLittleEndian<quint32>(fmt.constData() + 4), quint32(48000));
+
+    QFile sidecar(dir.filePath(QStringLiteral("audio.json")));
+    QVERIFY(sidecar.open(QIODevice::ReadOnly));
+    const QJsonObject root = QJsonDocument::fromJson(sidecar.readAll()).object();
+    QCOMPARE(root.value(QStringLiteral("format")).toString(),
+             QStringLiteral("decodium-audio/1"));
+    QCOMPARE(root.value(QStringLiteral("channels")).toInt(), 2);
 }
 
 void TestIqRecorder::writesSidecarWithTuningMetadata()

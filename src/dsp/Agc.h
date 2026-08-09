@@ -30,6 +30,13 @@ public:
     void setThresholdDb(double db);
     double thresholdDb() const noexcept { return m_thresholdDb; }
 
+    /// Tempi esposti come millisecondi. Un decadimento pari a zero conserva
+    /// il preset automatico Fast/Medium/Slow/Long.
+    void setAttackMs(double ms);
+    double attackMs() const noexcept { return m_attackMs; }
+    void setDecayMs(double ms);
+    double decayMs() const noexcept { return m_decayMs; }
+
     /// Guadagno massimo consentito in dB (limita l'amplificazione del rumore).
     void setMaxGainDb(double db);
 
@@ -54,6 +61,8 @@ private:
     double m_thresholdDb = -100.0;
     double m_maxGainDb = 90.0;
     double m_manualGainDb = 0.0;
+    double m_attackMs = 2.0;
+    double m_decayMs = 0.0;
 
     float m_attackCoeff = 0.0f;
     float m_decayCoeff = 0.0f;
