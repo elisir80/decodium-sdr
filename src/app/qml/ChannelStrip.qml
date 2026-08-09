@@ -104,6 +104,22 @@ Rectangle {
         }
     }
 
+    /// Se il pannello ha senso adesso. Lo decide la colonna, e non il pannello
+    /// con un `visible`, per una ragione che è costata una colonna vuota: in
+    /// QML un figlio eredita l'invisibilità del padre, quindi far dipendere
+    /// l'altezza dello slot dal `visible` del pannello chiude un anello —
+    /// altezza zero, slot invisibile, pannello invisibile, altezza zero — da
+    /// cui non si esce più. Qui il Loader non crea nemmeno l'oggetto.
+    function slotActive(key) {
+        switch (key) {
+        case "waterfall": return root.panadapter !== null
+        case "canali":    return true
+        case "device":    return Session.connected
+                              && Session.capabilities.nativePanels.length > 0
+        default:          return Session.connected
+        }
+    }
+
     function componentFor(key) {
         switch (key) {
         case "sintonia":  return tuningPanel
@@ -148,14 +164,14 @@ Rectangle {
                     required property string key
 
                     width: column.width
-                    // Un pannello nascosto non deve lasciare un buco: lo slot
-                    // si chiude con lui.
-                    height: loader.item && loader.item.visible ? loader.item.implicitHeight : 0
-                    visible: height > 0
+                    // Un pannello che non serve non lascia un buco: non viene
+                    // proprio creato, e lo slot si chiude con lui.
+                    height: loader.item ? loader.item.implicitHeight : 0
 
                     Loader {
                         id: loader
                         width: parent.width
+                        active: root.slotActive(slot.key)
                         sourceComponent: root.componentFor(slot.key)
                     }
 
@@ -180,7 +196,6 @@ Rectangle {
 
         FrequencyPanel {
             draggable: true
-            visible: Session.connected
         }
     }
 
@@ -189,7 +204,6 @@ Rectangle {
 
         TimeMachinePanel {
             draggable: true
-            visible: Session.connected
         }
     }
 
@@ -197,16 +211,14 @@ Rectangle {
         id: rxChainPanel
 
         RxChainPanel {
-            visible: Session.connected
+            draggable: true
         }
     }
 
     Component {
         id: devicePanels
 
-        BackendPanelHost {
-            visible: Session.connected && Session.capabilities.nativePanels.length > 0
-        }
+        BackendPanelHost {}
     }
 
     Component {
@@ -216,7 +228,6 @@ Rectangle {
             title: qsTr("Waterfall")
             draggable: true
             collapsed: true
-            visible: root.panadapter !== null
 
             // Dietro un Loader e non direttamente: senza panadattatore —
             // capita nei test, e capiterebbe in una finestra staccata — i
