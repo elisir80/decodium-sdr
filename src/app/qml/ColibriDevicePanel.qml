@@ -83,23 +83,10 @@ PanelFrame {
         }
     }
 
-    // ── Calibrazione delle bande laterali ────────────────────────────────
-    DsdrButton {
-        Layout.fillWidth: true
-        implicitHeight: 24
-        text: checked ? qsTr("Bande laterali invertite") : qsTr("Bande laterali normali")
-        checkable: true
-        checked: Session.nativeCommand("colibri.conjugate", {}) === true
-        onToggled: Session.nativeCommand("colibri.setConjugate", { "enabled": checked })
-    }
-
-    Text {
-        Layout.fillWidth: true
-        // Si calibra una volta sola, ascoltando una stazione nota: se in USB
-        // si sente il parlato al contrario, la convenzione del flusso è l'altra.
-        text: qsTr("Se in USB il parlato suona rovesciato, inverti.")
-        font.pixelSize: Theme.fontSmall
-        color: Theme.textDisabled
-        wrapMode: Text.WordWrap
-    }
+    // La calibrazione delle bande laterali non è più un comando: il
+    // ColibriNANO consegna il flusso con la convenzione di segno opposta alla
+    // nostra, sempre, e il backend lo coniuga sempre. Finché non si sapeva da
+    // che parte stesse il vero era un interruttore; ora che si sa — provato
+    // sull'hardware — lasciarlo vorrebbe dire offrire una posizione sbagliata
+    // a chi lo trova girato dalla parte errata.
 }

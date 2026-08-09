@@ -113,10 +113,16 @@ private:
 
     std::unique_ptr<SampleRing> m_iqRing;
 
-    /// Il segno della parte immaginaria dipende dalla convenzione del flusso:
-    /// se le bande laterali risultano scambiate, si coniuga. Regolabile a
-    /// runtime perché è una calibrazione, non una costante da compilare.
-    std::atomic<bool> m_conjugate{false};
+    /// Il ColibriNANO consegna il flusso con la convenzione di segno opposta
+    /// alla nostra: senza coniugare, USB e LSB risultano scambiate e il
+    /// parlato suona rovesciato.
+    ///
+    /// È stato un interruttore di calibrazione finché non si sapeva da che
+    /// parte stesse il vero. Ora si sa — provato sull'hardware — e un
+    /// interruttore che ha una sola posizione giusta non è una scelta da
+    /// offrire: è un modo per far suonare male la radio a chi lo trova
+    /// nell'altra posizione.
+    static constexpr bool kConjugateStream = true;
 
     std::atomic<quint64> m_sequence{0};
     std::atomic<quint64> m_overloadBlocks{0};

@@ -306,8 +306,9 @@ void ColibriBackend::onSamples(ColibriComplex *iq, std::uint32_t length, bool ad
     const std::size_t floats = static_cast<std::size_t>(length) * 2;
     std::size_t written = 0;
 
-    if (m_conjugate.load(std::memory_order_relaxed)) {
-        // Calibrazione delle bande laterali: coniugare scambia USB e LSB.
+    if (kConjugateStream) {
+        // Il flusso del ColibriNANO ha la convenzione di segno opposta alla
+        // nostra: coniugare rimette USB e LSB al loro posto.
         // Si scrive campione per campione perché il segno cambia solo la
         // parte immaginaria; il costo è trascurabile rispetto al DSP.
         for (std::uint32_t i = 0; i < length; ++i) {
@@ -511,16 +512,6 @@ QVariant ColibriBackend::nativeCommand(const QString &command, const QVariantMap
                            {QStringLiteral("max"), kMaxPreampDb},
                            {QStringLiteral("value"), m_preampDb}};
     }
-
-    // Calibrazione delle bande laterali: se USB e LSB risultano scambiate,
-    // la convenzione di segno del flusso è l'opposta.
-    if (command == QLatin1String("colibri.setConjugate")) {
-        const bool value = args.value(QStringLiteral("enabled"), false).toBool();
-        m_conjugate.store(value, std::memory_order_relaxed);
-        return QVariant(value);
-    }
-    if (command == QLatin1String("colibri.conjugate"))
-        return QVariant(m_conjugate.load(std::memory_order_relaxed));
 
     if (command == QLatin1String("colibri.health")) {
         return QVariantMap{
