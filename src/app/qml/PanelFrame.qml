@@ -29,6 +29,19 @@ Rectangle {
     /// caso che si presenti.
     property string persistKey: title
 
+    /// Il pannello si può prendere e spostare nella colonna.
+    ///
+    /// La cornice non sa nulla dell'ordine: si limita a dire dove è arrivato
+    /// il dito, in coordinate della scena, e chi tiene la colonna decide se
+    /// quel punto è sopra un altro pannello. Un componente che sapesse il
+    /// proprio indice sarebbe legato al contenitore, e questo finisce anche
+    /// dentro finestre staccate.
+    property bool draggable: false
+
+    signal dragStarted()
+    signal dragMoved(real sceneY)
+    signal dragEnded()
+
     implicitHeight: layout.implicitHeight + 2 * Theme.spacing
     radius: Theme.radius
     color: Theme.surfaceRaised
@@ -60,9 +73,75 @@ Rectangle {
                 height: 12
                 radius: 1.5
                 color: root.collapsed ? Theme.textDisabled : Theme.accent
+                visible: !root.draggable
 
                 Behavior on color {
                     ColorAnimation { duration: Theme.animationFast }
+                }
+            }
+
+            // ── Maniglia ─────────────────────────────────────────────────
+            //
+            // Prende il posto del trattino colorato quando il pannello si può
+            // spostare: due file di punti, il segno che in ogni interfaccia
+            // vuol dire «questo si prende». Ha un'area sensibile più larga di
+            // quanto si veda, perché un bersaglio di sei pixel si manca.
+            Item {
+                visible: root.draggable
+                implicitWidth: 10
+                implicitHeight: 14
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 3
+
+                    Repeater {
+                        model: 3
+
+                        delegate: Row {
+                            spacing: 3
+
+                            Repeater {
+                                model: 2
+
+                                delegate: Rectangle {
+                                    width: 2
+                                    height: 2
+                                    radius: 1
+                                    color: dragHandler.active ? Theme.accent
+                                         : handleHover.hovered ? Theme.textPrimary
+                                         : Theme.textDisabled
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HoverHandler {
+                    id: handleHover
+                    cursorShape: dragHandler.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                }
+
+                // `target: null`: non si trascina la cornice, si trascina
+                // l'idea di dove debba stare. Muovere davvero il pannello lo
+                // staccherebbe dal layout, e al rilascio tornerebbe al suo
+                // posto con uno scatto.
+                DragHandler {
+                    id: dragHandler
+                    target: null
+                    xAxis.enabled: false
+
+                    onActiveChanged: {
+                        if (active)
+                            root.dragStarted()
+                        else
+                            root.dragEnded()
+                    }
+
+                    onCentroidChanged: {
+                        if (active)
+                            root.dragMoved(centroid.scenePosition.y)
+                    }
                 }
             }
 

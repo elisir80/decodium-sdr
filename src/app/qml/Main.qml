@@ -33,15 +33,26 @@ ApplicationWindow {
            ? qsTr("DECODIUM SDR — %1").arg(Session.deviceName)
            : qsTr("DECODIUM SDR")
 
+    /// Da che parte sta la colonna dei pannelli. Si ricorda, come tutto il
+    /// resto della disposizione: chi la sposta lo fa una volta sola.
+    property bool panelsOnLeft: false
+
+    Settings {
+        category: "window"
+        property alias panelsOnLeft: window.panelsOnLeft
+    }
+
     // ── Barra dei menu ───────────────────────────────────────────────────
     menuBar: MainMenu {
         panadapter: scope.panadapterView
+        panelsOnLeft: window.panelsOnLeft
         onSourceRequested: {
             if (!Session.discovering)
                 Session.startDiscovery()
             discoveryPopup.open()
         }
         onAboutRequested: aboutPopup.open()
+        onPanelSideToggled: window.panelsOnLeft = !window.panelsOnLeft
     }
 
     // ── Barra superiore ──────────────────────────────────────────────────
@@ -95,7 +106,11 @@ ApplicationWindow {
                                ? Session.capabilities.maxFrequency : 30000000
                     editable: Session.connected
                     digitSize: Theme.fontLarge
-                    onTuneRequested: (hz) => Session.centerFrequency = hz
+                    // `tuneTo` e non `centerFrequency`: muovere la sola
+                    // finestra lasciava il ricevitore indietro, e da fuori
+                    // banda un canale non si sente più — è così che RX 1 era
+                    // finito lontano da tutto ciò che si vedeva.
+                    onTuneRequested: (hz) => Session.tuneTo(hz)
                 }
             }
 
@@ -193,10 +208,20 @@ ApplicationWindow {
             scope: scope
         }
 
+        // Lo SplitView si specchia invece di riordinare i figli: spostare un
+        // elemento da una parte all'altra lo distruggerebbe e lo ricreerebbe,
+        // e con lui se ne andrebbero lo zoom del panadattatore, la posizione
+        // dello scorrimento e la storia del waterfall. `childrenInherit` resta
+        // falso perché a specchiarsi dev'essere la disposizione delle due
+        // colonne, non il contenuto: dentro, i cursori vanno ancora da sinistra
+        // a destra e i numeri si leggono nello stesso verso.
         SplitView {
             Layout.fillWidth: true
             Layout.fillHeight: true
             orientation: Qt.Horizontal
+
+            LayoutMirroring.enabled: window.panelsOnLeft
+            LayoutMirroring.childrenInherit: false
 
             handle: Rectangle {
                 implicitWidth: 4

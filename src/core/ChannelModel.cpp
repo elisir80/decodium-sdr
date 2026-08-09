@@ -50,6 +50,11 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case MutedRole:        return entry.settings.muted;
     case SquelchEnabledRole:   return entry.settings.squelchEnabled;
     case SquelchThresholdRole: return entry.settings.squelchThresholdDb;
+    case NrEnabledRole:        return entry.settings.nrEnabled;
+    case AnfEnabledRole:       return entry.settings.anfEnabled;
+    case NotchEnabledRole:     return entry.settings.notchEnabled;
+    case NotchFrequencyRole:   return entry.settings.notchFrequencyHz;
+    case NotchWidthRole:       return entry.settings.notchWidthHz;
     case SignalDbRole:     return entry.signalDb;
     case AgcGainDbRole:    return entry.agcGainDb;
     case ColorRole:        return entry.color;
@@ -74,6 +79,11 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {MutedRole, "muted"},
         {SquelchEnabledRole, "squelchEnabled"},
         {SquelchThresholdRole, "squelchThresholdDb"},
+        {NrEnabledRole, "nrEnabled"},
+        {AnfEnabledRole, "anfEnabled"},
+        {NotchEnabledRole, "notchEnabled"},
+        {NotchFrequencyRole, "notchFrequencyHz"},
+        {NotchWidthRole, "notchWidthHz"},
         {SignalDbRole, "signalDb"},
         {AgcGainDbRole, "agcGainDb"},
         {ColorRole, "channelColor"},

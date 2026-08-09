@@ -23,10 +23,12 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Backend **nettcp**: rtl_tcp e SpyServer, con riconoscimento automatico | ✅ |
 | Backend **colibri**: ColibriNANO USB, 0,1–55 MHz | ✅ |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
+| Filtri di disturbo: **NB** a banda piena nel motore, **NR** e **ANF** (un predittore adattivo, due prese), **notch** manuale | ✅ spenti di fabbrica — [DSDR-SPEC-003](docs/DSDR-SPEC-003-RX-Excellence.md) §4–5 |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |
 | Uscita audio a bassa latenza | ✅ |
 | Registrazione IQ (WAV float32 + sidecar JSON, RF64 oltre 4 GB) | ✅ |
+| **Macchina del tempo**: la banda degli ultimi secondi resta in memoria, si torna indietro e si riascolta senza aver premuto REC | ✅ su ogni backend |
 | i18n: pipeline a 14 lingue, italiano e inglese completi | ✅ |
 | Pannelli per i controlli specifici di ogni radio | ✅ |
 | Pacchetti AppImage, DMG e ZIP portable | ✅ |

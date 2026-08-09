@@ -55,6 +55,24 @@ class SessionManager : public QObject
     Q_PROPERTY(qint64 centerFrequency READ centerFrequency WRITE setCenterFrequency
                    NOTIFY centerFrequencyChanged)
     Q_PROPERTY(double sampleRate READ sampleRate WRITE setSampleRate NOTIFY sampleRateChanged)
+
+    // ── Macchina del tempo ──────────────────────────────────────────────
+    //
+    // Il motore tiene in memoria gli ultimi secondi di banda: `replayDelay`
+    // dice di quanto si sta ascoltando indietro, `replayHistory` fin dove si
+    // potrebbe tornare. Sono due numeri diversi e vanno mostrati entrambi:
+    // promettere trenta secondi dieci secondi dopo la connessione sarebbe una
+    // bugia che si scopre solo premendo.
+    Q_PROPERTY(double replayDelaySeconds READ replayDelaySeconds NOTIFY replayChanged)
+    Q_PROPERTY(double replayHistorySeconds READ replayHistorySeconds NOTIFY replayChanged)
+    Q_PROPERTY(double replayCapacitySeconds READ replayCapacitySeconds NOTIFY sampleRateChanged)
+    Q_PROPERTY(bool replaying READ replaying NOTIFY replayChanged)
+
+    // ── Noise blanker, di catena e non di canale (SPEC-003 §4) ──────────
+    Q_PROPERTY(bool noiseBlanker READ noiseBlanker NOTIFY noiseBlankerChanged)
+    Q_PROPERTY(double noiseBlankerThreshold READ noiseBlankerThreshold
+                   NOTIFY noiseBlankerChanged)
+    Q_PROPERTY(double noiseBlankerActivity READ noiseBlankerActivity NOTIFY replayChanged)
     Q_PROPERTY(int spectrumAveraging READ spectrumAveraging WRITE setSpectrumAveraging
                    NOTIFY spectrumAveragingChanged)
 
@@ -102,6 +120,38 @@ public:
     Q_INVOKABLE void connectToDevice(int deviceRow);
     Q_INVOKABLE void disconnectDevice();
 
+    double replayDelaySeconds() const { return m_replayDelay; }
+    double replayHistorySeconds() const { return m_replayHistory; }
+    double replayCapacitySeconds() const;
+    bool replaying() const { return m_replayDelay > 0.05; }
+
+    bool noiseBlanker() const { return m_nbEnabled; }
+    double noiseBlankerThreshold() const { return m_nbThreshold; }
+    double noiseBlankerActivity() const;
+
+    /// Accende il soppressore di impulsi sull'intera banda. La soglia è in
+    /// multipli del livello tipico: 4 di fabbrica, campo utile 2–8.
+    Q_INVOKABLE void setNoiseBlanker(bool enabled, double threshold);
+
+    /// Torna indietro di `seconds` rispetto a dove si sta ascoltando adesso.
+    /// Premuto due volte riavvolge due volte, come ci si aspetta da un tasto.
+    Q_INVOKABLE void rewind(double seconds);
+
+    /// Porta l'ascolto a un ritardo preciso, per la barra di scorrimento.
+    Q_INVOKABLE void setReplayDelay(double seconds);
+
+    /// Ritorno al presente.
+    Q_INVOKABLE void returnToLive();
+
+    /// Sintonizza: sposta il centro della banda campionata e ci porta il
+    /// ricevitore attivo, creandolo se non ce n'è ancora nessuno.
+    ///
+    /// È il gesto di chi opera, distinto da `setCenterFrequency`, che muove
+    /// soltanto la finestra sullo spettro. La differenza non è teorica: un
+    /// canale lasciato fuori dalla banda campionata non viene demodulato, e
+    /// dal pannello non si vede che è successo.
+    Q_INVOKABLE void tuneTo(qint64 hz);
+
     Q_INVOKABLE int addChannel(qint64 frequencyHz);
     Q_INVOKABLE void removeChannel(int row);
     Q_INVOKABLE void setChannelFrequency(int row, qint64 hz);
@@ -113,6 +163,18 @@ public:
     Q_INVOKABLE void setChannelVolume(int row, double volume);
     Q_INVOKABLE void setChannelMuted(int row, bool muted);
     Q_INVOKABLE void setChannelSquelch(int row, bool enabled, double thresholdDb);
+
+    // ── Filtri di disturbo ──────────────────────────────────────────────
+    //
+    // Uno per comando, e ognuno acceso o spento dall'operatore. Nessuno è
+    // gratis: il blanker tronca, la riduzione di rumore colora la voce, il
+    // notch automatico si porta via anche le note CW. Accenderli tutti di
+    // fabbrica farebbe suonare meglio il ricevitore in vetrina e peggio in
+    // aria.
+    Q_INVOKABLE void setChannelNoiseReduction(int row, bool enabled, double strength);
+    Q_INVOKABLE void setChannelAutoNotch(int row, bool enabled);
+    Q_INVOKABLE void setChannelNotch(int row, bool enabled, double frequencyHz,
+                                     double widthHz);
 
     Q_INVOKABLE void setPtt(bool transmit);
 
@@ -143,6 +205,8 @@ signals:
     void statusMessageChanged();
     void centerFrequencyChanged();
     void sampleRateChanged();
+    void replayChanged();
+    void noiseBlankerChanged();
     void spectrumAveragingChanged();
     void errorReported(const QString &message, bool fatal);
 
@@ -172,6 +236,10 @@ private:
     qint64 m_centerFrequency = 0;
     double m_sampleRate = 0.0;
     int m_spectrumAveraging = SpectrumFeed::kDefaultAveraging;
+    double m_replayDelay = 0.0;      ///< di quanto si sta ascoltando indietro
+    double m_replayHistory = 0.0;    ///< fin dove si potrebbe tornare
+    double m_nbThreshold = 4.0;
+    bool m_nbEnabled = false;
     bool m_connected = false;
     bool m_discovering = false;
     bool m_transmitting = false;

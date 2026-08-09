@@ -29,6 +29,32 @@ option(DSDR_GPU_SPECTRUM    "Spettro/waterfall su GPU via QQuickRhiItem"        
 set(DSDR_COLIBRI_LIB "" CACHE FILEPATH
     "Percorso di colibrinano_lib da includere nel pacchetto (vuoto: non inclusa)")
 
+# Se chi compila non l'ha indicata, la si cerca dove ha senso tenerla: fuori
+# dalle cartelle di build, che si cancellano.
+#
+# Prima stava soltanto accanto all'eseguibile di una build, copiata a mano una
+# volta; ogni nuova cartella di build nasceva senza, e il ColibriNANO
+# «spariva» — l'elenco dei device restava vuoto e sembrava un guasto della
+# radio o del driver. Il file resta fuori dal repository (`.gitignore`): non è
+# nostro da ridistribuire, ma nemmeno da far ritrovare a mano ogni volta.
+if(NOT DSDR_COLIBRI_LIB)
+    if(WIN32)
+        set(dsdr_colibri_name "colibrinano_lib.dll")
+    else()
+        set(dsdr_colibri_name "libcolibrinano_lib.so")
+    endif()
+
+    set(dsdr_colibri_guess
+        "${CMAKE_SOURCE_DIR}/third_party/colibrinano/${dsdr_colibri_name}")
+    if(EXISTS "${dsdr_colibri_guess}")
+        set(DSDR_COLIBRI_LIB "${dsdr_colibri_guess}" CACHE FILEPATH
+            "Percorso di colibrinano_lib" FORCE)
+        message(STATUS "ColibriNANO: libreria trovata in third_party/colibrinano")
+    endif()
+    unset(dsdr_colibri_guess)
+    unset(dsdr_colibri_name)
+endif()
+
 option(DSDR_BUILD_TESTS        "Compila la suite di test (RNF-07)"              ON)
 option(DSDR_WARNINGS_AS_ERRORS "Tratta i warning del compilatore come errori"   OFF)
 

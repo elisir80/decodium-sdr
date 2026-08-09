@@ -29,7 +29,12 @@ bool ChannelSettings::operator==(const ChannelSettings &o) const noexcept
         && agcThresholdDb == o.agcThresholdDb && agcMaxGainDb == o.agcMaxGainDb
         && cwPitchHz == o.cwPitchHz && volume == o.volume && muted == o.muted
         && squelchEnabled == o.squelchEnabled
-        && squelchThresholdDb == o.squelchThresholdDb;
+        && squelchThresholdDb == o.squelchThresholdDb
+        && nrEnabled == o.nrEnabled && nrStrength == o.nrStrength
+        && anfEnabled == o.anfEnabled
+        && notchEnabled == o.notchEnabled
+        && notchFrequencyHz == o.notchFrequencyHz
+        && notchWidthHz == o.notchWidthHz;
 }
 
 ChannelProcessor::ChannelProcessor()
@@ -58,6 +63,14 @@ bool ChannelProcessor::configure(double deviceSampleRate, double audioSampleRate
     m_nco.configure(deviceSampleRate, 0.0);
     m_demod.configure(m_channelRate);
     m_agc.configure(m_channelRate);
+
+    // Filtri di disturbo sull'audio. I due predittori adattivi hanno memorie
+    // diverse di proposito — il notch automatico deve agganciare una riga in
+    // fretta, la riduzione di rumore deve restare stabile sulla voce, e con lo
+    // stesso ritardo di decorrelazione farebbero lo stesso mestiere due volte.
+    m_notch.configure(m_channelRate);
+    m_anf.configure(64, 8);
+    m_nr.configure(64, 16);
 
     const std::size_t block = kMaxBlockFrames;
     m_mixed.assign(block, Complex(0.0f, 0.0f));
@@ -160,6 +173,11 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     const bool tuningChanged = settings.offsetHz != m_settings.offsetHz
         || settings.cwPitchHz != m_settings.cwPitchHz || settings.mode != m_settings.mode;
 
+    // Chi era acceso prima, per accorgersi delle accensioni.
+    const struct {
+        bool nr, anf, notch;
+    } wasEnabled{m_settings.nrEnabled, m_settings.anfEnabled, m_settings.notchEnabled};
+
     m_settings = settings;
 
     if (tuningChanged)
@@ -173,6 +191,19 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     m_agc.setMode(m_settings.agcMode);
     m_agc.setThresholdDb(m_settings.agcThresholdDb);
     m_agc.setMaxGainDb(m_settings.agcMaxGainDb);
+
+    m_notch.setNotch(m_settings.notchFrequencyHz, m_settings.notchWidthHz);
+    m_nr.setRate(static_cast<float>(m_settings.nrStrength));
+
+    // Un filtro adattivo che riparte da spento porta con sé i coefficienti di
+    // prima: erano la risposta a un segnale che non c'è più, e per qualche
+    // decimo di secondo colorano l'audio. Si riazzera all'accensione.
+    if (!wasEnabled.nr && m_settings.nrEnabled)
+        m_nr.reset();
+    if (!wasEnabled.anf && m_settings.anfEnabled)
+        m_anf.reset();
+    if (!wasEnabled.notch && m_settings.notchEnabled)
+        m_notch.reset();
 }
 
 void ChannelProcessor::reset() noexcept
@@ -182,6 +213,9 @@ void ChannelProcessor::reset() noexcept
     m_filter.reset();
     m_demod.reset();
     m_agc.reset();
+    m_notch.reset();
+    m_anf.reset();
+    m_nr.reset();
     m_signalLevelDb = -160.0f;
     m_lastBasebandFrames = 0;
 }
@@ -217,6 +251,26 @@ std::size_t ChannelProcessor::process(const Complex *iq, std::size_t n, float *o
 
         float *audio = out + produced;
         m_demod.process(m_filtered.data(), decimated, audio);
+
+        // ── Filtri sull'audio, in quest'ordine e non in un altro ────────
+        //
+        // Il notch manuale per primo: una riga forte fa impazzire
+        // l'adattamento di quelli che vengono dopo, e toglierla prima è come
+        // spegnere una luce puntata negli occhi.
+        //
+        // Poi il notch automatico, che toglie le righe rimaste, e solo alla
+        // fine la riduzione di rumore — che lavora meglio quando i toni
+        // parassiti non ci sono più.
+        //
+        // Tutti e tre prima dell'AGC: dopo, il guadagno automatico avrebbe già
+        // alzato il rumore che si sta cercando di togliere.
+        if (m_settings.notchEnabled)
+            m_notch.process(audio, decimated);
+        if (autoNotchActive())
+            m_anf.process(audio, decimated, LmsFilter::Output::Error);
+        if (m_settings.nrEnabled)
+            m_nr.process(audio, decimated, LmsFilter::Output::Prediction);
+
         m_agc.process(audio, decimated);
 
         // ── Squelch ──────────────────────────────────────────────────────

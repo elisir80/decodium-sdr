@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Channel strip: un blocco di controlli per ogni canale RX.
+// La colonna dei pannelli, e dentro di essa i canali RX.
+//
+// I pannelli non stanno in un ordine deciso da noi: si prendono per la
+// maniglia e si mettono dove servono. Chi lavora in fonia tiene la sintonia in
+// alto, chi caccia il DX vuole prima la macchina del tempo, e chi sta
+// regolando l'immagine dello spettro vuole il waterfall sotto gli occhi.
+// L'ordine si ricorda fra un avvio e l'altro, come lo stato di apertura.
+//
+// Tutta la colonna scorre. Prima scorreva soltanto l'elenco dei canali, e i
+// pannelli sopra si prendevano l'altezza che volevano: su uno schermo basso
+// gli ultimi comandi restavano sotto il bordo, irraggiungibili.
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -17,333 +28,250 @@ Rectangle {
     color: Theme.surface
     border.width: 0
 
-    ColumnLayout {
+    // ── Ordine dei pannelli ──────────────────────────────────────────────
+    //
+    // Il modello è un ListModel e non una lista JavaScript perché `move()`
+    // sposta i delegate invece di ricrearli: ricostruendoli, il trascinamento
+    // in corso perderebbe sotto le dita l'oggetto che lo sta conducendo.
+    ListModel {
+        id: panelOrder
+
+        ListElement { key: "sintonia" }
+        ListElement { key: "tempo" }
+        ListElement { key: "catena" }
+        ListElement { key: "device" }
+        ListElement { key: "waterfall" }
+        ListElement { key: "canali" }
+    }
+
+    /// L'ordine corrente, per chi lo presidia con un test.
+    readonly property alias panels: panelOrder
+
+    /// Ordine salvato, come elenco di chiavi separate da virgola.
+    property string savedOrder: ""
+
+    Settings {
+        category: "panels"
+        property alias order: root.savedOrder
+    }
+
+    Component.onCompleted: restoreOrder()
+
+    function restoreOrder() {
+        if (savedOrder === "")
+            return
+
+        // Si riordina su ciò che esiste adesso, non su ciò che esisteva quando
+        // l'ordine fu salvato: un pannello aggiunto da una versione nuova deve
+        // comparire lo stesso, in fondo, invece di sparire perché non era
+        // nell'elenco.
+        const wanted = savedOrder.split(",")
+        let target = 0
+        for (const key of wanted) {
+            for (let i = target; i < panelOrder.count; ++i) {
+                if (panelOrder.get(i).key === key) {
+                    if (i !== target)
+                        panelOrder.move(i, target, 1)
+                    ++target
+                    break
+                }
+            }
+        }
+    }
+
+    function storeOrder() {
+        const keys = []
+        for (let i = 0; i < panelOrder.count; ++i)
+            keys.push(panelOrder.get(i).key)
+        root.savedOrder = keys.join(",")
+    }
+
+    /// Sposta il pannello `from` là dove si trova il dito, in coordinate della
+    /// scena. Il conto lo fa la colonna e non il pannello: è la colonna a
+    /// sapere chi sta sopra a chi.
+    function reorderTo(from, sceneY) {
+        for (let i = 0; i < slots.count; ++i) {
+            const item = slots.itemAt(i)
+            if (!item || item.height <= 0)
+                continue
+
+            const top = item.mapToItem(null, 0, 0).y
+            if (sceneY >= top && sceneY <= top + item.height) {
+                if (i !== from)
+                    panelOrder.move(from, i, 1)
+                return
+            }
+        }
+    }
+
+    function componentFor(key) {
+        switch (key) {
+        case "sintonia":  return tuningPanel
+        case "tempo":     return timeMachinePanel
+        case "catena":    return rxChainPanel
+        case "device":    return devicePanels
+        case "waterfall": return waterfallPanel
+        case "canali":    return channelsPanel
+        default:          return null
+        }
+    }
+
+    // ── La colonna ───────────────────────────────────────────────────────
+    Flickable {
+        id: flick
+
         anchors.fill: parent
         anchors.margins: Theme.spacing
-        spacing: Theme.spacing
+        contentWidth: width
+        contentHeight: column.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
 
-        RowLayout {
-            Layout.fillWidth: true
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+        }
+
+        Column {
+            id: column
+
+            width: flick.width
             spacing: Theme.spacing
 
-            Text {
-                text: qsTr("Canali")
-                font.pixelSize: Theme.fontLarge
-                font.bold: true
-                color: Theme.textPrimary
-                Layout.fillWidth: true
-                // Su una strip stretta il titolo si riduceva a una lettera
-                // sola: meglio troncarlo con i puntini che lasciare una "C".
-                elide: Text.ElideRight
-                Layout.minimumWidth: 0
-            }
+            Repeater {
+                id: slots
+                model: panelOrder
 
-            Text {
-                text: Session.channels.count + " / " + Session.capabilities.maxRxChannels
-                font.pixelSize: Theme.fontSmall
-                font.family: Theme.monoFamily
-                color: Theme.textSecondary
-            }
+                delegate: Item {
+                    id: slot
 
-            DsdrButton {
-                text: "+"
-                implicitWidth: 32
-                enabled: Session.connected
-                         && Session.channels.count < Session.capabilities.maxRxChannels
-                onClicked: Session.addChannel(Session.centerFrequency)
+                    required property int index
+                    required property string key
+
+                    width: column.width
+                    // Un pannello nascosto non deve lasciare un buco: lo slot
+                    // si chiude con lui.
+                    height: loader.item && loader.item.visible ? loader.item.implicitHeight : 0
+                    visible: height > 0
+
+                    Loader {
+                        id: loader
+                        width: parent.width
+                        sourceComponent: root.componentFor(slot.key)
+                    }
+
+                    // I pannelli che non sono una cornice nostra — quelli del
+                    // backend — non emettono questi segnali: `ignoreUnknownSignals`
+                    // lascia che restino dove sono senza far rumore.
+                    Connections {
+                        target: loader.item
+                        ignoreUnknownSignals: true
+
+                        function onDragMoved(sceneY) { root.reorderTo(slot.index, sceneY) }
+                        function onDragEnded() { root.storeOrder() }
+                    }
+                }
             }
         }
+    }
 
-        // Scegliere dove andare viene prima di regolare il canale.
+    // ── I pannelli ───────────────────────────────────────────────────────
+    Component {
+        id: tuningPanel
+
         FrequencyPanel {
-            Layout.fillWidth: true
+            draggable: true
             visible: Session.connected
         }
+    }
 
-        // Controlli del backend attivo, se ne dichiara.
+    Component {
+        id: timeMachinePanel
+
+        TimeMachinePanel {
+            draggable: true
+            visible: Session.connected
+        }
+    }
+
+    Component {
+        id: rxChainPanel
+
+        RxChainPanel {
+            visible: Session.connected
+        }
+    }
+
+    Component {
+        id: devicePanels
+
         BackendPanelHost {
-            Layout.fillWidth: true
             visible: Session.connected && Session.capabilities.nativePanels.length > 0
         }
+    }
 
-        // Resa dello spettro. Chiuso di fabbrica: si tocca quando l'immagine
-        // non convince, non a ogni sessione.
+    Component {
+        id: waterfallPanel
+
         PanelFrame {
-            Layout.fillWidth: true
             title: qsTr("Waterfall")
+            draggable: true
             collapsed: true
             visible: root.panadapter !== null
 
-            WaterfallControls {
+            // Dietro un Loader e non direttamente: senza panadattatore —
+            // capita nei test, e capiterebbe in una finestra staccata — i
+            // binding di questi comandi leggerebbero proprietà di un oggetto
+            // nullo, e ogni riga varrebbe un errore a runtime.
+            Loader {
                 Layout.fillWidth: true
-                panadapter: root.panadapter
+                active: root.panadapter !== null
+
+                sourceComponent: WaterfallControls {
+                    panadapter: root.panadapter
+                }
             }
         }
+    }
 
-        ListView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            spacing: Theme.spacing
-            model: Session.channels
+    Component {
+        id: channelsPanel
 
-            ScrollBar.vertical: ScrollBar {}
+        PanelFrame {
+            id: channelsFrame
 
-            delegate: Rectangle {
-                id: entry
+            title: qsTr("CANALI")
+            draggable: true
 
-                required property int index
-                required property color channelColor
-                required property string label
-                required property real frequencyHz
-                required property int mode
-                required property string modeName
-                required property int filterLowHz
-                required property int filterHighHz
-                required property int agcMode
-                required property real agcThresholdDb
-                required property real volume
-                required property bool muted
-                required property bool squelchEnabled
-                required property real squelchThresholdDb
-                required property real signalDb
-                required property real agcGainDb
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing
 
-                readonly property bool current: Session.channels.currentIndex === index
-
-                width: ListView.view.width
-                height: layout.implicitHeight + 2 * Theme.spacing
-                radius: Theme.radius
-                color: current ? Theme.surfaceRaised : Theme.surface
-                border.width: 1
-                border.color: current ? entry.channelColor : Theme.border
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: Session.channels.currentIndex = entry.index
-                    z: -1
+                Text {
+                    text: Session.channels.count + " / " + Session.capabilities.maxRxChannels
+                    font.pixelSize: Theme.fontSmall
+                    font.family: Theme.monoFamily
+                    color: Theme.textSecondary
+                    Layout.fillWidth: true
                 }
 
-                ColumnLayout {
-                    id: layout
-                    anchors.fill: parent
-                    anchors.margins: Theme.spacing
-                    spacing: Theme.spacingTight
+                DsdrButton {
+                    text: "+"
+                    implicitWidth: 32
+                    implicitHeight: 24
+                    enabled: Session.connected
+                             && Session.channels.count < Session.capabilities.maxRxChannels
+                    onClicked: Session.addChannel(Session.centerFrequency)
+                }
+            }
 
-                    // ── Intestazione ─────────────────────────────────────
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacing
+            // Un Repeater e non una ListView: dentro una colonna che scorre
+            // già, una seconda area scorrevole si contende il gesto, e il
+            // primo giro di rotellina finisce sempre in quella sbagliata.
+            Repeater {
+                model: Session.channels
 
-                        Rectangle {
-                            width: 10; height: 10; radius: 5
-                            color: entry.channelColor
-                        }
-
-                        Text {
-                            text: entry.label
-                            font.pixelSize: Theme.fontNormal
-                            font.bold: true
-                            color: Theme.textPrimary
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        DsdrButton {
-                            text: entry.muted ? qsTr("Muto") : qsTr("Attivo")
-                            implicitWidth: 66
-                            checkable: true
-                            checked: entry.muted
-                            danger: entry.muted
-                            onToggled: Session.setChannelMuted(entry.index, checked)
-                        }
-
-                        DsdrButton {
-                            text: "×"
-                            implicitWidth: 28
-                            enabled: Session.channels.count > 1
-                            onClicked: Session.removeChannel(entry.index)
-                        }
-                    }
-
-                    // ── Frequenza ────────────────────────────────────────
-                    Text {
-                        text: (entry.frequencyHz / 1e6).toFixed(6) + " MHz"
-                        font.pixelSize: Theme.fontLarge
-                        font.family: Theme.monoFamily
-                        color: entry.current ? Theme.accent : Theme.textPrimary
-                        Layout.fillWidth: true
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.SizeVerCursor
-                            onWheel: (wheel) => {
-                                // Stesso passo della rotellina sullo spettro:
-                                // due manopole della stessa radio non possono
-                                // muovere quantità diverse.
-                                const step = wheel.modifiers & Qt.ShiftModifier
-                                           ? Math.max(1, Tuning.stepHz / 10)
-                                           : Tuning.stepHz
-                                Session.nudgeChannel(entry.index,
-                                                     wheel.angleDelta.y > 0 ? step : -step)
-                            }
-                        }
-                    }
-
-                    // Lo strumento a lancetta solo per il canale in ascolto:
-                    // quattro quadranti animati in colonna sarebbero una
-                    // giostra, e tre di quei quattro non li sta guardando
-                    // nessuno.
-                    AnalogMeter {
-                        Layout.fillWidth: true
-                        visible: entry.current
-                        levelDb: entry.signalDb
-                    }
-
-                    SignalMeter {
-                        Layout.fillWidth: true
-                        visible: !entry.current
-                        levelDb: entry.signalDb
-                    }
-
-                    // ── Modo e filtro ────────────────────────────────────
-                    ModeSelector {
-                        Layout.fillWidth: true
-                        channelIndex: entry.index
-                        mode: entry.mode
-                        filterLowHz: entry.filterLowHz
-                        filterHighHz: entry.filterHighHz
-                    }
-
-                    // ── AGC ──────────────────────────────────────────────
-                    Text {
-                        text: qsTr("AGC")
-                        font.pixelSize: Theme.fontSmall
-                        color: Theme.textSecondary
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingTight
-
-                        Repeater {
-                            model: Session.agcModeNames()
-
-                            delegate: DsdrButton {
-                                required property int index
-                                required property string modelData
-
-                                Layout.fillWidth: true
-                                implicitWidth: 0
-                                implicitHeight: 24
-                                text: modelData
-                                checkable: true
-                                checked: entry.agcMode === index
-                                enabled: Session.capabilities.clientAgc
-                                onClicked: Session.setChannelAgcMode(entry.index, index)
-                            }
-                        }
-                    }
-
-                    // ── AGC-T ────────────────────────────────────────────
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: Session.capabilities.clientAgc && entry.agcMode !== 0
-
-                        Text {
-                            text: qsTr("AGC-T")
-                            font.pixelSize: Theme.fontSmall
-                            color: Theme.textSecondary
-                        }
-
-                        DsdrSlider {
-                            Layout.fillWidth: true
-                            from: -130; to: -30
-                            value: entry.agcThresholdDb
-                            onMoved: Session.setChannelAgcThreshold(entry.index, value)
-                        }
-
-                        Text {
-                            text: Math.round(entry.agcThresholdDb) + " dB"
-                            font.pixelSize: Theme.fontSmall
-                            font.family: Theme.monoFamily
-                            color: Theme.textSecondary
-                            Layout.preferredWidth: 52
-                        }
-                    }
-
-                    // ── Squelch ──────────────────────────────────────────
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingTight
-
-                        DsdrButton {
-                            text: qsTr("SQL")
-                            implicitWidth: 52
-                            implicitHeight: 24
-                            checkable: true
-                            checked: entry.squelchEnabled
-                            onToggled: Session.setChannelSquelch(
-                                           entry.index, checked, entry.squelchThresholdDb)
-                        }
-
-                        DsdrSlider {
-                            Layout.fillWidth: true
-                            from: -140; to: -20
-                            enabled: entry.squelchEnabled
-                            value: entry.squelchThresholdDb
-                            onMoved: Session.setChannelSquelch(entry.index, true, value)
-                        }
-
-                        Text {
-                            text: Math.round(entry.squelchThresholdDb) + " dB"
-                            font.pixelSize: Theme.fontSmall
-                            font.family: Theme.monoFamily
-                            color: entry.squelchEnabled ? Theme.textPrimary : Theme.textDisabled
-                            Layout.preferredWidth: 52
-                        }
-                    }
-
-                    // Uno squelch chiuso e una radio guasta suonano identici:
-                    // senza una spia si finisce a cercare il problema nel cavo
-                    // dell'antenna.
-                    Text {
-                        visible: entry.squelchEnabled
-                                 && entry.signalDb < entry.squelchThresholdDb
-                        text: qsTr("squelch chiuso")
-                        font.pixelSize: Theme.fontSmall
-                        color: Theme.warning
-                    }
-
-                    // I due cursori del passabanda se ne sono andati: i
-                    // preimpostati di ModeSelector coprono i valori d'uso, e
-                    // per il taglio fine ci sono i bordi della fascia sullo
-                    // spettro, dove si vede cosa si sta tagliando.
-                    Text {
-                        text: qsTr("guadagno AGC %1 dB").arg(Math.round(entry.agcGainDb))
-                        font.pixelSize: Theme.fontSmall
-                        font.family: Theme.monoFamily
-                        color: Theme.textDisabled
-                    }
-
-                    // ── Volume ───────────────────────────────────────────
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        Text {
-                            text: qsTr("Vol")
-                            font.pixelSize: Theme.fontSmall
-                            color: Theme.textSecondary
-                        }
-
-                        DsdrSlider {
-                            Layout.fillWidth: true
-                            from: 0; to: 1
-                            value: entry.volume
-                            accentColor: entry.channelColor
-                            onMoved: Session.setChannelVolume(entry.index, value)
-                        }
-                    }
+                delegate: ChannelCard {
+                    Layout.fillWidth: true
                 }
             }
         }

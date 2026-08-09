@@ -45,6 +45,10 @@ desktop.ini
 # Questi sono solo artefatti di build della macchina di sviluppo.
 /third_party/soapysdr/
 
+# La libreria del ColibriNANO è del costruttore: la si tiene qui perché CMake
+# la trovi da sé a ogni build, ma non è nostra da ridistribuire.
+/third_party/colibrinano/
+
 # Registrazioni IQ: pesano e non appartengono al repository
 *.wav
 *.sigmf-data

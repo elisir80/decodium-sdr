@@ -74,6 +74,19 @@ SessionManager::SessionManager(QObject *parent)
         setStatus(tr("Campioni persi: %1 — il DSP non sta al passo.").arg(lost));
     });
 
+    // Il ritardo lo rilegge dal motore invece di ricordarsi quello chiesto: il
+    // DSP lo accorcia quando la storia non arriva così indietro, e la UI deve
+    // mostrare il tempo in cui si sta davvero ascoltando.
+    connect(m_engine, &DspEngine::replayStateChanged, this,
+            [this](double delaySeconds, double historySeconds) {
+                if (qFuzzyCompare(m_replayDelay, delaySeconds)
+                    && qFuzzyCompare(m_replayHistory, historySeconds))
+                    return;
+                m_replayDelay = delaySeconds;
+                m_replayHistory = historySeconds;
+                emit replayChanged();
+            });
+
     connect(&m_recorder, &IqRecorder::failed, this, [this](const QString &message) {
         setStatus(message);
         emit errorReported(message, false);
@@ -352,6 +365,67 @@ void SessionManager::setSampleRate(double rate)
     emit sampleRateChanged();
 }
 
+double SessionManager::replayCapacitySeconds() const
+{
+    return m_engine ? m_engine->historyCapacitySeconds() : 0.0;
+}
+
+void SessionManager::rewind(double seconds)
+{
+    if (!m_connected || !m_engine || !(seconds > 0.0))
+        return;
+
+    // Si riparte dal ritardo che il motore concede davvero, non da quello
+    // chiesto l'ultima volta: premere «indietro» due volte quando la storia è
+    // finita non deve accumulare un debito invisibile che poi fa saltare
+    // l'ascolto la prima volta che la memoria si allunga.
+    const double target = m_engine->replayDelaySeconds() + seconds;
+    m_engine->setReplayDelaySeconds(target);
+    m_replayDelay = m_engine->replayDelaySeconds();
+    emit replayChanged();
+
+    setStatus(m_replayDelay > 0.05
+                  ? tr("In riascolto: %1 s indietro.").arg(m_replayDelay, 0, 'f', 0)
+                  : tr("Non c'è ancora abbastanza registrato per tornare indietro."));
+}
+
+void SessionManager::setReplayDelay(double seconds)
+{
+    if (!m_connected || !m_engine)
+        return;
+
+    m_engine->setReplayDelaySeconds(std::max(0.0, seconds));
+    m_replayDelay = m_engine->replayDelaySeconds();
+    emit replayChanged();
+}
+
+void SessionManager::returnToLive()
+{
+    if (!m_engine)
+        return;
+
+    m_engine->setReplayDelaySeconds(0.0);
+    m_replayDelay = 0.0;
+    emit replayChanged();
+    setStatus(tr("In diretta."));
+}
+
+void SessionManager::tuneTo(qint64 hz)
+{
+    if (!m_backend || !m_connected)
+        return;
+
+    setCenterFrequency(hz);
+
+    // Il canale attivo segue la sintonia. Gli altri restano dove sono: sono
+    // ricevitori indipendenti, ed è il motivo per cui esistono.
+    const int current = m_channels.currentIndex();
+    if (current >= 0)
+        setChannelFrequency(current, hz);
+    else
+        addChannel(hz);
+}
+
 int SessionManager::addChannel(qint64 frequencyHz)
 {
     if (!m_backend || !m_connected)
@@ -553,6 +627,63 @@ void SessionManager::setChannelSquelch(int row, bool enabled, double thresholdDb
     entry->settings.squelchThresholdDb = std::clamp(thresholdDb, -140.0, -20.0);
     m_channels.entryChanged(row, {ChannelModel::SquelchEnabledRole,
                                   ChannelModel::SquelchThresholdRole});
+    pushChannelToEngine(row);
+}
+
+void SessionManager::setNoiseBlanker(bool enabled, double threshold)
+{
+    if (!m_engine)
+        return;
+
+    // Il campo è quello della specifica: sotto 2 il blanker comincia a
+    // scambiare per impulso il segnale stesso, sopra 8 non scatta più su nulla
+    // e tanto vale spegnerlo.
+    m_nbThreshold = std::clamp(threshold, 2.0, 8.0);
+    m_nbEnabled = enabled;
+    m_engine->setNoiseBlanker(m_nbEnabled, m_nbThreshold);
+    emit noiseBlankerChanged();
+}
+
+double SessionManager::noiseBlankerActivity() const
+{
+    return m_engine ? static_cast<double>(m_engine->noiseBlankerActivity()) : 0.0;
+}
+
+void SessionManager::setChannelNoiseReduction(int row, bool enabled, double strength)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+    entry->settings.nrEnabled = enabled;
+    // Più in alto insegue meglio ma «respira» sul parlato: è il compromesso
+    // che ogni operatore regola a orecchio, e per questo resta esposto.
+    entry->settings.nrStrength = std::clamp(strength, 0.005, 0.3);
+    m_channels.entryChanged(row, {ChannelModel::NrEnabledRole});
+    pushChannelToEngine(row);
+}
+
+void SessionManager::setChannelAutoNotch(int row, bool enabled)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+    entry->settings.anfEnabled = enabled;
+    m_channels.entryChanged(row, {ChannelModel::AnfEnabledRole});
+    pushChannelToEngine(row);
+}
+
+void SessionManager::setChannelNotch(int row, bool enabled, double frequencyHz,
+                                     double widthHz)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+    entry->settings.notchEnabled = enabled;
+    entry->settings.notchFrequencyHz = std::clamp(frequencyHz, 100.0, 5000.0);
+    entry->settings.notchWidthHz = std::clamp(widthHz, 20.0, 800.0);
+    m_channels.entryChanged(row, {ChannelModel::NotchEnabledRole,
+                                  ChannelModel::NotchFrequencyRole,
+                                  ChannelModel::NotchWidthRole});
     pushChannelToEngine(row);
 }
 

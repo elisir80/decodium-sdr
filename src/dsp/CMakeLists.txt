@@ -27,10 +27,18 @@ add_library(dsdr_dsp STATIC
     DecimatorChain.cpp
     Agc.h
     Agc.cpp
+    NoiseBlanker.h
+    NoiseBlanker.cpp
+    LmsFilter.h
+    LmsFilter.cpp
+    NotchFilter.h
+    NotchFilter.cpp
     Demodulator.h
     Demodulator.cpp
     SpectrumAnalyzer.h
     SpectrumAnalyzer.cpp
+    TimeShiftBuffer.h
+    TimeShiftBuffer.cpp
     ChannelProcessor.h
     ChannelProcessor.cpp
 )

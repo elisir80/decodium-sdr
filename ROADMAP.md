@@ -34,13 +34,15 @@ out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
 | Multi-canale | ✅ dalla Fase 0 |
 | Registrazione IQ | ✅ WAV float32 + sidecar JSON, RF64 oltre i 4 GB |
 | Riproduzione da file IQ | ✅ backend `iqfile`: legge il nostro WAV/RF64 e anche PCM 16/8 bit |
+| Macchina del tempo (riascolto della diretta) | ✅ nel motore, quindi per ogni backend: il registratore conserva, questa rimedia — un tetto di 96 MiB decide quanti secondi, la UI mostra quelli veri |
+| NB / NR / ANF / notch manuale | ✅ anticipati dalla Fase 2: DSP originale, spenti di fabbrica perché nessuno dei quattro è gratis. NB e ANF conformi a [DSDR-SPEC-003](docs/DSDR-SPEC-003-RX-Excellence.md) §4–5; restano da fare EMNR (§6), notch ancorati alla RF e Overload Guard (§3) |
 | i18n — pipeline e selettore lingua | ✅ 14 lingue predisposte |
 | i18n — traduzioni complete | 🔄 italiano (sorgente) e inglese; le altre 12 attendono revisori madrelingua |
 | Pacchetti AppImage / DMG / ZIP | ✅ workflow di release su tag |
 
 ## Fase 2 — Radio vere
 
-Backend **hpsdr** (P1 poi P2), TX, AGC-T completo, NR/NB/ANF, audio virtuale,
+Backend **hpsdr** (P1 poi P2), TX, AGC-T completo, audio virtuale,
 server TCI.
 
 **Criterio d'uscita:** QSO completo con un Hermes-Lite 2; DECODIUM 4 decodifica

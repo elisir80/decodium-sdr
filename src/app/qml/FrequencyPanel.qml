@@ -44,27 +44,11 @@ PanelFrame {
         if (leaving)
             bandStack[leaving.name] = Session.centerFrequency
 
-        const target = Math.round(hz)
-        Session.centerFrequency = target
-
-        // E ci si porta anche il ricevitore.
-        //
-        // Finora questo pannello spostava soltanto il centro della banda
-        // campionata: si premeva «20m», la finestra si spostava e RX 1
-        // restava sui quaranta metri, fuori da tutto ciò che si vedeva. La
-        // frequenza scritta qui e quella del ricevitore dicevano due cose
-        // diverse, e nessuna delle due era sbagliata di per sé — solo che
-        // chi sintonizza una radio si aspetta di ascoltare dove ha
-        // sintonizzato.
-        //
-        // Si muove il canale attivo; se non ce n'è ancora nessuno lo si crea,
-        // perché una banda scelta e nessun ricevitore acceso è uno stato in
-        // cui non si vorrebbe mai finire.
-        if (Session.channels.currentIndex >= 0)
-            Session.setChannelFrequency(Session.channels.currentIndex, target)
-        else if (Session.connected)
-            Session.addChannel(target)
-
+        // Centro e ricevitore insieme: si premeva «20m», la finestra si
+        // spostava sui quattordici megahertz e RX 1 restava sui quaranta,
+        // fuori da tutto ciò che si vedeva. La regola sta nella sessione e non
+        // qui, perché questo non è l'unico posto da cui si sintonizza.
+        Session.tuneTo(Math.round(hz))
         return true
     }
 

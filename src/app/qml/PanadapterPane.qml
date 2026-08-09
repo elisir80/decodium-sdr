@@ -141,6 +141,13 @@ Item {
 
             xForFrequency: root.xForFrequency
             frequencyAt: root.frequencyAt
+
+            onSelectRequested: Session.channels.currentIndex = index
+            onTuneRequested: (hz) => Session.setChannelFrequency(index, hz)
+            onRemoveRequested: {
+                if (Session.channels.count > 1)
+                    Session.removeChannel(index)
+            }
         }
     }
 
@@ -239,6 +246,53 @@ Item {
             const direction = wheel.angleDelta.y > 0 ? 1 : -1
             if (Session.channels.currentIndex >= 0)
                 Session.nudgeChannel(Session.channels.currentIndex, direction * step)
+        }
+    }
+
+    // ── Avviso di riascolto ──────────────────────────────────────────────
+    //
+    // In riascolto non è solo l'audio a essere in ritardo: traccia, waterfall
+    // e S-meter raccontano tutti lo stesso istante passato. Chi non lo sapesse
+    // scambierebbe una banda di trenta secondi fa per la propagazione di
+    // adesso — ed è il tipo di errore che si porta dietro un log sbagliato.
+    Rectangle {
+        anchors.fill: parent
+        color: "transparent"
+        border.width: 2
+        border.color: Theme.warning
+        opacity: 0.7
+        visible: Session.replaying
+        z: 6
+        // La cornice segnala, non intercetta: sotto ci si deve poter
+        // continuare a sintonizzare.
+        enabled: false
+    }
+
+    Rectangle {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Theme.spacing
+        width: replayLabel.implicitWidth + 2 * Theme.spacingLoose
+        height: 24
+        radius: Theme.radiusSmall
+        color: Theme.warning
+        visible: Session.replaying
+        z: 7
+
+        Text {
+            id: replayLabel
+            anchors.centerIn: parent
+            text: qsTr("◀◀ %1 s fa · torna in diretta")
+                  .arg(Math.round(Session.replayDelaySeconds))
+            font.pixelSize: Theme.fontSmall
+            font.bold: true
+            color: Theme.background
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: Session.returnToLive()
         }
     }
 

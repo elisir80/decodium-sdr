@@ -18,10 +18,15 @@ MenuBar {
     /// Il panadattatore, per i comandi di vista.
     required property PanadapterView panadapter
 
+    /// Da che parte sta la colonna dei pannelli. La finestra la possiede, il
+    /// menu la commuta e basta.
+    property bool panelsOnLeft: false
+
     /// Aperture richieste alla finestra: il menu non sa dove vivano quei
     /// pannelli, si limita a chiederlo.
     signal sourceRequested()
     signal aboutRequested()
+    signal panelSideToggled()
 
     background: Rectangle {
         color: Theme.surface
@@ -144,6 +149,18 @@ MenuBar {
             checkable: true
             checked: root.panadapter.autoRange
             onTriggered: root.panadapter.autoRange = !root.panadapter.autoRange
+        }
+
+        MenuSeparator {}
+
+        // Da che parte stanno i comandi non è una preferenza estetica: chi
+        // usa il mouse con la sinistra, o chi tiene il quaderno del log a
+        // destra, passa la serata ad attraversare lo schermo.
+        MenuItem {
+            text: qsTr("Pannelli a sinistra")
+            checkable: true
+            checked: root.panelsOnLeft
+            onTriggered: root.panelSideToggled()
         }
     }
 

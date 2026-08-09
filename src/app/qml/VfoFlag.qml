@@ -23,9 +23,22 @@ Item {
     required property var xForFrequency
     required property var frequencyAt
 
+    /// Che cosa chiede il gesto. Il componente non tocca la sessione da sé:
+    /// così il trascinamento — che è geometria, e la geometria si sbaglia in
+    /// silenzio — si può mettere sotto test senza una radio dietro.
+    signal tuneRequested(real hz)
+    signal selectRequested()
+    signal removeRequested()
+
     readonly property real centerX: xForFrequency(vfoFrequency)
     readonly property real filterLeft: xForFrequency(vfoFrequency + bandLowHz)
     readonly property real filterRight: xForFrequency(vfoFrequency + bandHighHz)
+
+    /// Il canale è fuori da ciò che si sta guardando, e la bandierina si è
+    /// fermata al bordo invece di seguirlo. Da quel momento non è più sopra il
+    /// suo canale: chi la guarda vede un ricevitore che non è lì, e chi la
+    /// trascina muove qualcosa che sta altrove.
+    readonly property bool adrift: centerX < 0 || centerX > width
 
     anchors.fill: parent
 
@@ -56,6 +69,9 @@ Item {
     }
 
     // ── Bandierina con etichetta ─────────────────────────────────────────
+    /// La bandierina, per il test che ne presidia la posizione.
+    readonly property alias flagItem: flag
+
     Rectangle {
         id: flag
 
@@ -72,7 +88,18 @@ Item {
         Text {
             id: labelText
             anchors.centerIn: parent
-            text: root.vfoLabel + "  " + (root.levelDb > -139 ? Math.round(root.levelDb) + " dB" : "—")
+            // Alla deriva la bandierina dice dove sta andando a cercare il suo
+            // canale: il livello di un canale fuori dalla banda campionata non
+            // è una misura, e mostrarlo lo farebbe sembrare in ascolto.
+            text: {
+                if (root.adrift) {
+                    return root.centerX < 0
+                         ? "◀ " + root.vfoLabel
+                         : root.vfoLabel + " ▶"
+                }
+                return root.vfoLabel + "  "
+                     + (root.levelDb > -139 ? Math.round(root.levelDb) + " dB" : "—")
+            }
             font.pixelSize: Theme.fontSmall
             font.family: Theme.monoFamily
             color: root.vfoSelected ? Theme.background : Theme.textPrimary
@@ -87,9 +114,18 @@ Item {
             property real grabOffsetHz: 0
 
             onPressed: (mouse) => {
-                Session.channels.currentIndex = root.vfoRow
+                root.selectRequested()
                 const pointer = mapToItem(root, mouse.x, mouse.y)
-                grabOffsetHz = root.vfoFrequency - root.frequencyAt(pointer.x)
+                // L'offset di presa serve a non far saltare il canale sotto il
+                // centro della bandierina appena la si tocca. Ma vale solo
+                // finché la bandierina sta dov'è il canale: quando è alla
+                // deriva al bordo, quell'offset è la distanza dal canale
+                // — anche di megahertz — e il trascinamento non lo
+                // riporterebbe mai sotto il puntatore. Lì il gesto torna a
+                // essere quello che ci si aspetta: il canale va dove si punta.
+                grabOffsetHz = root.adrift
+                             ? 0
+                             : root.vfoFrequency - root.frequencyAt(pointer.x)
             }
 
             onPositionChanged: (mouse) => {
@@ -97,12 +133,12 @@ Item {
                     return
                 const pointer = mapToItem(root, mouse.x, mouse.y)
                 const target = root.frequencyAt(pointer.x) + grabOffsetHz
-                Session.setChannelFrequency(root.vfoRow, Math.round(target))
+                root.tuneRequested(Math.round(target))
             }
 
             onClicked: (mouse) => {
-                if (mouse.button === Qt.RightButton && Session.channels.count > 1)
-                    Session.removeChannel(root.vfoRow)
+                if (mouse.button === Qt.RightButton)
+                    root.removeRequested()
             }
         }
     }

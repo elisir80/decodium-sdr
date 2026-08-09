@@ -4,6 +4,7 @@
 #include "app/SessionSingleton.h"
 #include "core/SessionManager.h"
 
+#include <QCoreApplication>
 #include <QtQuickTest>
 
 class Setup : public QObject
@@ -11,6 +12,20 @@ class Setup : public QObject
     Q_OBJECT
 
 public slots:
+    void applicationAvailable()
+    {
+        // I pannelli si ricordano com'erano, e per farlo aprono un QSettings.
+        // Senza un'identità l'oggetto non si costruisce e ogni istanza urla un
+        // avviso: qui erano centinaia, e in mezzo non si vedeva più nulla.
+        //
+        // L'organizzazione è apposta diversa da quella del prodotto: un test
+        // che scrivesse le preferenze vere riordinerebbe i pannelli a chi sta
+        // usando l'applicazione.
+        QCoreApplication::setOrganizationName(QStringLiteral("DECODIUM-test"));
+        QCoreApplication::setOrganizationDomain(QStringLiteral("test.decodium.invalid"));
+        QCoreApplication::setApplicationName(QStringLiteral("qml-components"));
+    }
+
     void qmlEngineAvailable(QQmlEngine *)
     {
         // I componenti sotto test non usano Session, ma il singleton deve

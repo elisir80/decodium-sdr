@@ -13,7 +13,9 @@
 #include "dsp/ComplexFir.h"
 #include "dsp/DecimatorChain.h"
 #include "dsp/Demodulator.h"
+#include "dsp/LmsFilter.h"
 #include "dsp/Nco.h"
+#include "dsp/NotchFilter.h"
 
 #include <vector>
 
@@ -38,6 +40,26 @@ struct ChannelSettings
     /// supererebbe comunque e l'audio si aprirebbe a scatti.
     bool squelchEnabled = false;
     double squelchThresholdDb = -95.0;
+
+    // ── Filtri di disturbo ──────────────────────────────────────────────
+    //
+    // Tutti spenti di fabbrica, e ognuno col suo interruttore. Nessuno di
+    // questi è gratis: la riduzione di rumore colora la voce, il notch
+    // automatico si mangia anche le note CW. Un ricevitore che li tenesse
+    // sempre accesi suonerebbe meglio sulle scale di misura e peggio
+    // all'orecchio.
+    //
+    // Il noise blanker non è qui: sta nel motore, perché un impulso è
+    // dell'ambiente e non del canale, e va tolto a banda piena prima della
+    // decimazione (SPEC-003 §4).
+    bool nrEnabled = false;
+    double nrStrength = 0.05;      ///< velocità di adattamento della riduzione
+
+    bool anfEnabled = false;       ///< notch automatico sulle righe fisse
+
+    bool notchEnabled = false;     ///< notch manuale, dove dice l'operatore
+    double notchFrequencyHz = 1000.0;
+    double notchWidthHz = 120.0;
 
     bool operator==(const ChannelSettings &o) const noexcept;
     bool operator!=(const ChannelSettings &o) const noexcept { return !(*this == o); }
@@ -82,6 +104,20 @@ public:
     bool squelchClosed() const noexcept { return m_squelchClosed; }
     float agcGainDb() const noexcept { return m_agc.gainDb(); }
 
+    /// Il notch automatico sta davvero lavorando.
+    ///
+    /// In CW no, qualunque cosa dica l'impostazione: la nota che si ascolta è
+    /// una riga fissa, ed è esattamente ciò che l'ANF toglie. Non è una
+    /// raccomandazione all'operatore ma un interlock (SPEC-003 §5) — il modo
+    /// in cui il segnale sparisce è troppo somigliante a una radio guasta.
+    bool autoNotchActive() const noexcept
+    {
+        return m_settings.anfEnabled
+            && m_settings.mode != DemodMode::Cw
+            && m_settings.mode != DemodMode::Cwr;
+    }
+
+
     /// Banda base del canale dopo il filtro: è il tap da cui deriva il flusso
     /// IQ verso DECODIUM 4 (post-decimazione, pre-demodulazione, §5.1).
     const Complex *lastBaseband() const noexcept { return m_filtered.data(); }
@@ -99,6 +135,9 @@ private:
     ComplexFir m_filter;
     Demodulator m_demod;
     Agc m_agc;
+    NotchFilter m_notch;
+    LmsFilter m_anf;
+    LmsFilter m_nr;
 
     std::vector<Complex> m_mixed;
     std::vector<Complex> m_decimated;

@@ -30,7 +30,10 @@ set(DSDR_QML_FILES
     qml/VfoPlate.qml
     qml/PanadapterPane.qml
     qml/WaterfallControls.qml
+    qml/TimeMachinePanel.qml
+    qml/RxChainPanel.qml
     qml/ChannelStrip.qml
+    qml/ChannelCard.qml
     qml/DiscoveryPane.qml
     qml/PanelFrame.qml
     qml/BackendPanelHost.qml
@@ -220,6 +223,15 @@ if(DSDR_COLIBRI_LIB)
         install(FILES "${DSDR_COLIBRI_LIB}" DESTINATION bin)
         message(STATUS "ColibriNANO: la libreria verrà inclusa nel pacchetto "
                        "(${DSDR_COLIBRI_LIB})")
+
+        # E anche accanto all'eseguibile appena costruito: il backend la cerca
+        # lì per prima, e senza questa copia il ColibriNANO funziona solo nei
+        # pacchetti installati — mai durante lo sviluppo, che è quando ci si
+        # attacca la radio davvero.
+        add_custom_command(TARGET dsdr_app POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${DSDR_COLIBRI_LIB}" "$<TARGET_FILE_DIR:dsdr_app>"
+            COMMENT "ColibriNANO: libreria accanto all'eseguibile")
     else()
         # Meglio fermarsi in configurazione che scoprire il pacchetto monco
         # quando qualcuno ci attacca la radio.
