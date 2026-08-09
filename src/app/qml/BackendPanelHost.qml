@@ -16,7 +16,14 @@ Column {
     id: root
 
     spacing: Theme.spacing
-    visible: repeater.count > 0
+    // Serve un device aperto, non solo un backend scelto.
+    //
+    // Le capability — e con esse l'elenco dei pannelli nativi — le dichiara il
+    // backend appena viene selezionato, prima ancora che si connetta qualcosa.
+    // Da quando il ColibriNANO è il backend di partenza, questo significava
+    // mostrare all'avvio il suo pannello di guadagno: comandi con l'aria di
+    // funzionare e nessun ricevitore su cui agire.
+    visible: repeater.count > 0 && Session.connected
 
     Repeater {
         id: repeater

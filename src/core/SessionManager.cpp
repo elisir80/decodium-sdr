@@ -79,8 +79,22 @@ SessionManager::SessionManager(QObject *parent)
         emit errorReported(message, false);
     });
 
+    // Backend di partenza: la radio, se questa compilazione la contempla.
+    //
+    // L'ordine di registrazione metteva primo il demo, e chi apre
+    // l'applicazione con il ricevitore attaccato si trovava sui segnali
+    // sintetici — dovendo passare dal pannello delle sorgenti prima di
+    // ascoltare qualcosa di vero. Il demo resta la rete di sicurezza: se il
+    // ColibriNANO non è compilato in questa build, si ricade sul primo
+    // registrato, che è quello che accadeva sempre fino a ieri.
+    //
+    // Resta un default, non un vincolo: `--backend` e il pannello delle
+    // sorgenti hanno l'ultima parola, e la scelta non è cablata sopra la HAL
+    // (§4) perché passa per l'identificativo, non per il tipo.
     const QStringList ids = hal::BackendRegistry::instance().backendIds();
-    if (!ids.isEmpty())
+    if (ids.contains(QStringLiteral("colibri")))
+        selectBackend(QStringLiteral("colibri"));
+    else if (!ids.isEmpty())
         selectBackend(ids.first());
 }
 
