@@ -17,3 +17,7 @@ dsdr_add_test(tst_noise_filters
 dsdr_add_test(tst_overload_guard
     SOURCES tst_overload_guard.cpp
     LIBRARIES dsdr::dsp)
+
+dsdr_add_test(tst_spectral_denoiser
+    SOURCES tst_spectral_denoiser.cpp
+    LIBRARIES dsdr::dsp)

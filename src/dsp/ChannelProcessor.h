@@ -19,6 +19,7 @@
 #include "dsp/LmsFilter.h"
 #include "dsp/Nco.h"
 #include "dsp/NotchFilter.h"
+#include "dsp/SpectralDenoiser.h"
 #include "dsp/FmIfNoiseReducer.h"
 #include "dsp/RdsDecoder.h"
 
@@ -78,7 +79,11 @@ struct ChannelSettings
     // dell'ambiente e non del canale, e va tolto a banda piena prima della
     // decimazione (SPEC-003 §4).
     bool nrEnabled = false;
-    double nrStrength = 0.05;      ///< velocità di adattamento della riduzione
+    /// Quanto togliere, da 0 a 10 (DSDR-SPEC-003 §6): un solo comando, che
+    /// mappa il fondo del guadagno spettrale da 0 a −25 dB. Gli altri
+    /// parametri della stima non si regolano a orecchio, e per questo non si
+    /// espongono.
+    double nrStrength = 5.0;
 
     bool anfEnabled = false;       ///< notch automatico sulle righe fisse
 
@@ -214,7 +219,7 @@ private:
     Agc m_agc;
     NotchFilter m_notch;
     LmsFilter m_anf;
-    LmsFilter m_nr;
+    SpectralDenoiser m_nr;
     AudioHighPass m_audioHighPassLeft;
     AudioHighPass m_audioHighPassRight;
 

@@ -64,6 +64,7 @@ Rectangle {
     required property real agcGainDb
     required property real passbandShiftHz
     required property bool nrEnabled
+    required property real nrStrength
     required property bool anfEnabled
     required property bool notchEnabled
     required property real notchFrequencyHz
@@ -727,7 +728,8 @@ Rectangle {
                 text: qsTr("NR")
                 checkable: true
                 checked: entry.nrEnabled
-                onToggled: Session.setChannelNoiseReduction(entry.index, checked, 0.05)
+                onToggled: Session.setChannelNoiseReduction(entry.index, checked,
+                                                            entry.nrStrength)
             }
 
             DsdrButton {
@@ -750,6 +752,37 @@ Rectangle {
                 onToggled: Session.setChannelNotch(entry.index, checked,
                                                    entry.notchFrequencyHz,
                                                    entry.notchWidthHz)
+            }
+        }
+
+        // Un solo comando per il NR, come vuole la specifica: alza e abbassa
+        // il fondo del guadagno. Più in alto si sente meno rumore e più
+        // campanellini, ed è l'unica cosa che si giudica a orecchio.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+            visible: entry.nrEnabled
+
+            Text {
+                text: qsTr("NR")
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+            }
+
+            DsdrSlider {
+                Layout.fillWidth: true
+                from: 0; to: 10
+                stepSize: 1
+                value: entry.nrStrength
+                onMoved: Session.setChannelNoiseReduction(entry.index, true, value)
+            }
+
+            Text {
+                text: Math.round(entry.nrStrength)
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: Theme.textPrimary
+                Layout.preferredWidth: 20
             }
         }
 

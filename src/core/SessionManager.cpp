@@ -1663,9 +1663,10 @@ void SessionManager::setChannelNoiseReduction(int row, bool enabled, double stre
     if (!entry)
         return;
     entry->settings.nrEnabled = enabled;
-    // Più in alto insegue meglio ma «respira» sul parlato: è il compromesso
-    // che ogni operatore regola a orecchio, e per questo resta esposto.
-    entry->settings.nrStrength = std::clamp(strength, 0.005, 0.3);
+    // Da 0 a 10, come da specifica: è l'unico comando del NR spettrale, e
+    // mappa il fondo del guadagno. Più in alto si sente meno rumore e più
+    // campanellini — il compromesso lo giudica l'orecchio di chi ascolta.
+    entry->settings.nrStrength = std::clamp(strength, 0.0, 10.0);
     m_channels.entryChanged(row, {ChannelModel::NrEnabledRole});
     pushChannelToEngine(row);
 }

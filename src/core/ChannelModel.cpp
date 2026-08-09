@@ -53,6 +53,7 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case VolumeRole:       return entry.settings.volume;
     case MutedRole:        return entry.settings.muted;
     case NrEnabledRole:        return entry.settings.nrEnabled;
+    case NrStrengthRole:       return entry.settings.nrStrength;
     case AnfEnabledRole:       return entry.settings.anfEnabled;
     case NotchEnabledRole:     return entry.settings.notchEnabled;
     case NotchFrequencyRole:   return entry.settings.notchFrequencyHz;
@@ -112,6 +113,7 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {VolumeRole, "volume"},
         {MutedRole, "muted"},
         {NrEnabledRole, "nrEnabled"},
+        {NrStrengthRole, "nrStrength"},
         {AnfEnabledRole, "anfEnabled"},
         {NotchEnabledRole, "notchEnabled"},
         {NotchFrequencyRole, "notchFrequencyHz"},

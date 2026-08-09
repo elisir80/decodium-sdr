@@ -35,6 +35,7 @@ out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
 | Registrazione IQ | ✅ WAV float32 + sidecar JSON, RF64 oltre i 4 GB |
 | Riproduzione da file IQ | ✅ backend `iqfile`: legge il nostro WAV/RF64 e anche PCM 16/8 bit |
 | Macchina del tempo (riascolto della diretta) | ✅ nel motore, quindi per ogni backend: il registratore conserva, questa rimedia — un tetto di 96 MiB decide quanti secondi, la UI mostra quelli veri |
+| EMNR spettrale (ondata 2b, §6) | ✅ il predittore adattivo resta solo come notch automatico |
 | **Ondata 2a completa** ([DSDR-SPEC-003](docs/DSDR-SPEC-003-RX-Excellence.md)): Overload Guard §3 con correzione automatica dal seam, NB1 §4, fondo di rumore e S/N §9, passband tuning §7 | ✅ |
 | NB / NR / ANF / notch manuale | ✅ anticipati dalla Fase 2: DSP originale, spenti di fabbrica perché nessuno dei quattro è gratis. NB e ANF conformi a [DSDR-SPEC-003](docs/DSDR-SPEC-003-RX-Excellence.md) §4–5; restano da fare EMNR (§6), notch ancorati alla RF e Overload Guard (§3) |
 | i18n — pipeline e selettore lingua | ✅ 14 lingue predisposte |

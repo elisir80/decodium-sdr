@@ -137,7 +137,11 @@ bool ChannelProcessor::configureForMode()
     // stesso ritardo di decorrelazione farebbero lo stesso mestiere due volte.
     m_notch.configure(m_channelRate);
     m_anf.configure(64, 8);
-    m_nr.configure(64, 16);
+
+    // Il NR spettrale lavora sull'audio demodulato: finestra da 512 per la
+    // voce. Costa una FFT ogni mezza finestra — meno dell'uno per cento di un
+    // core — e aggiunge una finestra di ritardo, dentro il budget di RNF-03.
+    m_nr.configure(m_channelRate, 512);
 
 
     const std::size_t block = kMaxBlockFrames;
@@ -396,7 +400,7 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     m_agc.setDecayMs(m_settings.agcDecayMs);
 
     m_notch.setNotch(m_settings.notchFrequencyHz, m_settings.notchWidthHz);
-    m_nr.setRate(static_cast<float>(m_settings.nrStrength));
+    m_nr.setStrength(m_settings.nrStrength);
 
     // Un filtro adattivo che riparte da spento porta con sé i coefficienti di
     // prima: erano la risposta a un segnale che non c'è più, e per qualche
@@ -831,7 +835,7 @@ void ChannelProcessor::applyAudioFilters(float *audio, std::size_t count) noexce
     if (autoNotchActive())
         m_anf.process(audio, count, LmsFilter::Output::Error);
     if (m_settings.nrEnabled)
-        m_nr.process(audio, count, LmsFilter::Output::Prediction);
+        m_nr.process(audio, count);
 }
 
 std::size_t ChannelProcessor::process(const Complex *iq, std::size_t n, float *out) noexcept

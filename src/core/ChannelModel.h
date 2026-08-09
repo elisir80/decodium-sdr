@@ -63,6 +63,7 @@ public:
         VolumeRole,
         MutedRole,
         NrEnabledRole,
+        NrStrengthRole,
         AnfEnabledRole,
         NotchEnabledRole,
         NotchFrequencyRole,
