@@ -57,6 +57,8 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case NotchWidthRole:       return entry.settings.notchWidthHz;
     case SignalDbRole:     return entry.signalDb;
     case AgcGainDbRole:    return entry.agcGainDb;
+    case NoiseFloorDbRole: return entry.noiseFloorDb;
+    case SnrDbRole:        return entry.signalDb - entry.noiseFloorDb;
     case ColorRole:        return entry.color;
     case LabelRole:        return entry.label;
     default:               return QVariant();
@@ -86,6 +88,8 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {NotchWidthRole, "notchWidthHz"},
         {SignalDbRole, "signalDb"},
         {AgcGainDbRole, "agcGainDb"},
+        {NoiseFloorDbRole, "noiseFloorDb"},
+        {SnrDbRole, "snrDb"},
         {ColorRole, "channelColor"},
         {LabelRole, "label"},
     };
@@ -175,7 +179,8 @@ void ChannelModel::entryChanged(int row, const QList<int> &roles)
     emit dataChanged(idx, idx, roles);
 }
 
-void ChannelModel::updateMeters(ChannelId id, float signalDb, float agcGainDb)
+void ChannelModel::updateMeters(ChannelId id, float signalDb, float agcGainDb,
+                                float noiseFloorDb)
 {
     const int row = indexOf(id);
     if (row < 0)
@@ -184,7 +189,8 @@ void ChannelModel::updateMeters(ChannelId id, float signalDb, float agcGainDb)
     ChannelEntry &entry = m_entries[static_cast<std::size_t>(row)];
     entry.signalDb = signalDb;
     entry.agcGainDb = agcGainDb;
-    entryChanged(row, {SignalDbRole, AgcGainDbRole});
+    entry.noiseFloorDb = noiseFloorDb;
+    entryChanged(row, {SignalDbRole, AgcGainDbRole, NoiseFloorDbRole, SnrDbRole});
 }
 
 QColor ChannelModel::nextColor() const

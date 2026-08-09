@@ -24,6 +24,7 @@ struct ChannelEntry
     QColor color;
     float signalDb = -140.0f;
     float agcGainDb = 0.0f;
+    float noiseFloorDb = -140.0f;   ///< fondo stimato nella banda del canale
 };
 
 class ChannelModel : public QAbstractListModel
@@ -54,6 +55,8 @@ public:
         NotchWidthRole,
         SignalDbRole,
         AgcGainDbRole,
+        NoiseFloorDbRole,
+        SnrDbRole,
         ColorRole,
         LabelRole,
     };
@@ -81,7 +84,7 @@ public:
     /// Notifica il cambio di un'entry già modificata in place.
     void entryChanged(int row, const QList<int> &roles = {});
 
-    void updateMeters(ChannelId id, float signalDb, float agcGainDb);
+    void updateMeters(ChannelId id, float signalDb, float agcGainDb, float noiseFloorDb);
 
     /// Colore successivo della palette dei canali (stile slice).
     QColor nextColor() const;

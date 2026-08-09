@@ -249,6 +249,35 @@ Item {
         }
     }
 
+    // ── Spia di saturazione ──────────────────────────────────────────────
+    //
+    // Sul pan e non solo nel pannello: quando l'ingresso satura è lo spettro a
+    // mentire per primo — il fondo si alza, i deboli spariscono — e chi guarda
+    // qui deve sapere che non sta guardando la banda, ma i prodotti del
+    // proprio convertitore.
+    Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.topMargin: Theme.spacing
+        anchors.leftMargin: 42 + 90
+        width: overloadLabel.implicitWidth + 2 * Theme.spacingLoose
+        height: 22
+        radius: Theme.radiusSmall
+        color: Theme.danger
+        visible: Session.overloaded
+        z: 7
+
+        Text {
+            id: overloadLabel
+            anchors.centerIn: parent
+            text: qsTr("OVL  %1 dBFS").arg(Session.peakDbfs.toFixed(1))
+            font.pixelSize: Theme.fontSmall
+            font.bold: true
+            font.family: Theme.monoFamily
+            color: Theme.background
+        }
+    }
+
     // ── Avviso di riascolto ──────────────────────────────────────────────
     //
     // In riascolto non è solo l'audio a essere in ritardo: traccia, waterfall

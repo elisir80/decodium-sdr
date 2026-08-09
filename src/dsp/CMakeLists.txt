@@ -29,6 +29,8 @@ add_library(dsdr_dsp STATIC
     Agc.cpp
     NoiseBlanker.h
     NoiseBlanker.cpp
+    OverloadGuard.h
+    OverloadGuard.cpp
     LmsFilter.h
     LmsFilter.cpp
     NotchFilter.h

@@ -66,8 +66,8 @@ SessionManager::SessionManager(QObject *parent)
     m_dspThread->start(QThread::HighPriority);
 
     connect(m_engine, &DspEngine::metersUpdated, this,
-            [this](ChannelId id, float signalDb, float agcGainDb) {
-                m_channels.updateMeters(id, signalDb, agcGainDb);
+            [this](ChannelId id, float signalDb, float agcGainDb, float noiseFloorDb) {
+                m_channels.updateMeters(id, signalDb, agcGainDb, noiseFloorDb);
             });
 
     connect(m_engine, &DspEngine::overrunDetected, this, [this](quint64 lost) {
@@ -85,6 +85,36 @@ SessionManager::SessionManager(QObject *parent)
                 m_replayDelay = delaySeconds;
                 m_replayHistory = historySeconds;
                 emit replayChanged();
+            });
+
+    // La guardia parla poco: quando l'ingresso entra o esce dalla saturazione, e
+    // quando avrebbe una correzione da chiedere.
+    connect(m_engine, &DspEngine::overloadStateChanged, this,
+            [this](bool overloaded, double peakDbfs, double requestDb) {
+                const bool wasOverloaded = m_overloaded;
+                m_overloaded = overloaded;
+                m_peakDbfs = peakDbfs;
+                emit overloadChanged();
+
+                if (overloaded && !wasOverloaded) {
+                    setStatus(canCorrectGain()
+                                  ? tr("Ingresso in saturazione (%1 dBFS).")
+                                        .arg(peakDbfs, 0, 'f', 1)
+                                  : tr("Ingresso in saturazione (%1 dBFS): "
+                                       "riduci il guadagno o inserisci l'attenuatore.")
+                                        .arg(peakDbfs, 0, 'f', 1));
+                }
+
+                // La correzione la guardia la chiede, ma questo backend non ha
+                // ancora un modo di riceverla dal seam: si dice all'operatore
+                // che cosa servirebbe, invece di far finta di averlo fatto.
+                if (requestDb < 0.0) {
+                    setStatus(tr("Servirebbero %1 dB in meno di guadagno.")
+                                  .arg(-requestDb, 0, 'f', 0));
+                } else if (requestDb > 0.0) {
+                    setStatus(tr("C'è margine: si possono restituire %1 dB.")
+                                  .arg(requestDb, 0, 'f', 0));
+                }
             });
 
     connect(&m_recorder, &IqRecorder::failed, this, [this](const QString &message) {
@@ -642,6 +672,27 @@ void SessionManager::setNoiseBlanker(bool enabled, double threshold)
     m_nbEnabled = enabled;
     m_engine->setNoiseBlanker(m_nbEnabled, m_nbThreshold);
     emit noiseBlankerChanged();
+}
+
+void SessionManager::setOverloadMode(int mode)
+{
+    mode = std::clamp(mode, 0, 2);
+    if (m_overloadMode == mode)
+        return;
+
+    m_overloadMode = mode;
+    if (m_engine)
+        m_engine->setOverloadMode(mode);
+    emit overloadChanged();
+}
+
+bool SessionManager::canCorrectGain() const
+{
+    // Oggi nessun backend espone il guadagno attraverso il seam: preamp e
+    // attenuatore vivono nei comandi nativi dei loro pannelli. Finché è così
+    // la guardia avverte e non corregge, e la UI lo dice invece di mostrare un
+    // automatismo che non scatterebbe mai.
+    return false;
 }
 
 double SessionManager::noiseBlankerActivity() const

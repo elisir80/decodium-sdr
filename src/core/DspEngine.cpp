@@ -148,6 +148,11 @@ double DspEngine::noiseBlankerThreshold() const
     return m_nbThreshold.load(std::memory_order_acquire);
 }
 
+void DspEngine::setOverloadMode(int mode)
+{
+    m_overloadMode.store(std::clamp(mode, 0, 2), std::memory_order_release);
+}
+
 double DspEngine::historyCapacitySeconds() const
 {
     const double rate = m_sourceRate.load(std::memory_order_acquire);
@@ -195,6 +200,8 @@ void DspEngine::reconfigure()
     const std::size_t historyFrames = historyFramesFor(m_activeRate);
     m_history.configure(historyFrames);
     m_blanker.configure(m_activeRate);
+    m_overload.configure(m_activeRate);
+    m_lastOverloadReported = false;
     m_historyFrames.store(0, std::memory_order_release);
     m_replayDelayFrames.store(0, std::memory_order_release);
     m_historyDirty.store(false, std::memory_order_release);
@@ -295,6 +302,34 @@ void DspEngine::processAvailable()
         if (IqRecorder *recorder = m_recorder.load(std::memory_order_acquire))
             recorder->feed(m_interleaved.data(), got);
 
+        // ── Guardia contro la saturazione (SPEC-003 §3) ─────────────────
+        //
+        // Sui campioni appena arrivati, prima di tutto il resto: la
+        // saturazione avviene nel convertitore, e osservarla dopo il blanker
+        // — che gli impulsi li toglie — vorrebbe dire non vederla più.
+        // Guarda sempre il presente, anche mentre si sta riascoltando il
+        // passato: la radio continua a ricevere, e se è in saturazione adesso
+        // è adesso che va detto.
+        //
+        // `Complex` è std::complex<float>, il cui contenuto è garantito
+        // equivalente a due float in sequenza: l'array interleaved si può
+        // leggere così com'è, senza copiarlo.
+        m_overload.setMode(static_cast<dsp::OverloadGuard::Mode>(
+            m_overloadMode.load(std::memory_order_acquire)));
+        m_overload.feed(reinterpret_cast<const Complex *>(m_interleaved.data()), count);
+
+        const double gainRequest = m_overload.takeRequestDb();
+        const bool overloadedNow = m_overload.overloaded();
+        m_overloaded.store(overloadedNow, std::memory_order_release);
+        m_peakDbfs.store(m_overload.peakDbfs(), std::memory_order_release);
+
+        // Si parla solo quando cambia qualcosa: la guardia chiude una finestra
+        // dieci volte al secondo, e un segnale per finestra sarebbe rumore.
+        if (overloadedNow != m_lastOverloadReported || gainRequest != 0.0) {
+            m_lastOverloadReported = overloadedNow;
+            emit overloadStateChanged(overloadedNow, m_overload.peakDbfs(), gainRequest);
+        }
+
         // ── Macchina del tempo ──────────────────────────────────────────
         //
         // La storia si scrive sempre, anche quando la si sta già riascoltando:
@@ -366,7 +401,8 @@ void DspEngine::processAvailable()
                 channel.lastMeterNs = now;
                 emit metersUpdated(channelId,
                                    channel.processor->signalLevelDb(),
-                                   channel.processor->agcGainDb());
+                                   channel.processor->agcGainDb(),
+                                   channel.processor->noiseFloorDb());
             }
         }
 
@@ -395,6 +431,12 @@ void DspEngine::processAvailable()
     if (now - m_lastReplayReportNs >= kReplayIntervalNs) {
         m_lastReplayReportNs = now;
         emit replayStateChanged(replayDelaySeconds(), historySeconds());
+
+        // Anche il picco, con lo stesso contagocce: dentro il ciclo si parla
+        // solo quando la saturazione comincia o finisce, ma su una banda
+        // tranquilla — dove non cambia mai niente — la misura non arriverebbe
+        // mai alla UI, e il numero mostrato resterebbe quello di fabbrica.
+        emit overloadStateChanged(m_overload.overloaded(), m_overload.peakDbfs(), 0.0);
     }
 }
 

@@ -98,6 +98,18 @@ public:
     /// Livello del segnale filtrato, pre-AGC, in dBFS (S-meter).
     float signalLevelDb() const noexcept { return m_signalLevelDb; }
 
+    /// Fondo di rumore stimato nella banda del canale, in dBFS (SPEC-003 §9).
+    ///
+    /// Per minima statistica: il fondo è il livello più basso che il canale
+    /// tocca, non la sua media — una media la alzano i segnali stessi, e su
+    /// una frequenza occupata si finirebbe a chiamare «rumore» il parlato.
+    float noiseFloorDb() const noexcept { return m_noiseFloorDb; }
+
+    /// Quanto il segnale emerge dal fondo, in dB. È il numero che trasforma le
+    /// impressioni in confronti: «si sente meglio» non si può discutere,
+    /// «dodici dB invece di sei» sì.
+    float snrDb() const noexcept { return m_signalLevelDb - m_noiseFloorDb; }
+
     /// Vero quando lo squelch sta tenendo chiuso l'audio. Serve alla UI per
     /// dirlo: uno squelch chiuso e una radio guasta suonano identici, e senza
     /// una spia si finisce a cercare il problema nel cavo dell'antenna.
@@ -148,6 +160,8 @@ private:
     double m_channelRate = 0.0;
     double m_audioRate = 48000.0;
     float m_signalLevelDb = -160.0f;
+    float m_noiseFloorDb = -160.0f;
+    float m_floorRiseRate = 0.0f;   ///< quanto il fondo può risalire, per blocco
     bool m_squelchClosed = false;
     float m_squelchGain = 0.0f;   ///< apertura corrente, 0..1, per non scattare
     std::size_t m_lastBasebandFrames = 0;

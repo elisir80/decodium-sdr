@@ -34,6 +34,8 @@ private slots:
     void rewindingStopsAtTheOldestSampleHeld();
     void changingBandStartsTheHistoryOver();
     void noiseFiltersReachTheDspWithoutKillingTheAudio();
+    void theChannelMeasuresItsOwnNoiseFloor();
+    void theOverloadGuardStaysQuietOnAWellBehavedBand();
 
 private:
     /// Attende che `predicate` diventi vera, facendo girare l'event loop.
@@ -372,6 +374,57 @@ void TestSessionDemo::noiseFiltersReachTheDspWithoutKillingTheAudio()
     QTest::qWait(600);
     QVERIFY2(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 4000),
              "la catena si è fermata dopo un notch fuori scala");
+}
+
+void TestSessionDemo::theChannelMeasuresItsOwnNoiseFloor()
+{
+    SessionManager session;
+    QVERIFY2(connectSession(session), "connessione al backend demo fallita");
+
+    // Il fondo si stima per minima statistica: serve qualche secondo perché la
+    // banda mostri i suoi momenti di quiete.
+    QVERIFY2(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 5000),
+             "nessun livello misurato");
+    QTest::qWait(2000);
+
+    const ChannelEntry *entry = session.channels()->at(0);
+    QVERIFY(entry != nullptr);
+
+    // Il fondo non può stare sopra il livello: è il minimo che il canale ha
+    // toccato, non una media.
+    QVERIFY2(entry->noiseFloorDb <= entry->signalDb + 0.5f,
+             qPrintable(QStringLiteral("fondo %1 dB sopra il livello %2 dB")
+                            .arg(entry->noiseFloorDb).arg(entry->signalDb)));
+
+    // E deve essere un numero vero, non il valore di partenza: se resta a
+    // −160 la stima non è mai partita.
+    QVERIFY2(entry->noiseFloorDb > -159.0f,
+             qPrintable(QStringLiteral("fondo mai stimato: %1 dB").arg(entry->noiseFloorDb)));
+
+    const QModelIndex index = session.channels()->index(0, 0);
+    const double snr = session.channels()->data(index, ChannelModel::SnrDbRole).toDouble();
+    QVERIFY2(snr >= -0.5,
+             qPrintable(QStringLiteral("rapporto segnale/rumore negativo: %1 dB").arg(snr)));
+}
+
+void TestSessionDemo::theOverloadGuardStaysQuietOnAWellBehavedBand()
+{
+    SessionManager session;
+    QVERIFY2(connectSession(session), "connessione al backend demo fallita");
+    QTest::qWait(1500);
+
+    // Il demo genera una banda con margine abbondante: la guardia deve tacere.
+    // Una spia che si accende su una sorgente sana insegna a ignorarla, ed è il
+    // modo migliore per non vederla la volta che conta.
+    QVERIFY2(!session.overloaded(),
+             qPrintable(QStringLiteral("saturazione dichiarata su banda sana: picco %1 dBFS")
+                            .arg(session.peakDbfs())));
+    QVERIFY2(session.peakDbfs() > -100.0 && session.peakDbfs() <= 0.5,
+             qPrintable(QStringLiteral("picco implausibile: %1 dBFS").arg(session.peakDbfs())));
+
+    // E il device non offre correzione di guadagno dal seam: la UI deve poterlo
+    // dire invece di mostrare un automatismo che non scatterà.
+    QVERIFY(!session.canCorrectGain());
 }
 
 QTEST_MAIN(TestSessionDemo)

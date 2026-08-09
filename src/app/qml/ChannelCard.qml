@@ -33,6 +33,8 @@ Rectangle {
     required property real notchWidthHz
     required property real signalDb
     required property real agcGainDb
+    required property real noiseFloorDb
+    required property real snrDb
 
     readonly property bool current: Session.channels.currentIndex === index
 
@@ -337,11 +339,46 @@ Rectangle {
         // preimpostati di ModeSelector coprono i valori d'uso, e
         // per il taglio fine ci sono i bordi della fascia sullo
         // spettro, dove si vede cosa si sta tagliando.
-        Text {
-            text: qsTr("guadagno AGC %1 dB").arg(Math.round(entry.agcGainDb))
-            font.pixelSize: Theme.fontSmall
-            font.family: Theme.monoFamily
-            color: Theme.textDisabled
+        // ── Misura onesta (SPEC-003 §9) ──────────────────────
+        //
+        // Il fondo di rumore e quanto il segnale ci emerge sopra.
+        // È il numero che trasforma le impressioni in confronti:
+        // «si sente meglio» non si può discutere, «dodici dB
+        // invece di sei» sì — e vale anche per giudicare se un
+        // filtro di disturbo stia servendo a qualcosa.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacing
+
+            Text {
+                text: qsTr("S/N")
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+            }
+
+            Text {
+                text: entry.snrDb > 0.5
+                      ? "+" + Math.round(entry.snrDb) + " dB"
+                      : "—"
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                font.bold: true
+                color: entry.snrDb >= 10 ? Theme.success
+                     : entry.snrDb >= 3 ? Theme.textPrimary
+                     : Theme.textDisabled
+            }
+
+            Text {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignRight
+                text: qsTr("fondo %1 · AGC %2 dB")
+                      .arg(Math.round(entry.noiseFloorDb))
+                      .arg(Math.round(entry.agcGainDb))
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: Theme.textDisabled
+                elide: Text.ElideRight
+            }
         }
 
         // ── Volume ───────────────────────────────────────────

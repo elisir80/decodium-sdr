@@ -72,6 +72,12 @@ bool ChannelProcessor::configure(double deviceSampleRate, double audioSampleRate
     m_anf.configure(64, 8);
     m_nr.configure(64, 16);
 
+    // Risalita del fondo: circa sei dB al minuto. Abbastanza lenta perché una
+    // trasmissione lunga non la trascini con sé, abbastanza svelta da seguire
+    // il rumore che monta nell'arco di una serata.
+    const double blocksPerSecond = m_channelRate / static_cast<double>(kMaxBlockFrames);
+    m_floorRiseRate = static_cast<float>(0.1 / std::max(1.0, blocksPerSecond));
+
     const std::size_t block = kMaxBlockFrames;
     m_mixed.assign(block, Complex(0.0f, 0.0f));
     m_decimated.assign(m_chain.maxOutput(block) + 8, Complex(0.0f, 0.0f));
@@ -217,6 +223,7 @@ void ChannelProcessor::reset() noexcept
     m_anf.reset();
     m_nr.reset();
     m_signalLevelDb = -160.0f;
+    m_noiseFloorDb = -160.0f;
     m_lastBasebandFrames = 0;
 }
 
@@ -248,6 +255,18 @@ std::size_t ChannelProcessor::process(const Complex *iq, std::size_t n, float *o
         power /= static_cast<float>(decimated);
         const float instantDb = powerToDb(power);
         m_signalLevelDb += (instantDb - m_signalLevelDb) * 0.2f;
+
+        // ── Fondo di rumore, per minima statistica (SPEC-003 §9) ────────
+        //
+        // Scende subito e risale piano: il livello più basso che il canale
+        // tocca è il fondo, tutto il resto è qualcuno che trasmette. La
+        // risalita lenta serve a inseguire il fondo vero quando cambia — il
+        // QRN che monta la sera, un motore che si accende nel palazzo — senza
+        // farsi tirare su dai segnali che passano.
+        if (m_signalLevelDb < m_noiseFloorDb)
+            m_noiseFloorDb = m_signalLevelDb;
+        else
+            m_noiseFloorDb += m_floorRiseRate;
 
         float *audio = out + produced;
         m_demod.process(m_filtered.data(), decimated, audio);

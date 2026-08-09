@@ -73,6 +73,16 @@ class SessionManager : public QObject
     Q_PROPERTY(double noiseBlankerThreshold READ noiseBlankerThreshold
                    NOTIFY noiseBlankerChanged)
     Q_PROPERTY(double noiseBlankerActivity READ noiseBlankerActivity NOTIFY replayChanged)
+
+    // ── Guardia contro la saturazione (SPEC-003 §3) ─────────────────────
+    Q_PROPERTY(bool overloaded READ overloaded NOTIFY overloadChanged)
+    Q_PROPERTY(double peakDbfs READ peakDbfs NOTIFY overloadChanged)
+    Q_PROPERTY(int overloadMode READ overloadMode WRITE setOverloadMode NOTIFY overloadChanged)
+
+    /// Il device offre un modo di togliere guadagno dalla HAL. Finché è falso
+    /// la guardia può solo avvertire — e la UI deve dirlo, invece di mostrare
+    /// un automatismo che non scatterà mai (CONSTITUTION §7).
+    Q_PROPERTY(bool canCorrectGain READ canCorrectGain NOTIFY backendChanged)
     Q_PROPERTY(int spectrumAveraging READ spectrumAveraging WRITE setSpectrumAveraging
                    NOTIFY spectrumAveragingChanged)
 
@@ -124,6 +134,12 @@ public:
     double replayHistorySeconds() const { return m_replayHistory; }
     double replayCapacitySeconds() const;
     bool replaying() const { return m_replayDelay > 0.05; }
+
+    bool overloaded() const { return m_overloaded; }
+    double peakDbfs() const { return m_peakDbfs; }
+    int overloadMode() const { return m_overloadMode; }
+    void setOverloadMode(int mode);
+    bool canCorrectGain() const;
 
     bool noiseBlanker() const { return m_nbEnabled; }
     double noiseBlankerThreshold() const { return m_nbThreshold; }
@@ -207,6 +223,7 @@ signals:
     void sampleRateChanged();
     void replayChanged();
     void noiseBlankerChanged();
+    void overloadChanged();
     void spectrumAveragingChanged();
     void errorReported(const QString &message, bool fatal);
 
@@ -239,7 +256,10 @@ private:
     double m_replayDelay = 0.0;      ///< di quanto si sta ascoltando indietro
     double m_replayHistory = 0.0;    ///< fin dove si potrebbe tornare
     double m_nbThreshold = 4.0;
+    double m_peakDbfs = -160.0;
+    int m_overloadMode = 0;
     bool m_nbEnabled = false;
+    bool m_overloaded = false;
     bool m_connected = false;
     bool m_discovering = false;
     bool m_transmitting = false;

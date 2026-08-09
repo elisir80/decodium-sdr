@@ -13,6 +13,7 @@
 #include "core/SpectrumFeed.h"
 #include "dsp/ChannelProcessor.h"
 #include "dsp/NoiseBlanker.h"
+#include "dsp/OverloadGuard.h"
 #include "dsp/SpectrumAnalyzer.h"
 #include "dsp/SpscRing.h"
 #include "dsp/TimeShiftBuffer.h"
@@ -90,6 +91,16 @@ public:
     /// distingue un blanker che lavora da uno che tagliuzza.
     float noiseBlankerActivity() const { return m_nbActivity.load(std::memory_order_acquire); }
 
+    // ── Guardia contro la saturazione (SPEC-003 §3) ─────────────────────
+    //
+    // Guarda il picco del flusso come arriva dal device — prima del blanker e
+    // prima di qualunque altra cosa — perché la saturazione avviene nel
+    // convertitore, e ciò che il DSP ne fa dopo non la racconta più.
+    void setOverloadMode(int mode);
+    int overloadMode() const { return m_overloadMode.load(std::memory_order_acquire); }
+    bool overloaded() const { return m_overloaded.load(std::memory_order_acquire); }
+    double peakDbfs() const { return m_peakDbfs.load(std::memory_order_acquire); }
+
 public slots:
     void onIqFrameReady(const dsdr::hal::IqFrame &frame);
     void addChannel(dsdr::ChannelId id, const dsdr::dsp::ChannelSettings &settings);
@@ -99,12 +110,17 @@ public slots:
 
 signals:
     /// Misure per la UI, aggregate: un'emissione per blocco, non per campione.
-    void metersUpdated(dsdr::ChannelId id, float signalDb, float agcGainDb);
+    void metersUpdated(dsdr::ChannelId id, float signalDb, float agcGainDb,
+                       float noiseFloorDb);
     void overrunDetected(quint64 lostFrames);
 
     /// Stato della macchina del tempo, aggregato come i meter: la storia
     /// cresce a ogni blocco e non merita un segnale per blocco.
     void replayStateChanged(double delaySeconds, double historySeconds);
+
+    /// L'ingresso è entrato o uscito dalla saturazione, e di quanto la guardia
+    /// chiederebbe di correggere il guadagno (0 se non chiede nulla).
+    void overloadStateChanged(bool overloaded, double peakDbfs, double requestDb);
 
 private:
     void reconfigure();
@@ -133,6 +149,9 @@ private:
     std::atomic<bool> m_historyDirty{false};
 
     std::atomic<bool> m_nbEnabled{false};
+    std::atomic<int> m_overloadMode{0};
+    std::atomic<bool> m_overloaded{false};
+    std::atomic<double> m_peakDbfs{-160.0};
     std::atomic<double> m_nbThreshold{4.0};
     std::atomic<float> m_nbActivity{0.0f};
 
@@ -149,6 +168,8 @@ private:
 
     dsp::TimeShiftBuffer m_history;     ///< gli ultimi secondi di banda
     dsp::NoiseBlanker m_blanker;
+    dsp::OverloadGuard m_overload;
+    bool m_lastOverloadReported = false;
 
     std::vector<float> m_interleaved;   ///< lettura grezza dal ring
     std::vector<dsp::Complex> m_iq;     ///< versione complessa

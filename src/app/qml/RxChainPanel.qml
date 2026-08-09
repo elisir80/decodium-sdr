@@ -17,6 +17,61 @@ PanelFrame {
     title: qsTr("CATENA RX")
     draggable: true
 
+    // ── Saturazione dell'ingresso ────────────────────────────────────────
+    //
+    // È il difetto più frequente e il meno riconoscibile: quando il
+    // convertitore satura, i prodotti di intermodulazione alzano il fondo su
+    // tutta la banda e i segnali deboli spariscono. Sembra una brutta serata
+    // di propagazione, e si finisce a controllare l'antenna.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacing
+
+        Rectangle {
+            implicitWidth: 44
+            implicitHeight: 22
+            radius: Theme.radiusSmall
+            color: Session.overloaded ? Theme.danger : Theme.surfaceSunken
+            border.width: 1
+            border.color: Session.overloaded ? Theme.danger : Theme.border
+
+            Behavior on color {
+                ColorAnimation { duration: Theme.animationFast }
+            }
+
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("OVL")
+                font.pixelSize: Theme.fontSmall
+                font.bold: true
+                color: Session.overloaded ? Theme.background : Theme.textDisabled
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: Session.connected
+                  ? qsTr("picco %1 dBFS").arg(Session.peakDbfs.toFixed(1))
+                  : ""
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Session.overloaded ? Theme.danger : Theme.textSecondary
+        }
+    }
+
+    Text {
+        Layout.fillWidth: true
+        visible: Session.overloaded
+        // Senza controllo di guadagno dalla HAL la guardia può solo dire cosa
+        // servirebbe: prometterlo e non farlo sarebbe peggio del silenzio.
+        text: Session.canCorrectGain
+              ? qsTr("Guadagno ridotto in automatico per rientrare dalla saturazione.")
+              : qsTr("Riduci il guadagno o inserisci l'attenuatore: in saturazione il ricevitore si fa sordo su tutta la banda.")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.danger
+        wrapMode: Text.WordWrap
+    }
+
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.spacingTight

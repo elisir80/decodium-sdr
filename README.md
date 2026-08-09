@@ -23,6 +23,8 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Backend **nettcp**: rtl_tcp e SpyServer, con riconoscimento automatico | ✅ |
 | Backend **colibri**: ColibriNANO USB, 0,1–55 MHz | ✅ |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
+| **Overload Guard**: riconosce la saturazione dell'ADC e lo dice, invece di lasciarla scambiare per propagazione scarsa | ✅ |
+| Fondo di rumore e **S/N reale** per canale | ✅ |
 | Filtri di disturbo: **NB** a banda piena nel motore, **NR** e **ANF** (un predittore adattivo, due prese), **notch** manuale | ✅ spenti di fabbrica — [DSDR-SPEC-003](docs/DSDR-SPEC-003-RX-Excellence.md) §4–5 |
 | Spettro e waterfall su GPU (`QQuickRhiItem`, shader `.qsb`) | ✅ |
 | Multi-canale RX con flag VFO colorati e channel strip | ✅ |
