@@ -28,6 +28,7 @@ private slots:
     void audioKeepsUpWithRealTime();
     void channelLimitMatchesCapabilities();
     void disconnectStopsEverything();
+    void movingTheCentreKeepsChannelFrequencies();
 
 private:
     /// Attende che `predicate` diventi vera, facendo girare l'event loop.
@@ -139,6 +140,34 @@ void TestSessionDemo::disconnectStopsEverything()
     session.connectToDevice(0);
     QVERIFY(session.isConnected());
     QCOMPARE(session.channels()->rowCount(), 1);
+}
+
+void TestSessionDemo::movingTheCentreKeepsChannelFrequencies()
+{
+    SessionManager session;
+    QVERIFY2(connectSession(session), "connessione al backend demo fallita");
+
+    const qint64 start = session.centerFrequency();
+    const int row = session.addChannel(start);
+    QVERIFY2(row >= 0, "canale non creato");
+    QCOMPARE(session.channels()->at(row)->frequencyHz, start);
+
+    // Spostare il centro della banda campionata non deve spostare il
+    // ricevitore: la frequenza del canale è assoluta, l'offset è quello che si
+    // ricalcola. È l'invariante sospettata dopo aver visto RX 1 comparire a
+    // 12.076.200 Hz con il centro a 14.100.000.
+    const qint64 moved = start + 7'000'000;
+    session.setCenterFrequency(moved);
+    QVERIFY2(waitFor([&] { return session.centerFrequency() == moved; }, 3000),
+             "il centro non si è spostato");
+
+    const auto *entry = session.channels()->at(row);
+    QVERIFY(entry != nullptr);
+    QCOMPARE(entry->frequencyHz, start);
+
+    // E l'offset deve raccontare la stessa storia della frequenza: se i due
+    // divergono, il DSP demodula un punto e la UI ne mostra un altro.
+    QCOMPARE(static_cast<qint64>(entry->settings.offsetHz), start - moved);
 }
 
 QTEST_MAIN(TestSessionDemo)
