@@ -100,10 +100,13 @@ Item {
                     const deg = -root.sweep + (s / 12) * 2 * root.sweep
                     const a = toRad(deg)
                     // Sotto S9 si etichettano le dispari, che è la convenzione
-                    // di ogni S-meter; oltre, tutte e tre — +20, +40, +60 sono
-                    // i gradini che si citano a voce, e saltarne uno perché
-                    // cade su un numero pari lascerebbe la scala monca.
+                    // di ogni S-meter. Oltre, la tacca è lunga per tutte e tre
+                    // ma il testo va solo agli estremi: a quel raggio due
+                    // gradini distano undici punti e un'etichetta ne occupa
+                    // nove, quindi +20, +40 e +60 finivano una sull'altra.
+                    // Chi legge uno strumento sa interpolare la tacca di mezzo.
                     const major = (s % 2 === 1) || s >= 10
+                    const labelled = s <= 9 ? major : (s === 10 || s === 12)
                     const inner = r - (major ? 9 : 5)
 
                     ctx.strokeStyle = s > 9 ? Theme.danger : Theme.textSecondary
@@ -113,11 +116,14 @@ Item {
                     ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
                     ctx.stroke()
 
-                    if (!major)
+                    if (!labelled)
                         continue
 
-                    // Le etichette stanno dentro l'arco, dove c'è spazio.
-                    const lr = r - 20
+                    // Le etichette stanno dentro l'arco, dove c'è spazio. Quelle
+                    // oltre S9 rientrano di più: "9" e "+20" cadono su gradini
+                    // adiacenti e allo stesso raggio si toccherebbero, mentre
+                    // su due cerchi diversi si leggono entrambe.
+                    const lr = r - (s <= 9 ? 20 : 32)
                     const label = s <= 9 ? String(s) : "+" + ((s - 9) * 20)
                     ctx.fillStyle = s > 9 ? Theme.danger : Theme.textDisabled
                     ctx.fillText(label, cx + Math.cos(a) * lr, cy + Math.sin(a) * lr)
