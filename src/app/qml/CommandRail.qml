@@ -68,8 +68,12 @@ Rectangle {
                 color: button.tint
             }
 
+            // L'etichetta è facoltativa: dove il glifo è già una parola —
+            // «12k» — ripetere l'unità sotto a ogni pulsante è rumore che
+            // allunga la colonna senza aggiungere niente.
             Text {
                 Layout.alignment: Qt.AlignHCenter
+                visible: button.label.length > 0
                 text: button.label
                 font.pixelSize: 8
                 font.letterSpacing: 0.6
@@ -107,6 +111,31 @@ Rectangle {
             label: qsTr("TUTTA")
             enabled: root.scope.viewSpan < 0.999
             onClicked: root.scope.resetZoom()
+        }
+
+        // Larghezze di vista preimpostate. Cercare lo zoom giusto con la
+        // rotellina, un frammento alla volta, è il modo lento di arrivare a
+        // una manciata di valori che si usano sempre gli stessi.
+        //
+        // Una larghezza più grande della banda campionata non esiste: il
+        // pulsante non si accende, invece di portare a una vista identica a
+        // «tutta» e far credere che non funzioni.
+        Repeater {
+            model: [12000, 24000, 48000, 96000]
+
+            delegate: RailButton {
+                required property int modelData
+
+                readonly property real fraction:
+                    Session.sampleRate > 0 ? modelData / Session.sampleRate : 1
+
+                glyph: modelData >= 1000 ? (modelData / 1000) + "k" : String(modelData)
+                label: ""
+                implicitHeight: 30
+                enabled: Session.connected && fraction < 0.999
+                active: Math.abs(root.scope.viewSpan - fraction) < 0.01
+                onClicked: root.scope.zoomToSpan(modelData)
+            }
         }
 
         Rectangle {

@@ -24,6 +24,7 @@ Rectangle {
     required property int filterHighHz
     required property real signalDb
     required property int agcMode
+    required property bool muted
 
     /// Larghezza del filtro: è il numero che si legge, non i due estremi.
     readonly property int filterWidthHz: Math.max(0, filterHighHz - filterLowHz)
@@ -90,6 +91,59 @@ Rectangle {
                 Layout.preferredHeight: 18
                 levelDb: root.signalDb
             }
+        }
+
+        // ── Passo di sintonia ────────────────────────────────────────────
+        //
+        // Era cablato nel codice della rotellina, e l'unico modo di sapere di
+        // quanto ci si stesse muovendo era muoversi e guardare.
+        RowLayout {
+            spacing: 2
+
+            Text {
+                text: qsTr("STEP")
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textDisabled
+            }
+
+            DsdrButton {
+                text: "◀"
+                implicitWidth: 22
+                implicitHeight: 22
+                enabled: Tuning.stepHz > Tuning.steps[0]
+                onClicked: Tuning.shift(-1)
+            }
+
+            Text {
+                text: Tuning.label(Tuning.stepHz)
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: Theme.accent
+                horizontalAlignment: Text.AlignHCenter
+                Layout.preferredWidth: 30
+            }
+
+            DsdrButton {
+                text: "▶"
+                implicitWidth: 22
+                implicitHeight: 22
+                enabled: Tuning.stepHz < Tuning.steps[Tuning.steps.length - 1]
+                onClicked: Tuning.shift(1)
+            }
+        }
+
+        // ── Silenzia ─────────────────────────────────────────────────────
+        //
+        // Nella targa e non solo nel pannello: si silenzia un canale mentre si
+        // ascolta, cioè guardando lo spettro, non la colonna laterale.
+        DsdrButton {
+            text: root.muted ? qsTr("MUTO") : qsTr("AUDIO")
+            implicitWidth: 62
+            implicitHeight: 24
+            checkable: true
+            checked: root.muted
+            danger: root.muted
+            onToggled: Session.setChannelMuted(root.index, checked)
         }
 
         // ── Modo, filtro, AGC ────────────────────────────────────────────

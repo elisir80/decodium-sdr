@@ -45,6 +45,22 @@ Item {
         viewSpan = 1
     }
 
+    /// Porta la vista a una larghezza data, in hertz, tenendo fermo il centro.
+    ///
+    /// Il centro resta quello che si sta guardando, non quello della banda:
+    /// chi stringe lo zoom sta seguendo un segnale, e ritrovarselo fuori
+    /// schermo dopo aver premuto un pulsante di vista è il modo più rapido di
+    /// perderlo.
+    function zoomToSpan(hz) {
+        if (!(spanHz > 0) || !(hz > 0))
+            return
+
+        const centre = viewStart + viewSpan / 2
+        const span = Math.max(0.005, Math.min(1, hz / spanHz))
+        viewSpan = span
+        viewStart = Math.max(0, Math.min(1 - span, centre - span / 2))
+    }
+
     /// Quota di altezza occupata dallo spettro; il resto è waterfall.
     readonly property real spectrumRatio: 0.45
 
@@ -212,7 +228,13 @@ Item {
                 return
             }
 
-            const step = wheel.modifiers & Qt.ShiftModifier ? 10 : 100
+            // Il passo lo dice la targa del VFO, non questo file: era cablato
+            // qui e in ChannelStrip, e i due potevano divergere senza che
+            // nessuno se ne accorgesse. Shift resta la scorciatoia per il
+            // passo fine, dieci volte più piccolo.
+            const step = wheel.modifiers & Qt.ShiftModifier
+                       ? Math.max(1, Tuning.stepHz / 10)
+                       : Tuning.stepHz
             const direction = wheel.angleDelta.y > 0 ? 1 : -1
             if (Session.channels.currentIndex >= 0)
                 Session.nudgeChannel(Session.channels.currentIndex, direction * step)

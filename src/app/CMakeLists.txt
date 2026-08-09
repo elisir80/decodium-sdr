@@ -12,6 +12,7 @@ set(DSDR_QML_FILES
     qml/MainMenu.qml
     qml/CommandRail.qml
     qml/Theme.qml
+    qml/Tuning.qml
     qml/DsdrButton.qml
     qml/DsdrSlider.qml
     qml/DsdrComboBox.qml
@@ -46,6 +47,7 @@ endforeach()
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/BandPlan.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Tuning.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(dsdr_qml
     URI DecodiumSdr

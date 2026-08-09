@@ -176,8 +176,12 @@ Rectangle {
                             anchors.fill: parent
                             cursorShape: Qt.SizeVerCursor
                             onWheel: (wheel) => {
-                                const step = wheel.modifiers & Qt.ControlModifier ? 1000
-                                           : wheel.modifiers & Qt.ShiftModifier ? 10 : 100
+                                // Stesso passo della rotellina sullo spettro:
+                                // due manopole della stessa radio non possono
+                                // muovere quantità diverse.
+                                const step = wheel.modifiers & Qt.ShiftModifier
+                                           ? Math.max(1, Tuning.stepHz / 10)
+                                           : Tuning.stepHz
                                 Session.nudgeChannel(entry.index,
                                                      wheel.angleDelta.y > 0 ? step : -step)
                             }
