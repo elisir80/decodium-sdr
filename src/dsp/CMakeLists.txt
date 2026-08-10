@@ -47,6 +47,11 @@ add_library(dsdr_dsp STATIC
     SpectralDenoiser.cpp
     NeuralDenoiser.h
     NeuralDenoiser.cpp
+    neural/INrEngine.h
+    neural/RnnoiseEngine.h
+    neural/RnnoiseEngine.cpp
+    neural/NeuralNrStage.h
+    neural/NeuralNrStage.cpp
     Demodulator.h
     Demodulator.cpp
     Modulator.h
@@ -76,7 +81,9 @@ add_library(dsdr_dsp STATIC
 )
 
 target_include_directories(dsdr_dsp PRIVATE ${FFTW3_INCLUDE_DIR})
-target_link_libraries(dsdr_dsp PUBLIC dsdr::common PRIVATE ${FFTW3F_LIBRARY})
+# Lo stadio neurale vive su un thread proprio e ha una macchina a stati: gli
+# serve il ciclo di eventi di Qt, non solo il vocabolario di dsdr::common.
+target_link_libraries(dsdr_dsp PUBLIC dsdr::common Qt6::Core PRIVATE ${FFTW3F_LIBRARY})
 
 # Il motore neurale, se chi compila ne ha messo il sorgente: la macro decide
 # se lo stadio esiste, e da lì nasce la capability che la UI legge.
@@ -85,5 +92,6 @@ if(RNNOISE_FOUND)
     target_compile_definitions(dsdr_dsp PUBLIC DSDR_HAVE_RNNOISE)
 endif()
 
+set_target_properties(dsdr_dsp PROPERTIES AUTOMOC ON)
 dsdr_apply_target_defaults(dsdr_dsp)
 add_library(dsdr::dsp ALIAS dsdr_dsp)

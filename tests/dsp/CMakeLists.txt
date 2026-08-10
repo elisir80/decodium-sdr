@@ -29,3 +29,9 @@ dsdr_add_test(tst_neural_denoiser
 dsdr_add_test(tst_tx_chain
     SOURCES tst_tx_chain.cpp
     LIBRARIES dsdr::dsp)
+
+# Lo stadio neurale: bypass identico, zero allocazioni nel percorso caldo,
+# latenza dichiarata e degrado onesto (DSDR-IMPL-001 §7.3).
+dsdr_add_test(tst_neural_stage
+    SOURCES tst_neural_stage.cpp
+    LIBRARIES dsdr::dsp)
