@@ -138,6 +138,41 @@ Usabili **solo** dal pannello `AudiorigPanel` (CONSTITUTION §4.1).
 | `audiorig.status` | — | radio, porta CAT, velocità, ingresso audio, S-meter grezzo, overrun |
 | `audiorig.setAudioInput` | `id` | vero se l'ingresso è stato aperto |
 
+## Come l'audio ridiventa banda base
+
+Il `DspEngine` non ha un secondo motore per i backend server-DSP, e non ne ha
+bisogno: l'audio che una radio consegna **è** un segnale in banda base, reale
+invece che complesso. Ricostruendone il segnale analitico si torna esattamente
+al caso di sempre.
+
+Una componente a 1500 Hz d'audio ridiventa una componente a VFO+1500 Hz di
+radiofrequenza. Il panadattatore si ancora così alla frequenza vera (SPEC-004
+§4), e tutti gli stadi della SPEC-003 — notch traccianti, EMNR, rete neurale,
+APF, binaurale — si applicano senza sapere da dove venga il flusso. È lo stesso
+percorso che servirà a un backend Flex o Kiwi.
+
+Un solo filtro fa due mestieri: rende analitico il segnale tenendo le sole
+frequenze positive, e lo limita alla banda che una radio consegna davvero
+(200–4000 Hz). La transizione a 250 Hz è ciò che ne decide il costo — sotto i
+200 il numero di tap supererebbe `kMaxFirTaps`, sopra i 400 comincerebbe a
+mangiare le voci più basse.
+
+**Da che parte del VFO stia il segnale non si indovina.** In USB l'audio sale
+con la radiofrequenza, in LSB scende: il segnale analitico va coniugato, o il
+filtro di canale — che in LSB guarda le frequenze negative — non trova nulla.
+Il difetto si presenterebbe come «la radio in LSB non si sente», e nessuno lo
+cercherebbe nel motore. Il lato lo decide il modo del canale, che è lo stesso
+che il CAT ha impostato sulla radio.
+
+In AM e FM non si applica niente di tutto questo: l'emissione occupa davvero
+entrambi i lati della portante, e lo spettro speculare non è un artefatto — è
+ciò che c'è in aria.
+
+**Il canale segue il VFO.** Girando la manopola sulla radio la passata si
+sposta con lei, e un canale che restasse alla vecchia frequenza finirebbe fuori
+da ciò che la radio consegna: muto. Con un backend che demodula a bordo il
+canale è il VFO, e lo segue.
+
 ## Che cosa della SPEC-003 si applica
 
 | Stadio | Qui |
@@ -152,13 +187,6 @@ Usabili **solo** dal pannello `AudiorigPanel` (CONSTITUTION §4.1).
 | SAM potenziato | no: demodula la radio |
 
 ## Limiti noti, e lavoro che manca
-
-**Il core non consuma ancora `audioStream()`.** Tutti i backend esistenti sono
-raw-IQ, e il percorso di ricezione del `DspEngine` parte da `iqStream()`. Il
-backend qui descritto è completo dalla sua parte — cattura, CAT, capability,
-conformance — ma finché il core non impara a prendere audio da un backend
-server-DSP, quello che arriva non si sente. È l'ondata successiva, ed è
-condivisa con qualunque futuro backend Flex o Kiwi.
 
 **Niente `hamlib`.** La copertura universale (SPEC-004 §2) richiede una
 dipendenza esterna che non è stata ancora introdotta: va verificata la

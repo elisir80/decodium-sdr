@@ -11,6 +11,11 @@ dsdr_add_test(tst_tx_engine
     SOURCES tst_tx_engine.cpp
     LIBRARIES dsdr::core)
 
+# Il percorso di ricezione dei backend server-DSP: audio dentro, audio fuori.
+dsdr_add_test(tst_audio_source
+    SOURCES tst_audio_source.cpp
+    LIBRARIES dsdr::core)
+
 dsdr_add_test(tst_iq_recorder
     SOURCES tst_iq_recorder.cpp
     LIBRARIES dsdr::core)

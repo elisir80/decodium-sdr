@@ -517,14 +517,34 @@ void SessionManager::selectBackend(const QString &backendId)
         m_centerFrequency = hz;
         if (m_engine)
             m_engine->setCenterFrequency(hz);
+
+        if (!m_capabilities.clientDemod()) {
+            // Con una radio tradizionale il canale **è** il VFO: la passata si
+            // sposta insieme a lui, e un canale che restasse alla vecchia
+            // frequenza finirebbe fuori da ciò che la radio consegna — cioè
+            // muto. Il VFO l'ha girato l'operatore sulla radio, e la nostra
+            // idea di dove stiamo lo segue.
+            for (int row = 0; row < m_channels.rowCount(); ++row) {
+                if (ChannelEntry *entry = m_channels.mutableAt(row)) {
+                    entry->frequencyHz = hz;
+                    m_channels.entryChanged(row, {ChannelModel::FrequencyRole});
+                }
+            }
+        }
+
         refreshChannelOffsets();
         emit centerFrequencyChanged();
     });
 
-    // I frame IQ attraversano i thread: connessione queued verso il DSP, che
-    // legge poi i campioni dal ring (§4.1).
+    // I frame attraversano i thread: connessione queued verso il DSP, che
+    // legge poi i campioni dal ring (§4.1). Si collegano entrambi i versi —
+    // IQ e audio — perché quale dei due arrivi dipende dal backend, e un
+    // backend che li emettesse tutti e due sarebbe comunque coerente: il
+    // motore consuma solo il ring che gli è stato agganciato.
     connect(m_backend, &hal::IRadioBackend::iqFrameReady,
             m_engine, &DspEngine::onIqFrameReady, Qt::QueuedConnection);
+    connect(m_backend, &hal::IRadioBackend::audioFrameReady,
+            m_engine, &DspEngine::onAudioFrameReady, Qt::QueuedConnection);
 
     emit backendChanged();
     setStatus(tr("Backend attivo: %1").arg(backendName()));
@@ -579,7 +599,16 @@ void SessionManager::connectToDevice(int deviceRow)
     m_centerFrequency = m_backend->centerFrequency();
     m_sampleRate = m_backend->sampleRate();
 
-    m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+    // Da dove arriva il segnale lo dice la capability, non l'identità del
+    // backend: chi demodula a bordo consegna audio, e il motore lo tratta
+    // ricostruendone il segnale analitico — da lì in poi è banda base come
+    // qualunque altra (SPEC-004 §2).
+    if (m_capabilities.clientDemod()) {
+        m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+    } else {
+        m_engine->setAudioSource(m_backend->audioStream(kInvalidChannel),
+                                 m_sampleRate, m_centerFrequency);
+    }
 
     // Il motore TX riceve il ring del backend, non il backend: sopra la HAL
     // nessuno conosce il tipo concreto della radio, e il seam resta stretto
@@ -902,7 +931,16 @@ void SessionManager::setSampleRate(double rate)
     qCInfo(dsdrCore) << "sample rate richiesto:" << rate << "effettivo:" << m_sampleRate;
 
     // Il worker del backend riparte con un ring nuovo: il DSP va riagganciato.
-    m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+    // Da dove arriva il segnale lo dice la capability, non l'identità del
+    // backend: chi demodula a bordo consegna audio, e il motore lo tratta
+    // ricostruendone il segnale analitico — da lì in poi è banda base come
+    // qualunque altra (SPEC-004 §2).
+    if (m_capabilities.clientDemod()) {
+        m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+    } else {
+        m_engine->setAudioSource(m_backend->audioStream(kInvalidChannel),
+                                 m_sampleRate, m_centerFrequency);
+    }
 
     // Il motore TX riceve il ring del backend, non il backend: sopra la HAL
     // nessuno conosce il tipo concreto della radio, e il seam resta stretto
@@ -1015,6 +1053,13 @@ void SessionManager::pushChannelToEngine(int row)
     // filtro, frequenza — ed è l'unico punto in cui serva ricordarsene.
     if (row == m_txChannel && m_capabilities.canTransmit())
         pushTxConfig();
+
+    // Con una sorgente audio il modo dice anche da che parte del VFO stia il
+    // segnale, e il motore deve saperlo: in USB l'audio sale con la
+    // radiofrequenza, in LSB scende. È l'unico modo di ancorare il
+    // panadattatore alla frequenza vera (SPEC-004 §4).
+    if (row == 0 && !m_capabilities.clientDemod())
+        pushAudioSideband(entry->settings.mode);
 }
 
 void SessionManager::refreshChannelOffsets()
@@ -2019,6 +2064,35 @@ void SessionManager::setPtt(bool transmit)
 void SessionManager::setCwKeyDown(bool down)
 {
     QMetaObject::invokeMethod(m_tx, [this, down] { m_tx->setKeyDown(down); });
+}
+
+void SessionManager::pushAudioSideband(DemodMode mode)
+{
+    DspEngine::Sideband sideband = DspEngine::Sideband::Upper;
+    switch (mode) {
+    case DemodMode::Lsb:
+    case DemodMode::DigL:
+    case DemodMode::Cwr:
+        sideband = DspEngine::Sideband::Lower;
+        break;
+    case DemodMode::Am:
+    case DemodMode::Sam:
+    case DemodMode::Fm:
+    case DemodMode::Nfm:
+    case DemodMode::Dsb:
+        // Emissioni a doppia banda laterale: lo spettro speculare non è un
+        // artefatto, è quello che c'è in aria.
+        sideband = DspEngine::Sideband::Double;
+        break;
+    default:
+        sideband = DspEngine::Sideband::Upper;
+        break;
+    }
+
+    const int value = static_cast<int>(sideband);
+    QMetaObject::invokeMethod(m_engine, [this, value] {
+        m_engine->setAudioSideband(value);
+    });
 }
 
 void SessionManager::pushTxConfig()

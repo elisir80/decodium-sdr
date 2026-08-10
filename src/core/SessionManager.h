@@ -399,6 +399,9 @@ private:
     /// a un cambio di centro banda, che sposta l'offset senza che il
     /// canale si sia mosso.
     void pushTxConfig();
+
+    /// Da che parte del VFO sta il segnale, quando la sorgente è audio.
+    void pushAudioSideband(DemodMode mode);
     void refreshChannelOffsets();
     void advanceScan();
     void handleAutomaticRdsAf(ChannelId id, bool synced, const QString &pi);

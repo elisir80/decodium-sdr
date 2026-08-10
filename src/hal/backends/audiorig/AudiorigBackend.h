@@ -13,6 +13,10 @@
 //   controllo  ICatDriver su thread proprio: frequenza, modo, PTT, S-meter
 //
 // Radio di riferimento: Yaesu FT-991A, un solo cavo USB per entrambi.
+//
+// L'audio che consegniamo torna banda base nel DspEngine, che ne ricostruisce
+// il segnale analitico: da lì in poi è un flusso come tutti gli altri, e
+// l'intera catena della SPEC-003 si applica senza saperne nulla.
 #pragma once
 
 #include "hal/IRadioBackend.h"

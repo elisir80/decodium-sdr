@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "core/DspEngine.h"
+#include "dsp/FirDesign.h"
 
 #include <QLoggingCategory>
 #include <QFileInfo>
@@ -87,15 +88,41 @@ DspEngine::~DspEngine()
 
 void DspEngine::setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz)
 {
+    m_sourceIsAudio.store(false, std::memory_order_release);
+    attachSource(ring, sampleRate, centerFrequencyHz);
+}
+
+void DspEngine::attachSource(dsp::SpscRing<float> *ring, double sampleRate,
+                             qint64 centerFrequencyHz)
+{
     m_sourceRate.store(sampleRate, std::memory_order_release);
     m_centerHz.store(centerFrequencyHz, std::memory_order_release);
     m_source.store(ring, std::memory_order_release);
     m_needsReconfigure.store(true, std::memory_order_release);
 }
 
+void DspEngine::setAudioSource(dsp::SpscRing<float> *ring, double sampleRate,
+                               qint64 centerFrequencyHz)
+{
+    m_sourceIsAudio.store(true, std::memory_order_release);
+    attachSource(ring, sampleRate, centerFrequencyHz);
+}
+
+void DspEngine::setAudioSideband(int sideband)
+{
+    const int previous = m_sideband.exchange(sideband, std::memory_order_acq_rel);
+    if (previous == sideband)
+        return;
+    // Cambiare lato ribalta lo spettro: la storia raccolta finora descrive
+    // l'altra metà della banda, e riascoltarla mostrerebbe i segnali dalla
+    // parte sbagliata del VFO.
+    m_historyDirty.store(true, std::memory_order_release);
+}
+
 void DspEngine::clearSource()
 {
     m_source.store(nullptr, std::memory_order_release);
+    m_sourceIsAudio.store(false, std::memory_order_release);
     m_audioRing->clear();
 
     // Staccata la radio, la sua storia non serve più a nessuno: chi si
@@ -258,6 +285,41 @@ void DspEngine::setFftSize(int size)
     m_needsReconfigure.store(true, std::memory_order_release);
 }
 
+void DspEngine::makeAnalytic(std::size_t count)
+{
+    const Sideband sideband =
+        static_cast<Sideband>(m_sideband.load(std::memory_order_acquire));
+
+    if (sideband == Sideband::Double) {
+        // AM e FM occupano davvero entrambi i lati della portante: qui lo
+        // spettro speculare non è un artefatto, è ciò che c'è in aria. Il
+        // segnale resta reale, e non serve alcun filtro.
+        for (std::size_t i = 0; i < count; ++i) {
+            m_interleaved[i * 2] = m_mono[i];
+            m_interleaved[i * 2 + 1] = 0.0f;
+        }
+        return;
+    }
+
+    for (std::size_t i = 0; i < count; ++i)
+        m_analyticScratch[i] = Complex(m_mono[i], 0.0f);
+
+    m_analytic.process(m_analyticScratch.data(), m_analyticScratch.data(), count);
+
+    // Il fattore due recupera la metà dell'energia che stava nelle frequenze
+    // negative: senza, l'audio di una radio arriverebbe 6 dB sotto quello di
+    // un SDR a parità di segnale, e l'operatore alzerebbe il volume cercando
+    // il guasto altrove.
+    const bool invert = sideband == Sideband::Lower;
+    for (std::size_t i = 0; i < count; ++i) {
+        const Complex z = m_analyticScratch[i] * 2.0f;
+        m_interleaved[i * 2] = z.real();
+        // In LSB l'audio scende quando la radiofrequenza sale: il coniugato
+        // ribalta lo spettro e rimette ogni segnale dove sta davvero.
+        m_interleaved[i * 2 + 1] = invert ? -z.imag() : z.imag();
+    }
+}
+
 void DspEngine::reconfigure()
 {
     m_activeRate = m_sourceRate.load(std::memory_order_acquire);
@@ -289,6 +351,27 @@ void DspEngine::reconfigure()
     m_history.configure(historyFrames);
     m_blanker.configure(m_activeRate);
     m_overload.configure(m_activeRate);
+
+    if (m_sourceIsAudio.load(std::memory_order_acquire)) {
+        // Un solo filtro fa due mestieri: rende analitico il segnale — tenendo
+        // le sole frequenze positive — e lo limita alla banda che una radio
+        // consegna davvero. Progettarne due sarebbe il doppio del lavoro nel
+        // punto più caldo per lo stesso risultato.
+        //
+        // La transizione a 250 Hz è ciò che decide il costo: sotto i 200 il
+        // numero di tap supererebbe kMaxFirTaps, sopra i 400 comincerebbe a
+        // mangiare le voci più basse.
+        constexpr double kLowEdgeHz = 200.0;
+        constexpr double kHighEdgeHz = 4000.0;
+        int taps = dsp::estimateTaps(250.0, m_activeRate, 60.0);
+        taps = std::min(taps, static_cast<int>(dsp::kMaxFirTaps) - 1);
+        if ((taps & 1) == 0)
+            ++taps;
+        m_analytic.setTaps(dsp::designBandpass(kLowEdgeHz, kHighEdgeHz, m_activeRate,
+                                               taps, dsp::kaiserBeta(60.0)));
+        m_mono.assign(kProcessBlock, 0.0f);
+        m_analyticScratch.assign(kProcessBlock, Complex(0.0f, 0.0f));
+    }
     m_lastOverloadReported = false;
     m_historyFrames.store(0, std::memory_order_release);
     m_replayDelayFrames.store(0, std::memory_order_release);
@@ -362,6 +445,13 @@ void DspEngine::removeChannel(ChannelId id)
     m_channels.erase(id);
 }
 
+void DspEngine::onAudioFrameReady(const hal::AudioFrame &frame)
+{
+    Q_UNUSED(frame)
+    ++m_statsAudioFrames;
+    processAvailable();
+}
+
 void DspEngine::onIqFrameReady(const hal::IqFrame &frame)
 {
     if (frame.droppedFrames > 0) {
@@ -396,16 +486,31 @@ void DspEngine::processAvailable()
         m_replayDelayFrames.store(0, std::memory_order_release);
     }
 
+    // Un backend server-DSP consegna audio reale invece di banda base
+    // complessa. La differenza vive tutta in queste poche righe: da
+    // `makeAnalytic` in poi il motore non sa più da dove sia arrivato il
+    // flusso, e ogni stadio della SPEC-003 continua a valere.
+    const bool audioSource = m_sourceIsAudio.load(std::memory_order_acquire);
+
     while (true) {
-        const std::size_t availableFrames = source->available() / 2;
+        const std::size_t availableFrames =
+            audioSource ? source->available() : source->available() / 2;
         if (availableFrames == 0)
             break;
 
         const std::size_t frames = std::min(availableFrames, kProcessBlock);
-        const std::size_t got = source->read(m_interleaved.data(), frames * 2);
-        const std::size_t count = got / 2;
-        if (count == 0)
-            break;
+        std::size_t count = 0;
+        if (audioSource) {
+            count = source->read(m_mono.data(), frames);
+            if (count == 0)
+                break;
+            makeAnalytic(count);
+        } else {
+            const std::size_t got = source->read(m_interleaved.data(), frames * 2);
+            count = got / 2;
+            if (count == 0)
+                break;
+        }
 
         m_statsIqFrames += count;
         ++m_statsBlocks;
@@ -413,8 +518,11 @@ void DspEngine::processAvailable()
         // Tap di registrazione prima di qualunque elaborazione: su disco
         // finisce ciò che la radio ha consegnato, non ciò che il DSP ne ha
         // fatto. `feed()` non blocca e non alloca.
+        // Su disco finisce il segnale analitico e non l'audio grezzo: è una
+        // registrazione IQ della passata, riapribile con il backend `iqfile`
+        // come qualunque altra.
         if (IqRecorder *recorder = m_recorder.load(std::memory_order_acquire))
-            recorder->feed(m_interleaved.data(), got);
+            recorder->feed(m_interleaved.data(), count * 2);
 
         // ── Guardia contro la saturazione (SPEC-003 §3) ─────────────────
         //
@@ -481,7 +589,11 @@ void DspEngine::processAvailable()
         // Dopo il registratore e dopo la memoria di scorrimento, di proposito:
         // su disco e in memoria finisce ciò che la radio ha consegnato, così
         // riascoltando si può ancora cambiare idea sul blanker.
-        if (m_nbEnabled.load(std::memory_order_acquire)) {
+        // Con una sorgente audio il blanker non si applica (SPEC-004 §6 [B]):
+        // gli impulsi arrivano già allargati dai filtri della radio, e a
+        // quel punto toglierli vuol dire bucare il segnale insieme al
+        // disturbo. Meglio non fare nulla che fare finta.
+        if (!audioSource && m_nbEnabled.load(std::memory_order_acquire)) {
             m_blanker.setThreshold(m_nbThreshold.load(std::memory_order_acquire));
             m_blanker.process(m_iq.data(), toProcess);
             m_nbActivity.store(m_blanker.lastSuppressedRatio(), std::memory_order_release);

@@ -13,6 +13,7 @@
 #include "core/IqModuleApi.h"
 #include "core/SpectrumFeed.h"
 #include "dsp/ChannelProcessor.h"
+#include "dsp/ComplexFir.h"
 #include "dsp/NoiseBlanker.h"
 #include "dsp/OverloadGuard.h"
 #include "dsp/SpectrumAnalyzer.h"
@@ -48,6 +49,35 @@ public:
     /// Aggancia la sorgente IQ. Thread-safe: il thread DSP recepisce il
     /// cambiamento al frame successivo, senza fermare nulla a mano.
     void setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz);
+
+    // ── Sorgente audio: i backend server-DSP (SPEC-004) ─────────────────
+    //
+    // Una radio tradizionale non consegna banda base: consegna l'audio che ha
+    // già demodulato. Non serve però un secondo motore, perché quell'audio
+    // **è** un segnale in banda base — reale invece che complesso.
+    //
+    // Ricostruendone il segnale analitico si torna esattamente al caso di
+    // sempre: una componente a 1500 Hz d'audio ridiventa una componente a
+    // VFO+1500 Hz di radiofrequenza, il panadattatore si ancora alla
+    // frequenza vera (SPEC-004 §4), e tutti gli stadi della SPEC-003 —
+    // notch, EMNR, rete neurale, APF, binaurale — si applicano senza
+    // saperne nulla.
+    //
+    // Da quale parte stia la banda laterale lo dice il modo della radio, e
+    // non si può indovinare: in USB l'audio sale con la frequenza, in LSB
+    // scende. Sbagliarlo mette il segnale dalla parte opposta del VFO.
+
+    enum class Sideband {
+        Upper,   ///< USB, DIGU, CW: RF = VFO + audio
+        Lower,   ///< LSB, DIGL: RF = VFO − audio
+        Double,  ///< AM, FM: l'emissione occupa entrambi i lati, e la
+                 ///< immagine speculare dello spettro è la verità
+    };
+
+    void setAudioSource(dsp::SpscRing<float> *ring, double sampleRate,
+                        qint64 centerFrequencyHz);
+    void setAudioSideband(int sideband);
+
     void clearSource();
 
     /// Aggiorna la frequenza centrale (l'offset dei canali è relativo a essa).
@@ -116,6 +146,10 @@ public:
 
 public slots:
     void onIqFrameReady(const dsdr::hal::IqFrame &frame);
+
+    /// Stessa cosa per i backend che consegnano audio: il segnale porta solo
+    /// il descrittore, i campioni stanno nel ring (§4.1).
+    void onAudioFrameReady(const dsdr::hal::AudioFrame &frame);
     void addChannel(dsdr::ChannelId id, const dsdr::dsp::ChannelSettings &settings);
     void updateChannel(dsdr::ChannelId id, const dsdr::dsp::ChannelSettings &settings);
     void removeChannel(dsdr::ChannelId id);
@@ -143,6 +177,13 @@ signals:
 private:
     void reconfigure();
     void processAvailable();
+    void attachSource(dsp::SpscRing<float> *ring, double sampleRate,
+                      qint64 centerFrequencyHz);
+
+    /// Trasforma `count` campioni audio reali (in `m_mono`) nel segnale
+    /// analitico interleaved di `m_interleaved`. Da qui in poi il resto del
+    /// motore non sa più da dove sia arrivato il flusso.
+    void makeAnalytic(std::size_t count);
 
     struct Channel
     {
@@ -168,6 +209,8 @@ private:
     // Sorgente: puntatori atomici perché il thread UI può sostituirla mentre
     // il thread DSP sta lavorando.
     std::atomic<dsp::SpscRing<float> *> m_source{nullptr};
+    std::atomic<bool> m_sourceIsAudio{false};
+    std::atomic<int> m_sideband{static_cast<int>(Sideband::Upper)};
     std::atomic<double> m_sourceRate{0.0};
     std::atomic<qint64> m_centerHz{0};
     std::atomic<bool> m_needsReconfigure{true};
@@ -203,6 +246,9 @@ private:
     dsp::OverloadGuard m_overload;
     bool m_lastOverloadReported = false;
 
+    dsp::ComplexFir m_analytic;         ///< passa-banda a sole frequenze positive
+    std::vector<float> m_mono;          ///< audio reale, prima dell'analitico
+    std::vector<dsp::Complex> m_analyticScratch;
     std::vector<float> m_interleaved;   ///< lettura grezza dal ring
     std::vector<dsp::Complex> m_iq;     ///< versione complessa
     std::vector<float> m_mix;           ///< audio mixato
