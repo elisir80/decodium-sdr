@@ -135,6 +135,52 @@ Rectangle {
 
         }
 
+        // ── Modo, filtro, AGC ────────────────────────────────
+        //
+        // `ModeSelector` esisteva già e non lo istanziava nessuno: la fusione
+        // con la v1.0.0 ha portato la metà «filtri di disturbo» di questa
+        // scheda e ha lasciato per strada l'altra. Modo e larghezza erano
+        // spariti da **tutti** i backend, non solo da quelli che demodulano a
+        // bordo — ma con una radio tradizionale, dove il modo si cambia di
+        // continuo, la mancanza si nota subito.
+        ModeSelector {
+            Layout.fillWidth: true
+            channelIndex: entry.index
+            mode: entry.mode
+            filterLowHz: entry.filterLowHz
+            filterHighHz: entry.filterHighHz
+        }
+
+        Text {
+            text: qsTr("AGC")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textSecondary
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+
+            Repeater {
+                model: Session.agcModeNames()
+
+                delegate: DsdrButton {
+                    required property int index
+                    required property string modelData
+
+                    Layout.fillWidth: true
+                    implicitWidth: 0
+                    implicitHeight: 24
+                    fontSize: Theme.fontSmall
+                    boldWhenChecked: false
+                    text: modelData
+                    checkable: true
+                    checked: entry.agcMode === index
+                    onClicked: Session.setChannelAgcMode(entry.index, index)
+                }
+            }
+        }
+
         // Un solo comando per il NR, come vuole la specifica: alza e abbassa
         // il fondo del guadagno. Più in alto si sente meno rumore e più
         // campanellini, ed è l'unica cosa che si giudica a orecchio.
@@ -305,10 +351,12 @@ Rectangle {
         }
 
         // ── Spostamento del passa-banda (IF shift, SPEC-003 §7) ──
+        //
+        // Lo esegue la nostra catena, quindi vale con qualunque sorgente:
+        // anche l'audio di una radio tradizionale passa di lì.
         RowLayout {
             Layout.fillWidth: true
             spacing: Theme.spacingTight
-            visible: Session.capabilities.clientDemod
 
             Text {
                 text: qsTr("Shift")

@@ -9,14 +9,24 @@ Button {
     property color accentColor: Theme.accent
     property bool danger: false
 
+    /// Misura del carattere. Le pulsantiere fitte — modi, filtri, AGC — stanno
+    /// in una colonna stretta e con il corpo normale troncano proprio le
+    /// parole che distinguono un pulsante dall'altro.
+    property real fontSize: Theme.fontNormal
+
+    /// Il grassetto sul pulsante scelto. In una pulsantiera fitta lo sfondo
+    /// pieno dice già quale sia, e il grassetto aggiunge solo larghezza: la
+    /// stessa parola in tondo ci sta, in grassetto si tronca.
+    property bool boldWhenChecked: true
+
     implicitHeight: Theme.controlHeight
     implicitWidth: Math.max(84, contentItem.implicitWidth + 2 * Theme.spacingLoose)
     padding: Theme.spacing
 
     contentItem: Text {
         text: control.text
-        font.pixelSize: Theme.fontNormal
-        font.bold: control.checked
+        font.pixelSize: control.fontSize
+        font.bold: control.checked && control.boldWhenChecked
         color: !control.enabled ? Theme.textDisabled
              : control.checked ? Theme.background
              : Theme.textPrimary

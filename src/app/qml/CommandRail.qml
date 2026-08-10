@@ -117,19 +117,34 @@ Rectangle {
         // rotellina, un frammento alla volta, è il modo lento di arrivare a
         // una manciata di valori che si usano sempre gli stessi.
         //
-        // Una larghezza più grande della banda campionata non esiste: il
-        // pulsante non si accende, invece di portare a una vista identica a
-        // «tutta» e far credere che non funzioni.
+        // Sono **frazioni della banda campionata** e non quattro numeri fissi.
+        // Con 192 kS/s vengono fuori 12/24/48/96 kHz, cioè esattamente i
+        // valori di prima; ma con i 48 kHz di una radio tradizionale quei
+        // numeri erano tutti più larghi della banda, e metà dei pulsanti
+        // restava spento davanti a una passata di tre kilohertz che non si
+        // riusciva a guardare. Dall'altra parte, con 3 MS/s il più largo si
+        // fermava al 3 % della banda.
         Repeater {
-            model: [12000, 24000, 48000, 96000]
+            model: {
+                const rate = Session.sampleRate
+                if (!(rate > 0))
+                    return []
+                return [rate / 16, rate / 8, rate / 4, rate / 2]
+            }
 
             delegate: RailButton {
-                required property int modelData
+                required property real modelData
 
                 readonly property real fraction:
                     Session.sampleRate > 0 ? modelData / Session.sampleRate : 1
 
-                glyph: modelData >= 1000 ? (modelData / 1000) + "k" : String(modelData)
+                glyph: {
+                    if (modelData >= 1000000)
+                        return (modelData / 1000000).toFixed(modelData % 1000000 === 0 ? 0 : 1) + "M"
+                    if (modelData >= 1000)
+                        return (modelData / 1000).toFixed(modelData % 1000 === 0 ? 0 : 1) + "k"
+                    return String(Math.round(modelData))
+                }
                 label: ""
                 implicitHeight: 30
                 enabled: Session.connected && fraction < 0.999

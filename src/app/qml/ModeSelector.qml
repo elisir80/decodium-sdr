@@ -104,21 +104,28 @@ ColumnLayout {
                 Layout.fillWidth: true
                 implicitWidth: 0
                 implicitHeight: 24
+                fontSize: Theme.fontSmall
                 text: modelData
                 checkable: true
                 checked: root.mode === index
-                // Con la demodulazione a bordo della radio il modo lo decide
-                // lei: mostrarlo sì, spacciarlo per nostro no.
-                enabled: Session.capabilities.clientDemod
+                // Il modo si sceglie sempre. Cambia solo chi lo esegue: con un
+                // backend raw-IQ lo esegue il nostro demodulatore, con una
+                // radio tradizionale glielo si comanda via CAT. In entrambi i
+                // casi è una scelta dell'operatore, e disabilitarla lasciava
+                // una fila di pulsanti grigi davanti a una radio che il modo
+                // lo cambia benissimo.
                 onClicked: Session.setChannelMode(root.channelIndex, index)
             }
         }
     }
 
     // ── Larghezza ────────────────────────────────────────────────────────
+    //
+    // Il filtro è nostro anche quando a demodulare è la radio: la sua passata
+    // è il limite esterno, la nostra sta dentro. Stringere a 500 Hz su un
+    // FT-991A restringe davvero quello che si sente.
     RowLayout {
         Layout.fillWidth: true
-        visible: Session.capabilities.clientDemod
 
         Text {
             text: qsTr("Filtro")
@@ -139,7 +146,6 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.spacingTight
-        visible: Session.capabilities.clientDemod
 
         Repeater {
             model: root.presets
@@ -150,6 +156,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 implicitWidth: 0
                 implicitHeight: 24
+                fontSize: Theme.fontSmall
                 text: modelData >= 1000
                       ? (modelData / 1000).toFixed(modelData % 1000 === 0 ? 1 : 1) + "k"
                       : String(modelData)

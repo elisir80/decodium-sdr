@@ -45,6 +45,33 @@ Item {
         viewSpan = 1
     }
 
+    /// Apre la vista su ciò che il device consegna davvero.
+    ///
+    /// Con un backend che demodula a bordo la banda campionata è quella del
+    /// codec — 48 kHz — ma il segnale sta tutto nella passata della radio,
+    /// tre kilohertz. A piena banda si vedeva una fettina in mezzo al vuoto,
+    /// e il waterfall sembrava non funzionare.
+    ///
+    /// La finestra è simmetrica attorno al VFO e non spostata sulla banda
+    /// laterale in uso: in USB metà resta vuota, ma passando a LSB non si
+    /// perde il segnale — che sarebbe il modo peggiore di essere precisi.
+    function fitToDeliveredBand() {
+        if (Session.capabilities.clientDemod || !(spanHz > 0)) {
+            resetZoom()
+            return
+        }
+
+        const span = Math.max(0.005, Math.min(1, 7000 / spanHz))
+        viewSpan = span
+        viewStart = Math.max(0, Math.min(1 - span, 0.5 - span / 2))
+    }
+
+    Connections {
+        target: Session
+        function onConnectionChanged() { root.fitToDeliveredBand() }
+        function onSampleRateChanged() { root.fitToDeliveredBand() }
+    }
+
     /// Porta la vista a una larghezza data, in hertz, tenendo fermo il centro.
     ///
     /// Il centro resta quello che si sta guardando, non quello della banda:
