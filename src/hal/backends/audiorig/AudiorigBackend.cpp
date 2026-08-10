@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hal/backends/audiorig/AudiorigBackend.h"
 #include "hal/backends/audiorig/CatController.h"
+#include "hal/backends/audiorig/CivDriver.h"
 #include "hal/backends/audiorig/NewcatDriver.h"
 #include "audio/AudioOut.h"
 #include "audio/MicSource.h"
@@ -172,9 +173,19 @@ void AudiorigBackend::startDiscovery()
             if (info.isNull())
                 continue;
 
-            NewcatDriver driver;
+            // Due lingue, non una. Le Yaesu parlano newcat, le Icom CI-V, e
+            // sulla stessa porta seriale non c'è modo di sapere quale sia
+            // senza provare: si prova la prima, poi la seconda.
+            std::unique_ptr<ICatDriver> drivers[2];
+            drivers[0] = std::make_unique<NewcatDriver>();
+            drivers[1] = std::make_unique<CivDriver>();
+
             bool found = false;
-            for (int rate : driver.candidateBaudRates()) {
+            for (auto &candidate : drivers) {
+                if (found)
+                    break;
+                ICatDriver &driver = *candidate;
+                for (int rate : driver.candidateBaudRates()) {
                 if (m_abortDiscovery.load(std::memory_order_acquire))
                     break;
                 if (!driver.open(info.portName(), rate))
@@ -211,6 +222,7 @@ void AudiorigBackend::startDiscovery()
                     emit deviceFound(device);
                 }, Qt::QueuedConnection);
                 break;
+                }
             }
             Q_UNUSED(found)
         }

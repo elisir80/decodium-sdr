@@ -40,6 +40,61 @@ poco — basta un comando andato storto mentre la radio cambiava banda — ma
 continuare a disegnare il panadattatore sulla vecchia frequenza sarebbe peggio
 che fermarsi: senza CAT non sappiamo più dove siamo.
 
+## Due lingue: `newcat` e `civ`
+
+Sulla stessa porta seriale non c'è modo di sapere quale protocollo parli la
+radio senza provare. La discovery prova la prima, poi la seconda.
+
+| Driver | Radio | Protocollo |
+|---|---|---|
+| `newcat` | Yaesu FT-991A, FT-891, FT-710, FT-DX10 | comandi ASCII chiusi da `;` |
+| `civ` | Icom IC-7300, IC-7610, IC-7851, IC-9700, IC-705 | telai binari su bus |
+
+## Il driver `civ` (Icom)
+
+Il CI-V è un **bus**, non un collegamento punto a punto, e da lì vengono le sue
+due particolarità.
+
+**Ogni telaio ha un indirizzo**, e i comandi lo portano dentro: un IC-7300 è
+`0x94`, un IC-7610 `0x98`, un IC-7851 `0x8E`. Chi non conosce l'indirizzo non
+riceve risposta, ed è per questo che si sondano — dal più diffuso.
+
+**La radio rimanda indietro quello che le si è scritto**, perché sul bus tutti
+sentono tutti. Chi non scarta la propria eco legge come risposta la domanda che
+ha appena fatto: su una lettura di frequenza vuol dire leggere la frequenza che
+si stava per impostare. I telai si scorrono finché non ne arriva uno indirizzato
+al controllore.
+
+| Comando | A cosa serve |
+|---|---|
+| `03` | leggi la frequenza |
+| `05` | imposta la frequenza |
+| `04` / `06` | leggi e imposta il modo |
+| `1C 00` | stato e comando del PTT |
+| `15 02` | S-meter |
+
+**La frequenza viaggia in BCD, cinque byte, dal meno significativo.** È
+l'aritmetica che si sbaglia in silenzio: invertire i byte non produce un errore,
+produce una frequenza plausibile — 14,074 che diventa 47,041 — e la si
+attribuisce alla radio. Ha il suo test, andata e ritorno su tutta la copertura,
+dai 160 metri ai 23 centimetri.
+
+**I modi dati non hanno un codice proprio.** Su una Icom si trasmette in banda
+laterale con l'ingresso audio USB, e il modo resta USB o LSB: mandare il codice
+della RTTY porterebbe la radio dove non si voleva. In lettura la RTTY si
+riconosce lo stesso, perché la radio può esserci finita per conto suo.
+
+### Sull'IC-7300 e famiglia
+
+Il 7300 ha la stessa forma del FT-991A — codec USB e controllo sullo stesso cavo
+— quindi tutto il resto di questa pagina vale identico. Sulla radio serve:
+
+- **CI-V USB Echo Back** acceso o spento non cambia: l'eco la scartiamo noi;
+- **CI-V USB Baud Rate** al valore che si preferisce, lo sondiamo;
+- modo **USB-D** (dati) con **MOD Input** su USB per la trasmissione dal
+  computer, esattamente come il DATA-USB della Yaesu;
+- filtro largo, per non strozzare la passata che alimenta il panadattatore.
+
 ## Il driver `newcat`
 
 Il protocollo Yaesu newcat è documentato nei manuali del costruttore: comandi

@@ -111,6 +111,8 @@ if(DSDR_BACKEND_AUDIORIG)
             backends/audiorig/ICatDriver.h
             backends/audiorig/NewcatDriver.h
             backends/audiorig/NewcatDriver.cpp
+            backends/audiorig/CivDriver.h
+            backends/audiorig/CivDriver.cpp
             backends/audiorig/CatController.h
             backends/audiorig/CatController.cpp
             backends/audiorig/AudiorigBackend.h

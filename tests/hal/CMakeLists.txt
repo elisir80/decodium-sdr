@@ -41,6 +41,12 @@ if(DSDR_BACKEND_AUDIORIG)
     dsdr_add_test(tst_newcat
         SOURCES tst_newcat.cpp
         LIBRARIES dsdr::hal)
+
+    # Il BCD del CI-V: invertire i byte non produce un errore, produce una
+    # frequenza plausibile.
+    dsdr_add_test(tst_civ
+        SOURCES tst_civ.cpp
+        LIBRARIES dsdr::hal)
 endif()
 
 if(DSDR_BACKEND_COLIBRI)
