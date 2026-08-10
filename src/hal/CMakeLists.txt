@@ -137,6 +137,12 @@ if(DSDR_BACKEND_SOAPY)
     list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_SOAPY)
 endif()
 
+# Il rilevamento in rete non è un backend e non dipende da nessuno di essi:
+# dice quali radio sono raggiungibili, comprese quelle che non sappiamo ancora
+# aprire. Ha bisogno della rete, sempre.
+list(APPEND DSDR_HAL_SOURCES RadioScout.h RadioScout.cpp)
+set(DSDR_HAL_NEEDS_NETWORK ON)
+
 add_library(dsdr_hal STATIC ${DSDR_HAL_SOURCES})
 
 target_compile_definitions(dsdr_hal PUBLIC ${DSDR_HAL_DEFINES})

@@ -4,6 +4,7 @@
 #include "audio/AudioRouter.h"
 #include "core/DspEngine.h"
 #include "core/TxEngine.h"
+#include "hal/RadioScout.h"
 #include "audio/MicSource.h"
 #include "core/SpectrumFeed.h"
 #include "hal/BackendRegistry.h"
@@ -394,6 +395,27 @@ SessionManager::SessionManager(QObject *parent)
         emit errorReported(message, false);
     });
 
+    // Il rilevamento in rete vive con la sessione: dura pochi secondi e poi
+    // tace, ma l'oggetto resta perché la UI ci si lega.
+    m_scout = new hal::RadioScout(this);
+    connect(m_scout, &hal::RadioScout::radioFound, this,
+            [this](const hal::ScoutedRadio &radio) {
+                QVariantMap entry;
+                entry.insert(QStringLiteral("family"), radio.family);
+                entry.insert(QStringLiteral("model"), radio.model);
+                entry.insert(QStringLiteral("address"), radio.address);
+                entry.insert(QStringLiteral("detail"), radio.detail);
+                entry.insert(QStringLiteral("identity"), radio.identity);
+                m_networkRadios.append(entry);
+                emit networkRadiosChanged();
+            });
+    connect(m_scout, &hal::RadioScout::finished, this, [this] {
+        setStatus(m_networkRadios.isEmpty()
+                      ? tr("Nessuna radio di rete trovata.")
+                      : tr("%1 radio trovate in rete.").arg(m_networkRadios.size()));
+        emit networkRadiosChanged();
+    });
+
     const QStringList ids = hal::BackendRegistry::instance().backendIds();
     if (!ids.isEmpty())
         selectBackend(ids.first());
@@ -577,6 +599,20 @@ void SessionManager::onBackendError(const hal::BackendError &error)
 
     if (error.fatal)
         disconnectDevice();
+}
+
+void SessionManager::scoutNetwork(int seconds)
+{
+    m_networkRadios.clear();
+    emit networkRadiosChanged();
+    setStatus(tr("Cerco radio in rete…"));
+    m_scout->start(seconds);
+    emit networkRadiosChanged();
+}
+
+bool SessionManager::scoutingNetwork() const
+{
+    return m_scout && m_scout->isScanning();
 }
 
 void SessionManager::startDiscovery()

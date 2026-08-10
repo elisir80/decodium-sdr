@@ -28,6 +28,7 @@
 
 namespace dsdr::hal {
 class IRadioBackend;
+class RadioScout;
 }
 
 class QThread;
@@ -73,6 +74,16 @@ class SessionManager : public QObject
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(bool scanning READ isScanning NOTIFY scanningChanged)
     Q_PROPERTY(QVariantList scanResults READ scanResults NOTIFY scanResultsChanged)
+
+    // ── Radio viste in rete ─────────────────────────────────────────────
+    //
+    // Non sono device: sono radio che esistono e che questa versione non sa
+    // ancora aprire. Stanno in un elenco a parte proprio per questo — in
+    // quello dei device finisce solo ciò che si può usare (CONSTITUTION §7) —
+    // e servono a rispondere alla domanda «l'ho collegata, perché non la
+    // vedo?», che altrimenti non ha risposta.
+    Q_PROPERTY(QVariantList networkRadios READ networkRadios NOTIFY networkRadiosChanged)
+    Q_PROPERTY(bool scoutingNetwork READ scoutingNetwork NOTIFY networkRadiosChanged)
     Q_PROPERTY(bool rigctlRunning READ rigctlRunning NOTIFY rigctlChanged)
     Q_PROPERTY(int rigctlPort READ rigctlPort NOTIFY rigctlChanged)
 
@@ -210,6 +221,12 @@ public:
 
     Q_INVOKABLE void selectBackend(const QString &backendId);
     Q_INVOKABLE void startDiscovery();
+
+    /// Cerca in rete le radio delle famiglie che conosciamo, anche quelle che
+    /// non sappiamo aprire.
+    Q_INVOKABLE void scoutNetwork(int seconds = 6);
+    QVariantList networkRadios() const { return m_networkRadios; }
+    bool scoutingNetwork() const;
     Q_INVOKABLE void connectToDevice(int deviceRow);
     Q_INVOKABLE void disconnectDevice();
     Q_INVOKABLE bool startScan(qint64 startHz, qint64 endHz, qint64 stepHz,
@@ -405,6 +422,7 @@ signals:
     void scanResultsChanged();
     void rigctlChanged();
     void transmittingChanged();
+    void networkRadiosChanged();
     void txChanged();
     void txMetersChanged();
     /// La trasmissione è stata rifiutata, e per quale motivo.
@@ -459,6 +477,8 @@ private:
     TxEngine *m_tx = nullptr;
     QThread *m_txThread = nullptr;
     audio::MicSource *m_mic = nullptr;
+    hal::RadioScout *m_scout = nullptr;
+    QVariantList m_networkRadios;
     NeuralNrWorker *m_neural = nullptr;
     QThread *m_neuralThread = nullptr;
     audio::AudioRouter *m_audio = nullptr;

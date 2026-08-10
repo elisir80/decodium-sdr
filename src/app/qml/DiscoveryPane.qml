@@ -55,6 +55,83 @@ Rectangle {
                 enabled: !Session.discovering
                 onClicked: Session.startDiscovery()
             }
+
+            // Cerca in rete anche le famiglie che questa versione non sa
+            // ancora aprire. È una domanda diversa da «quali sorgenti posso
+            // usare», e per questo è un pulsante diverso.
+            DsdrButton {
+                text: Session.scoutingNetwork ? qsTr("In rete…") : qsTr("Cerca in rete")
+                enabled: !Session.scoutingNetwork
+                onClicked: Session.scoutNetwork()
+            }
+        }
+
+        // ── Radio viste in rete ──────────────────────────────────────────
+        //
+        // Non sono sorgenti: sono radio che esistono e che non sappiamo
+        // ancora aprire. Compaiono qui e non nell'elenco dei device perché
+        // quello elenca ciò che si può usare — ma sapere che la radio c'è, a
+        // quale indirizzo e con quale firmware, è la sola risposta possibile
+        // alla domanda «l'ho collegata, perché non la vedo?».
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+            visible: Session.networkRadios.length > 0
+
+            Text {
+                text: qsTr("Trovate in rete")
+                font.pixelSize: Theme.fontSmall
+                font.bold: true
+                color: Theme.textSecondary
+            }
+
+            Repeater {
+                model: Session.networkRadios
+
+                delegate: Rectangle {
+                    required property var modelData
+
+                    Layout.fillWidth: true
+                    implicitHeight: found.implicitHeight + 2 * Theme.spacing
+                    radius: Theme.radiusSmall
+                    color: Theme.surfaceSunken
+                    border.width: 1
+                    border.color: Theme.border
+
+                    ColumnLayout {
+                        id: found
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.margins: Theme.spacing
+                        spacing: 2
+
+                        Text {
+                            text: modelData.family + " · " + modelData.model
+                            font.pixelSize: Theme.fontNormal
+                            color: Theme.textPrimary
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.address
+                                  + (modelData.detail ? " — " + modelData.detail : "")
+                            font.pixelSize: Theme.fontSmall
+                            font.family: Theme.monoFamily
+                            color: Theme.textSecondary
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: qsTr("Riconosciuta, non ancora apribile da questa versione.")
+                            font.pixelSize: Theme.fontSmall
+                            color: Theme.textDisabled
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+            }
         }
 
         // Compare solo per le sorgenti che stanno dietro una rete: è una

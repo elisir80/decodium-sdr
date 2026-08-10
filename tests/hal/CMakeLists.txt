@@ -9,6 +9,12 @@ dsdr_add_test(tst_hal_conformance
         RtlTcpMockServer.cpp
     LIBRARIES dsdr::hal Qt6::Network)
 
+# Il rilevamento in rete: i pacchetti si costruiscono a mano, e nessuna radio
+# deve essere accesa perche' il test dica qualcosa.
+dsdr_add_test(tst_radio_scout
+    SOURCES tst_radio_scout.cpp
+    LIBRARIES dsdr::hal Qt6::Network)
+
 if(DSDR_BACKEND_SOAPY)
     # La traduzione profilo → capability è l'unica parte del backend soapy
     # verificabile senza hardware, ed è quella che guida la UI.
