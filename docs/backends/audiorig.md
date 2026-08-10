@@ -161,7 +161,9 @@ Usabili **solo** dal pannello `AudiorigPanel` (CONSTITUTION §4.1).
 |---|---|---|
 | `audiorig.inputs` | — | elenco degli ingressi audio, con `likelyRadio` per quelli che sembrano un codec |
 | `audiorig.status` | — | radio, porta CAT, velocità, ingresso e uscita audio, S-meter grezzo, scarti |
+| `audiorig.outputs` | — | elenco delle uscite audio |
 | `audiorig.setAudioInput` | `id` | vero se l'ingresso è stato aperto |
+| `audiorig.setAudioOutput` | `id` | vero se l'uscita è stata aperta |
 
 ## Come l'audio ridiventa banda base
 
@@ -227,12 +229,6 @@ livello giusto per un SDR — è lì che sta la dinamica — ma l'ingresso DATA 
 ricetrasmettitore ne vuole un decimo: spinto al massimo fa lavorare l'ALC in
 permanenza, e quello che esce in aria è largo il doppio di quanto dovrebbe. Il
 giudice è l'ALC della radio, non il nostro cursore.
-
-**Il microfono di trasmissione è quello predefinito del sistema**, non un
-dispositivo scelto. Su una macchina dove l'ingresso predefinito è il codec
-della radio stessa, la trasmissione rimanderebbe in aria ciò che si sta
-ricevendo: il pannello TX mostra il nome del microfono aperto proprio per
-questo. Una scelta esplicita è lavoro che manca.
 
 **Una porta CAT, un programma solo.** Se un altro software tiene aperta la porta
 — DECODIUM 4, WSJT-X, un rigctld — questo backend non la trova, e viceversa: chi

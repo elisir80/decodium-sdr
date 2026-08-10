@@ -10,6 +10,7 @@
 // microfono dice quanto si sta parlando, quello d'uscita quanto se ne sta
 // mettendo in aria. Con un solo indicatore, un guadagno microfonico sbagliato
 // e un livello d'uscita sbagliato hanno lo stesso aspetto.
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -191,12 +192,70 @@ PanelFrame {
         onMoved: Session.txDrive = value
     }
 
+    // ── Da dove viene la voce ────────────────────────────────────────────
+    //
+    // Non il predefinito di sistema: su una macchina con dei cavi audio
+    // virtuali — e chi fa i modi digitali ne ha sempre — il predefinito è
+    // quasi mai il microfono, e si finisce a trasmettere quello che passa di
+    // lì senza capire perché.
     Text {
         Layout.fillWidth: true
         visible: !Session.txCw
-        text: Session.micActive
-              ? qsTr("Microfono: %1").arg(Session.micDeviceName)
-              : qsTr("Il microfono si apre premendo il PTT.")
+        text: qsTr("Microfono")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textSecondary
+    }
+
+    DsdrComboBox {
+        Layout.fillWidth: true
+        visible: !Session.txCw
+
+        readonly property var devices: Session.micDevices
+
+        model: [qsTr("Predefinito di sistema")].concat(
+                   devices.map(function (device) { return device.name }))
+
+        currentIndex: {
+            if (Session.micDeviceId === "")
+                return 0
+            for (let i = 0; i < devices.length; ++i) {
+                if (devices[i].id === Session.micDeviceId)
+                    return i + 1
+            }
+            return 0
+        }
+
+        onActivated: function (index) {
+            Session.micDeviceId = index === 0 ? "" : devices[index - 1].id
+        }
+    }
+
+    Settings {
+        category: "tx"
+        property alias microphone: root.savedMicrophone
+    }
+
+    /// Il microfono scelto sopravvive alla chiusura: cambiarlo a ogni avvio
+    /// sarebbe un rito, e ci si accorgerebbe di averlo dimenticato solo
+    /// trasmettendo.
+    property string savedMicrophone: ""
+    onSavedMicrophoneChanged: {
+        if (savedMicrophone !== Session.micDeviceId)
+            Session.micDeviceId = savedMicrophone
+    }
+    Component.onCompleted: {
+        if (savedMicrophone !== "")
+            Session.micDeviceId = savedMicrophone
+    }
+    Connections {
+        target: Session
+        function onTxChanged() { root.savedMicrophone = Session.micDeviceId }
+    }
+
+    Text {
+        Layout.fillWidth: true
+        visible: !Session.txCw && Session.micActive
+        text: qsTr("In trasmissione: %1").arg(Session.micDeviceName)
         font.pixelSize: Theme.fontSmall
         color: Theme.textDisabled
         elide: Text.ElideRight

@@ -27,6 +27,12 @@ QtObject {
         { name: "10m",  start: 28000000, end: 29700000, home: 28400000 },
         { name: "6m",   start: 50000000, end: 52000000, home: 50150000 },
         { name: "FM 88–108", start: 88000000, end: 108000000, home: 100000000 },
+        // VHF e UHF: le copre qualunque ricetrasmettitore multibanda, e il
+        // ColibriNANO ci arriva nelle zone di Nyquist superiori. Senza queste
+        // due righe non c'era un pulsante per i due metri, e una banda
+        // raggiungibile restava fuori portata di chi non digita a mano.
+        { name: "2m",   start: 144000000, end: 146000000, home: 145500000 },
+        { name: "70cm", start: 430000000, end: 440000000, home: 433500000 },
     ]
 
     /// Segmenti d'uso dentro le bande, secondo il piano IARU Regione 1.

@@ -4,6 +4,7 @@
 // Sul ColibriNANO preamplificatore e attenuatore sono la stessa manopola: un
 // solo valore fra −31,5 e +6 dB. Mostrarli come due controlli separati
 // sarebbe più fedele ad altre radio, ma non a questa.
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -28,6 +29,24 @@ PanelFrame {
     Connections {
         target: Session
         function onCenterFrequencyChanged() { root.refresh++ }
+    }
+
+    /// Le zone aperte sopravvivono alla chiusura. Chi le usa ha un filtro
+    /// davanti all'antenna e non lo smonta ogni sera: farsele rispegnere a
+    /// ogni avvio vorrebbe dire ritrovare il ricevitore fermo a 55 MHz senza
+    /// ricordarsi perché.
+    property bool savedExtendedRange: false
+
+    Settings {
+        category: "colibri"
+        property alias extendedRange: root.savedExtendedRange
+    }
+
+    Component.onCompleted: {
+        if (root.savedExtendedRange) {
+            Session.nativeCommand("colibri.setExtendedRange", { "enabled": true })
+            root.refresh++
+        }
     }
 
     property real preampDb: 0
@@ -118,6 +137,7 @@ PanelFrame {
             checked: root.nyquist.extended === true
             onToggled: {
                 Session.nativeCommand("colibri.setExtendedRange", { "enabled": checked })
+                root.savedExtendedRange = checked
                 root.refresh++
             }
         }

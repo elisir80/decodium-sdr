@@ -546,16 +546,37 @@ void AudiorigBackend::onCatLost(const QString &reason)
 
 QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMap &args)
 {
-    if (command == QLatin1String("audiorig.inputs")) {
+    auto describe = [](const QList<QAudioDevice> &devices) {
         QVariantList list;
-        for (const QAudioDevice &device : dsdr::audio::MicSource::inputs()) {
+        for (const QAudioDevice &device : devices) {
             QVariantMap entry;
             entry.insert(QStringLiteral("id"), QString::fromUtf8(device.id()));
             entry.insert(QStringLiteral("name"), device.description());
-            entry.insert(QStringLiteral("likelyRadio"), looksLikeRadioCodec(device.description()));
+            entry.insert(QStringLiteral("likelyRadio"),
+                         looksLikeRadioCodec(device.description()));
             list.append(entry);
         }
         return list;
+    };
+
+    if (command == QLatin1String("audiorig.inputs"))
+        return describe(dsdr::audio::MicSource::inputs());
+
+    if (command == QLatin1String("audiorig.outputs"))
+        return describe(dsdr::audio::AudioOut::outputs());
+
+    if (command == QLatin1String("audiorig.setAudioOutput")) {
+        const QString id = args.value(QStringLiteral("id")).toString();
+        const QAudioDevice output = pickOutput(id);
+        if (output.isNull())
+            return false;
+        m_playback->stop();
+        const bool ok = m_playback->start(output);
+        if (ok) {
+            m_device.extra.insert(QStringLiteral("audioOutput"),
+                                  QString::fromUtf8(output.id()));
+        }
+        return ok;
     }
 
     if (command == QLatin1String("audiorig.status")) {

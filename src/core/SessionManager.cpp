@@ -9,6 +9,7 @@
 #include "hal/BackendRegistry.h"
 #include "hal/IRadioBackend.h"
 
+#include <QAudioDevice>
 #include <QLoggingCategory>
 #include <QMetaEnum>
 #include <QCoreApplication>
@@ -2056,7 +2057,7 @@ void SessionManager::setPtt(bool transmit)
         // Il microfono si apre solo mentre si trasmette. Tenerlo aperto
         // sempre farebbe comparire l'icona di registrazione del sistema per
         // tutta la sessione, e non è ciò che l'operatore ha chiesto.
-        const bool micReady = m_mic->isActive() || m_mic->start();
+        const bool micReady = m_mic->isActive() || startMicrophone();
         if (!micReady)
             setStatus(m_mic->errorString());
         auto *ring = micReady ? m_mic->ring() : nullptr;
@@ -2193,6 +2194,55 @@ bool SessionManager::micActive() const { return m_mic && m_mic->isActive(); }
 QString SessionManager::micDeviceName() const
 {
     return m_mic ? m_mic->deviceName() : QString();
+}
+
+QVariantList SessionManager::micDevices() const
+{
+    QVariantList list;
+    for (const QAudioDevice &device : audio::MicSource::inputs()) {
+        QVariantMap entry;
+        entry.insert(QStringLiteral("id"), QString::fromUtf8(device.id()));
+        entry.insert(QStringLiteral("name"), device.description());
+        list.append(entry);
+    }
+    return list;
+}
+
+bool SessionManager::startMicrophone()
+{
+    if (m_micDeviceId.isEmpty())
+        return m_mic->start();
+
+    for (const QAudioDevice &device : audio::MicSource::inputs()) {
+        if (QString::fromUtf8(device.id()) == m_micDeviceId)
+            return m_mic->start(device);
+    }
+
+    // Il dispositivo scelto non c'è più — staccato, o rinominato da un
+    // aggiornamento del driver. Si ripiega sul predefinito e lo si dice,
+    // invece di lasciare un PTT che non trasmette e nessuna spiegazione.
+    setStatus(tr("Il microfono scelto non è più disponibile: uso il predefinito."));
+    return m_mic->start();
+}
+
+void SessionManager::setMicDeviceId(const QString &id)
+{
+    if (m_micDeviceId == id)
+        return;
+    m_micDeviceId = id;
+
+    // Se si sta trasmettendo si cambia sotto: chi corregge il microfono
+    // sbagliato lo fa proprio mentre si accorge che è sbagliato.
+    if (m_mic->isActive()) {
+        m_mic->stop();
+        startMicrophone();
+        auto *ring = m_mic->isActive() ? m_mic->ring() : nullptr;
+        const double rate = m_mic->sampleRate();
+        QMetaObject::invokeMethod(m_tx, [this, ring, rate] {
+            m_tx->setMicSource(ring, rate);
+        });
+    }
+    emit txChanged();
 }
 
 double SessionManager::micLevel() const

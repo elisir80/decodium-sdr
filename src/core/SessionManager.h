@@ -128,6 +128,15 @@ class SessionManager : public QObject
     Q_PROPERTY(double txDrive READ txDrive WRITE setTxDrive NOTIFY txChanged)
     Q_PROPERTY(bool micActive READ micActive NOTIFY txChanged)
     Q_PROPERTY(QString micDeviceName READ micDeviceName NOTIFY txChanged)
+
+    /// Gli ingressi audio disponibili e quello scelto per la trasmissione.
+    ///
+    /// Non basta prendere il predefinito di sistema: su una macchina con dei
+    /// cavi audio virtuali — e chi usa i modi digitali ne ha sempre — il
+    /// predefinito è quasi mai il microfono, e si finisce a trasmettere quello
+    /// che passa di lì senza capire perché.
+    Q_PROPERTY(QVariantList micDevices READ micDevices NOTIFY txChanged)
+    Q_PROPERTY(QString micDeviceId READ micDeviceId WRITE setMicDeviceId NOTIFY txChanged)
     Q_PROPERTY(double micLevel READ micLevel NOTIFY txMetersChanged)
     Q_PROPERTY(double txCompressionMeter READ txCompressionMeter NOTIFY txMetersChanged)
     Q_PROPERTY(double txLevel READ txLevel NOTIFY txMetersChanged)
@@ -230,6 +239,9 @@ public:
     void setTxDrive(double drive);
     bool micActive() const;
     QString micDeviceName() const;
+    QVariantList micDevices() const;
+    QString micDeviceId() const { return m_micDeviceId; }
+    void setMicDeviceId(const QString &id);
     double micLevel() const;
     double txCompressionMeter() const;
     double txLevel() const;
@@ -402,6 +414,9 @@ private:
 
     /// Da che parte del VFO sta il segnale, quando la sorgente è audio.
     void pushAudioSideband(DemodMode mode);
+
+    /// Apre il microfono scelto, o il predefinito se non ce n'è uno.
+    bool startMicrophone();
     void refreshChannelOffsets();
     void advanceScan();
     void handleAutomaticRdsAf(ChannelId id, bool synced, const QString &pi);
@@ -454,6 +469,7 @@ private:
     /// `connectToDevice`.
     static constexpr double kDefaultTxDrive = 0.9;
     double m_txDrive = kDefaultTxDrive;
+    QString m_micDeviceId;   ///< vuoto = ingresso predefinito del sistema
     QTimer m_scanTimer;
     QTimer m_rdsAfProbeTimer;
     std::vector<qint64> m_rdsAfCandidates;

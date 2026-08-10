@@ -25,6 +25,7 @@ private slots:
     void theFourthZoneInvertsAgain();
     void theEdgesBelongToTheZoneBelow();
     void twoMetersLandsWhereItShould();
+    void theExtendedRangeOpensAndCloses();
 };
 
 void TestColibriNyquist::theFirstZoneIsTunedDirectly()
@@ -94,6 +95,37 @@ void TestColibriNyquist::twoMetersLandsWhereItShould()
     QCOMPARE(tuning.deviceHz, 21'420'000);
     QVERIFY(!tuning.inverted);
     QCOMPARE(tuning.zone, 3);
+}
+
+void TestColibriNyquist::theExtendedRangeOpensAndCloses()
+{
+    // Non serve il device: la copertura dichiarata è una proprietà del
+    // backend, ed è quella che la UI legge per decidere fin dove si può
+    // digitare una frequenza.
+    ColibriBackend backend;
+
+    QCOMPARE(backend.capabilities().maxFrequencyHz, 55'000'000LL);
+    QVERIFY(!backend.capabilities().coversFrequency(144'300'000));
+
+    const QVariant opened = backend.nativeCommand(
+        QStringLiteral("colibri.setExtendedRange"),
+        QVariantMap{{QStringLiteral("enabled"), true}});
+    QCOMPARE(opened.toBool(), true);
+
+    QCOMPARE(backend.capabilities().maxFrequencyHz, 245'760'000LL);
+    QVERIFY2(backend.capabilities().coversFrequency(144'300'000),
+             "con le zone aperte i due metri devono rientrare");
+
+    const QVariantMap state = backend.nativeCommand(
+        QStringLiteral("colibri.nyquist"), QVariantMap()).toMap();
+    QCOMPARE(state.value(QStringLiteral("extended")).toBool(), true);
+    QCOMPARE(state.value(QStringLiteral("maxHz")).toLongLong(), 245'760'000LL);
+
+    // E si richiude tornando dentro la copertura dichiarata: una capability
+    // che resta larga dopo aver spento l'interruttore mentirebbe alla UI.
+    backend.nativeCommand(QStringLiteral("colibri.setExtendedRange"),
+                          QVariantMap{{QStringLiteral("enabled"), false}});
+    QCOMPARE(backend.capabilities().maxFrequencyHz, 55'000'000LL);
 }
 
 QTEST_MAIN(TestColibriNyquist)

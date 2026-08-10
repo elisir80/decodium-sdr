@@ -22,6 +22,7 @@ PanelFrame {
         ? (Session.nativeCommand("audiorig.status", {}) || ({}))
         : ({})
     readonly property var inputs: Session.nativeCommand("audiorig.inputs", {}) || []
+    readonly property var outputs: Session.nativeCommand("audiorig.outputs", {}) || []
 
     property int refresh: 0
 
@@ -107,6 +108,40 @@ PanelFrame {
         }
     }
 
+    // ── L'uscita audio ───────────────────────────────────────────────────
+    //
+    // È il percorso di trasmissione: quello che esce di qui entra nel
+    // connettore dati della radio. Sbagliarlo non produce un errore, produce
+    // un PTT che manda in portante e non trasmette una parola.
+    Text {
+        Layout.fillWidth: true
+        text: qsTr("Uscita audio (trasmissione)")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textSecondary
+    }
+
+    DsdrComboBox {
+        Layout.fillWidth: true
+        enabled: Session.connected
+        model: root.outputs.map(function (output) {
+            return (output.likelyRadio ? "★ " : "   ") + output.name
+        })
+        currentIndex: {
+            const name = root.status.audioOutput || ""
+            for (let i = 0; i < root.outputs.length; ++i) {
+                if (root.outputs[i].name === name)
+                    return i
+            }
+            return -1
+        }
+        onActivated: function (index) {
+            const output = root.outputs[index]
+            if (output)
+                Session.nativeCommand("audiorig.setAudioOutput", { "id": output.id })
+            root.refresh++
+        }
+    }
+
     Text {
         Layout.fillWidth: true
         text: {
@@ -114,6 +149,8 @@ PanelFrame {
             const s = root.status
             if (!Session.connected)
                 return ""
+            if (s.txAudioActive === false)
+                return qsTr("L'uscita di trasmissione non si è aperta.")
             if (!s.audioActive)
                 return qsTr("L'ingresso audio non si è aperto.")
             return qsTr("S-meter %1 · scarti %2").arg(s.sMeterRaw >= 0 ? s.sMeterRaw : "—")

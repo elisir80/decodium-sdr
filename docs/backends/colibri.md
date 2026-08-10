@@ -118,6 +118,11 @@ sbaglia in silenzio — si chiede 144,300 e si ascolta due megahertz più in là
 e va potuta verificare senza il device attaccato. Lo fa
 `tests/hal/tst_colibri_nyquist.cpp`.
 
+L'interruttore sta nel pannello `ColibriNANO`, nella colonna dei pannelli, e
+**si ricorda**: chi ha un filtro davanti all'antenna non lo smonta ogni sera, e
+farsi rispegnere le zone a ogni avvio vorrebbe dire ritrovare il ricevitore
+fermo a 55 MHz senza ricordarsi perché.
+
 **Perché è un interruttore e non il valore predefinito.** Senza un passa-banda
 davanti all'antenna tutte le zone arrivano insieme e si sovrappongono: quello
 che si vede a 144 MHz potrebbe essere una stazione a 100 MHz, o a 21. Chi
