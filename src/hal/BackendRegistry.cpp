@@ -27,6 +27,10 @@
 #include "hal/backends/audiorig/AudiorigBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_HERMES
+#include "hal/backends/hermes/HermesBackend.h"
+#endif
+
 namespace dsdr::hal {
 
 BackendRegistry &BackendRegistry::instance()
@@ -153,6 +157,16 @@ void registerBuiltinBackends()
                                    "sintonizzabile, demodulabile, con il suo waterfall. "
                                    "Con la differenza che il tempo si può riavvolgere.")},
         [](QObject *parent) -> IRadioBackend * { return new IqFileBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_HERMES
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("hermes"),
+                    QStringLiteral("Hermes-Lite 2 (OpenHPSDR)"),
+                    QStringLiteral("Ricevitore di rete a campionamento diretto: "
+                                   "protocollo aperto, nessuna libreria del "
+                                   "costruttore. Si trova da sé sulla rete locale.")},
+        [](QObject *parent) -> IRadioBackend * { return new HermesBackend(parent); });
 #endif
 
 #ifdef DSDR_BACKEND_AUDIORIG

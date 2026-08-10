@@ -71,6 +71,20 @@ if(DSDR_BACKEND_IQFILE)
     list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_IQFILE)
 endif()
 
+if(DSDR_BACKEND_HERMES)
+    # Solo UDP: il protocollo è aperto e non serve nessuna libreria.
+    list(APPEND DSDR_HAL_SOURCES
+        backends/hermes/HermesProtocol.h
+        backends/hermes/HermesProtocol.cpp
+        backends/hermes/HermesWorker.h
+        backends/hermes/HermesWorker.cpp
+        backends/hermes/HermesBackend.h
+        backends/hermes/HermesBackend.cpp
+    )
+    list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_HERMES)
+    set(DSDR_HAL_NEEDS_NETWORK ON)
+endif()
+
 if(DSDR_BACKEND_AUDIORIG)
     # Serve la seriale (piano di controllo) e il multimedia (piano dati). Se
     # Qt non li porta, il backend si spegne da sé con una spiegazione invece di

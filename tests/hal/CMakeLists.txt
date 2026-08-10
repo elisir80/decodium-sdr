@@ -50,3 +50,11 @@ if(DSDR_BACKEND_COLIBRI)
         SOURCES tst_colibri_nyquist.cpp
         LIBRARIES dsdr::hal)
 endif()
+
+if(DSDR_BACKEND_HERMES)
+    # Gli offset del protocollo 1: un byte contato male non fa fallire niente,
+    # produce campioni plausibili e sbagliati.
+    dsdr_add_test(tst_hermes_protocol
+        SOURCES tst_hermes_protocol.cpp
+        LIBRARIES dsdr::hal)
+endif()
