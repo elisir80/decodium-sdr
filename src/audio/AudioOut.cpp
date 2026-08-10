@@ -47,8 +47,15 @@ public:
 
     qint64 bytesAvailable() const override
     {
-        const std::size_t frames = m_ring ? m_ring->available() : 0;
-        return static_cast<qint64>(frames * bytesPerFrame()) + QIODevice::bytesAvailable();
+        // **Sempre** un blocco, anche a ring vuoto: `readData` non resta mai
+        // senza niente da dare, perché quando il ring è vuoto produce
+        // silenzio. Dichiarare zero manderebbe il sink in stato di attesa a
+        // ring vuoto — cioè subito, perché fuori trasmissione il ring **è**
+        // vuoto — e da lì non riprenderebbe più: il PTT manderebbe la radio in
+        // portante e l'audio resterebbe fermo dentro un anello che nessuno
+        // legge più.
+        return static_cast<qint64>(m_scratch.size() * bytesPerFrame())
+             + QIODevice::bytesAvailable();
     }
 
 protected:
@@ -162,6 +169,13 @@ bool AudioOut::start(const QAudioDevice &device)
                                             &m_underruns);
     m_source->open(QIODevice::ReadOnly);
     m_sink->start(m_source.get());
+
+    // Lo stato del sink è l'unico posto da cui si vede che l'uscita ha smesso
+    // di tirare: senza questa riga, un'uscita ferma e un'uscita che suona
+    // silenzio hanno lo stesso aspetto.
+    connect(m_sink.get(), &QAudioSink::stateChanged, this, [this](QAudio::State state) {
+        qCInfo(dsdrAudio) << "uscita audio" << m_deviceName << "stato" << state;
+    });
 
     if (m_sink->error() != QAudio::NoError) {
         m_error = tr("L'uscita audio non si è aperta.");

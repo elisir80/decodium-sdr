@@ -23,6 +23,9 @@ constexpr int kPumpIntervalMs = 5;
 /// Un aggiornamento degli indicatori ogni venti giri: cinquanta volte al
 /// secondo l'occhio non le distingue, e ogni segnale attraversa un thread.
 constexpr int kMeterEvery = 20;
+
+/// Venti aggiornamenti degli indicatori: una riga di diario al secondo.
+constexpr int kLogEvery = 20;
 } // namespace
 
 TxEngine::TxEngine(QObject *parent)
@@ -239,6 +242,18 @@ void TxEngine::pump()
     if (--m_meterCountdown <= 0) {
         m_meterCountdown = kMeterEvery;
         emit metersUpdated();
+
+        // Una riga al secondo mentre si trasmette. È poca cosa, ed è l'unico
+        // modo di distinguere «il motore non produce» da «produce e non
+        // arriva alla radio» senza attaccare un debugger a una stazione che
+        // sta chiamando.
+        if (++m_logCountdown >= kLogEvery) {
+            m_logCountdown = 0;
+            qCInfo(dsdrCore) << "TX: campioni" << m_framesSent
+                             << "picco" << m_outputPeak.load(std::memory_order_relaxed)
+                             << "microfono a vuoto" << m_starved.load(std::memory_order_relaxed)
+                             << (m_domain == Domain::Audio ? "audio" : "banda base");
+        }
     }
 }
 

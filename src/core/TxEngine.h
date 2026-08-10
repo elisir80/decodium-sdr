@@ -144,6 +144,7 @@ private:
     int m_interpolation = 1;
     quint64 m_framesSent = 0;
     int m_meterCountdown = 0;
+    int m_logCountdown = 0;
 
     std::atomic<bool> m_transmitting{false};
     std::atomic<float> m_micPeak{0.0f};
