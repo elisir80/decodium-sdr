@@ -81,7 +81,7 @@ riconosce.
 | `tx` | `None` | Non esiste trasmettitore. Il PTT quindi non è disabilitato: non viene creato (CONSTITUTION §7) |
 | `demod`, `spectrum`, `agc` | `Client` | Il device consegna IQ grezzo e nient'altro: tutta la catena è nostra |
 | `sampleRates` | 48 k → 3,072 MS/s | Nove passi, quelli che la libreria accetta. Il predefinito è 768 kS/s: banda comoda in HF senza chiedere troppo a un portatile |
-| `minFrequencyHz` … `maxFrequencyHz` | 100 kHz … 55 MHz | Sopra i 55 MHz si entra nelle zone di Nyquist successive dell'ADC a 122,88 MHz. La ricezione è possibile, ma serve un filtro esterno e non ci sono garanzie: dichiararla sarebbe una promessa che il device non mantiene |
+| `minFrequencyHz` … `maxFrequencyHz` | 100 kHz … 55 MHz, o 245,76 MHz con le zone di Nyquist aperte | Vedi sotto: la copertura dichiarata è quella del costruttore, l'altra si accende di proposito |
 | `hasPreamp`, `hasAttenuator` | `true` | Sono **la stessa manopola**: un solo valore da −31,5 a +6 dB. Il device non ha due comandi distinti, e fingere il contrario avrebbe prodotto una UI con due cursori che si contendono lo stesso registro |
 | `maxGainReductionDb` | 31,5 | Quanto la guardia contro la saturazione (DSDR-SPEC-003 §3) può togliere: si scende lungo quella scala a partire dal livello scelto dall'operatore, che resta il tetto |
 | `hasHardwareFilters` | `true` | Passa-basso commutato dal device |
@@ -90,6 +90,46 @@ riconosce.
 | `remoteCapable` | `false` | È un device USB locale |
 | `supportsRecording` | `true` | Il flusso IQ è nostro dal ring in poi |
 | `nativePanels` | `ColibriDevicePanel` | Il pannello del preamplificatore e della salute del device |
+
+## Le zone di Nyquist
+
+L'ADC campiona a 122,88 MHz e **non ha un mescolatore davanti**: sopra
+61,44 MHz — metà di quel ritmo — non c'è più niente da sintonizzare. I segnali
+però continuano ad arrivare, ripiegati dentro la prima zona. È il campionamento
+in sottofrequenza, ed è una tecnica, non un difetto.
+
+Ripiegare è aritmetica di tre righe:
+
+| Zona | Frequenza | DDC | Spettro |
+|---|---|---|---|
+| 1 | 0 … 61,44 MHz | la frequenza stessa | dritto |
+| 2 | 61,44 … 122,88 | 122,88 − f | **rovesciato** |
+| 3 | 122,88 … 184,32 | f − 122,88 | dritto |
+| 4 | 184,32 … 245,76 | 245,76 − f | **rovesciato** |
+
+Nelle zone pari la frequenza ripiegata **scende** mentre quella vera sale: lo
+spettro esce a rovescio e il backend lo raddrizza coniugando. La coniugazione
+di convenzione — il ColibriNANO consegna con il segno opposto al nostro,
+sempre — e quella della zona si sommano: due rovesciamenti fanno uno spettro
+dritto, ed è un `!=` fra due booleani, non due cicli.
+
+L'aritmetica è pubblica e statica apposta (`ColibriBackend::tuningFor`): si
+sbaglia in silenzio — si chiede 144,300 e si ascolta due megahertz più in là —
+e va potuta verificare senza il device attaccato. Lo fa
+`tests/hal/tst_colibri_nyquist.cpp`.
+
+**Perché è un interruttore e non il valore predefinito.** Senza un passa-banda
+davanti all'antenna tutte le zone arrivano insieme e si sovrappongono: quello
+che si vede a 144 MHz potrebbe essere una stazione a 100 MHz, o a 21. Chi
+accende le zone superiori sta dicendo che sa cosa aspettarsi, e che davanti ci
+mette un filtro. Il pannello mostra la zona corrente e se lo spettro è stato
+raddrizzato, perché nella zona sbagliata il silenzio ha lo stesso aspetto di
+un'antenna staccata.
+
+Il limite di 245,76 MHz sono quattro zone. Oltre, l'ingresso analogico
+dell'ADC non arriva: qualcuno riceve fino a mezzo gigahertz con un
+preamplificatore esterno, ma dichiararlo vorrebbe dire promettere il suo banco
+a tutti.
 
 ## Comandi nativi
 
@@ -101,6 +141,8 @@ non li conosce e non deve conoscerli.
 | `colibri.setPreamp` | `db` | il valore applicato, limitato a −31,5…+6 |
 | `colibri.preampRange` | — | `min`, `max`, `value` correnti |
 | `colibri.health` | — | `adcOverload` (adesso) e `overloadBlocks` (da quando è aperto) |
+| `colibri.setExtendedRange` | `enabled` | apre o chiude le zone di Nyquist superiori |
+| `colibri.nyquist` | — | `zone`, `inverted`, `deviceHz` e il limite corrente |
 
 Toccare il preamplificatore a mano **azzera** la riduzione in corso della
 guardia contro la saturazione, e il nuovo valore diventa il tetto: chi rimette
@@ -121,8 +163,9 @@ thread sta ancora consegnando campioni potrebbe essere peggio del non
 chiuderla affatto, ma va verificato con un debugger attaccato. In CI non si
 vede, perché senza hardware il backend viene saltato.
 
-**Sopra i 55 MHz** il device riceve, ma nelle zone di Nyquist successive e
-senza filtro d'ingresso: fuori da ciò che dichiariamo.
+**Sopra i 55 MHz** serve sapere cosa si sta facendo: vedi la sezione sulle
+zone di Nyquist. Senza un passa-banda esterno le zone arrivano tutte insieme e
+si sovrappongono.
 
 **Nessuna trasmissione**, per costruzione.
 

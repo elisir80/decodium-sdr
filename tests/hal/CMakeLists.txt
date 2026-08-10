@@ -36,3 +36,11 @@ if(DSDR_BACKEND_AUDIORIG)
         SOURCES tst_newcat.cpp
         LIBRARIES dsdr::hal)
 endif()
+
+if(DSDR_BACKEND_COLIBRI)
+    # Il ripiegamento nelle zone di Nyquist e' aritmetica pura: si verifica
+    # senza device, ed e' quella che sbaglia in silenzio.
+    dsdr_add_test(tst_colibri_nyquist
+        SOURCES tst_colibri_nyquist.cpp
+        LIBRARIES dsdr::hal)
+endif()

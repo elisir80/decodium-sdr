@@ -20,11 +20,16 @@ constexpr std::size_t kIqRingFloats = 1 << 23;
 /// dentro la banda campionata e li demodula il DSP client.
 constexpr int kMaxLogicalRxChannels = 4;
 
-/// Copertura del ricevitore. Sopra i 55 MHz si entra nelle zone di Nyquist
-/// successive dell'ADC a 122,88 MHz: ricezione possibile ma con filtro esterno
-/// e senza garanzie, quindi non la si dichiara.
+/// Copertura dichiarata dal costruttore. È quella in cui il device promette
+/// qualcosa: filtro d'ingresso, sensibilità, reiezione delle immagini.
 constexpr qint64 kMinFrequencyHz = 100'000;
 constexpr qint64 kMaxFrequencyHz = 55'000'000;
+
+/// Copertura con le zone di Nyquist aperte: quattro zone, cioè fino a
+/// 245,76 MHz. Oltre non si va perché l'ingresso analogico dell'ADC non ci
+/// arriva, e dichiarare i 500 MHz che qualcuno riesce a ricevere con un
+/// preamplificatore esterno vorrebbe dire promettere il suo banco a tutti.
+constexpr qint64 kExtendedMaxFrequencyHz = 245'760'000;
 
 } // namespace
 
@@ -63,7 +68,7 @@ BackendCapabilities ColibriBackend::capabilities() const
     caps.defaultSampleRate = 768000.0;
 
     caps.minFrequencyHz = kMinFrequencyHz;
-    caps.maxFrequencyHz = kMaxFrequencyHz;
+    caps.maxFrequencyHz = m_extendedRange ? kExtendedMaxFrequencyHz : kMaxFrequencyHz;
 
     caps.hasHardwareFilters = true;   // passa-basso commutato dal device
     caps.hasPreamp = true;            // −31,5…+6 dB, preamplificatore e attenuatore insieme
@@ -211,7 +216,8 @@ void ColibriBackend::open(const DeviceDescriptor &device)
 
     // La frequenza deve stare nella copertura: aprire a 100 MHz darebbe solo
     // rumore e sembrerebbe un guasto.
-    m_centerHz = std::clamp(m_centerHz, kMinFrequencyHz, kMaxFrequencyHz);
+    m_centerHz = std::clamp(m_centerHz, kMinFrequencyHz,
+                            m_extendedRange ? kExtendedMaxFrequencyHz : kMaxFrequencyHz);
 
     ColibriLibrary::instance().setFrequency(m_handle, static_cast<std::uint32_t>(m_centerHz));
     ColibriLibrary::instance().setPreamp(m_handle, m_preampDb);
@@ -309,9 +315,10 @@ void ColibriBackend::onSamples(ColibriComplex *iq, std::uint32_t length, bool ad
     const std::size_t floats = static_cast<std::size_t>(length) * 2;
     std::size_t written = 0;
 
-    if (kConjugateStream) {
+    if (m_conjugate.load(std::memory_order_relaxed)) {
         // Il flusso del ColibriNANO ha la convenzione di segno opposta alla
-        // nostra: coniugare rimette USB e LSB al loro posto.
+        // nostra: coniugare rimette USB e LSB al loro posto. Nelle zone di
+        // Nyquist pari il rovesciamento è doppio e si annulla.
         // Si scrive campione per campione perché il segno cambia solo la
         // parte immaginaria; il costo è trascurabile rispetto al DSP.
         for (std::uint32_t i = 0; i < length; ++i) {
@@ -347,21 +354,60 @@ void ColibriBackend::onSamples(ColibriComplex *iq, std::uint32_t length, bool ad
 // Controlli
 // ─────────────────────────────────────────────────────────────────────────────
 
+ColibriBackend::Tuning ColibriBackend::tuningFor(qint64 hz)
+{
+    Tuning tuning;
+    if (hz < 0)
+        return tuning;
+
+    // Il segnale si ripiega dentro la prima zona: quel che resta dopo aver
+    // tolto i multipli interi del ritmo di campionamento.
+    const qint64 folded = hz % kAdcClockHz;
+
+    if (folded <= kNyquistHz) {
+        tuning.deviceHz = folded;
+        tuning.inverted = false;
+    } else {
+        // Oltre metà del ritmo il ripiegamento avviene dall'altra parte, e la
+        // frequenza scende mentre quella vera sale: lo spettro esce a
+        // rovescio, e va rimesso dritto coniugando.
+        tuning.deviceHz = kAdcClockHz - folded;
+        tuning.inverted = true;
+    }
+
+    tuning.zone = static_cast<int>(hz / kNyquistHz) + 1;
+    return tuning;
+}
+
 void ColibriBackend::setCenterFrequency(qint64 hz)
 {
     if (!capabilities().coversFrequency(hz)) {
+        const qint64 limit = m_extendedRange ? kExtendedMaxFrequencyHz : kMaxFrequencyHz;
         reportError(BackendError::Unsupported,
-                    tr("Il ColibriNANO riceve da %1 a %2 MHz.")
-                        .arg(kMinFrequencyHz / 1e6, 0, 'f', 1)
-                        .arg(kMaxFrequencyHz / 1e6, 0, 'f', 0));
+                    m_extendedRange
+                        ? tr("Con le zone di Nyquist aperte il ColibriNANO arriva a %1 MHz.")
+                              .arg(limit / 1e6, 0, 'f', 0)
+                        : tr("Il ColibriNANO riceve da %1 a %2 MHz. Le zone di Nyquist "
+                             "superiori si aprono dal pannello del device.")
+                              .arg(kMinFrequencyHz / 1e6, 0, 'f', 1)
+                              .arg(limit / 1e6, 0, 'f', 0));
         return;
     }
     if (m_centerHz == hz)
         return;
 
     m_centerHz = hz;
-    if (m_handle)
-        ColibriLibrary::instance().setFrequency(m_handle, static_cast<std::uint32_t>(hz));
+
+    const Tuning tuning = tuningFor(hz);
+    // La coniugazione di convenzione e quella della zona si sommano: due
+    // rovesciamenti fanno uno spettro dritto, e applicarli separatamente
+    // avrebbe voluto dire scrivere due volte lo stesso ciclo.
+    m_conjugate.store(kConjugateStream != tuning.inverted, std::memory_order_relaxed);
+
+    if (m_handle) {
+        ColibriLibrary::instance().setFrequency(
+            m_handle, static_cast<std::uint32_t>(tuning.deviceHz));
+    }
     emit centerFrequencyChanged(hz);
 }
 
@@ -534,6 +580,32 @@ QVariant ColibriBackend::nativeCommand(const QString &command, const QVariantMap
         return QVariantMap{{QStringLiteral("min"), kMinPreampDb},
                            {QStringLiteral("max"), kMaxPreampDb},
                            {QStringLiteral("value"), m_preampDb}};
+    }
+
+    // ── Zone di Nyquist ─────────────────────────────────────────────────
+    if (command == QLatin1String("colibri.setExtendedRange")) {
+        const bool enabled = args.value(QStringLiteral("enabled")).toBool();
+        if (m_extendedRange != enabled) {
+            m_extendedRange = enabled;
+            // Spegnendole si torna dentro la copertura dichiarata: se si era
+            // sopra, restarci vorrebbe dire una capability che mente.
+            if (!enabled && m_centerHz > kMaxFrequencyHz)
+                setCenterFrequency(kMaxFrequencyHz);
+            emit capabilitiesChanged();
+        }
+        return QVariant(m_extendedRange);
+    }
+
+    if (command == QLatin1String("colibri.nyquist")) {
+        const Tuning tuning = tuningFor(m_centerHz);
+        return QVariantMap{
+            {QStringLiteral("extended"), m_extendedRange},
+            {QStringLiteral("zone"), tuning.zone},
+            {QStringLiteral("inverted"), tuning.inverted},
+            {QStringLiteral("deviceHz"), tuning.deviceHz},
+            {QStringLiteral("maxHz"), m_extendedRange ? kExtendedMaxFrequencyHz
+                                                      : kMaxFrequencyHz},
+        };
     }
 
     if (command == QLatin1String("colibri.health")) {

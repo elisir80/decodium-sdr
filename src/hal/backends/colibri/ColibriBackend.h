@@ -78,6 +78,36 @@ public:
 
     QVariant nativeCommand(const QString &command, const QVariantMap &args) override;
 
+    // ── Zone di Nyquist ─────────────────────────────────────────────────
+    //
+    // L'ADC campiona a 122,88 MHz e non ha un mescolatore davanti: sopra
+    // 61,44 MHz — metà del ritmo di campionamento — non c'è più niente da
+    // sintonizzare, ma i segnali continuano ad arrivare, ripiegati dentro la
+    // prima zona. È il campionamento in sottofrequenza, ed è una tecnica, non
+    // un difetto: si riceve a 144 MHz sintonizzando il DDC sulla frequenza
+    // ripiegata e sapendo che nelle zone pari lo spettro è rovesciato.
+    //
+    // Quel che non si può fare è filtrare: senza un passa-banda davanti
+    // all'ADC, tutte le zone arrivano insieme e si sovrappongono. Per questo
+    // resta una cosa che l'operatore accende di proposito.
+
+    static constexpr qint64 kAdcClockHz = 122'880'000;
+    static constexpr qint64 kNyquistHz = kAdcClockHz / 2;
+
+    /// Come sintonizzare una frequenza qualunque: dove va davvero messo il
+    /// DDC, e se lo spettro esce rovesciato.
+    struct Tuning
+    {
+        qint64 deviceHz = 0;
+        bool inverted = false;
+        int zone = 1;
+    };
+
+    /// Pura, e statica apposta: è aritmetica che si sbaglia in silenzio — si
+    /// sintonizza 144,300 e si ascolta due megahertz più in là — e va potuta
+    /// verificare senza il device attaccato.
+    static Tuning tuningFor(qint64 hz);
+
 private:
     /// Chiamata dalla libreria sul **suo** thread. Scrive nel ring e basta:
     /// il ring è lock-free a produttore singolo, quindi non serve rimbalzare
@@ -131,9 +161,14 @@ private:
     /// nell'altra posizione.
     static constexpr bool kConjugateStream = true;
 
+
     std::atomic<quint64> m_sequence{0};
     std::atomic<quint64> m_overloadBlocks{0};
     std::atomic<bool> m_adcOverload{false};
+    /// Coniugazione applicata al flusso: quella di convenzione, più quella
+    /// delle zone di Nyquist pari.
+    std::atomic<bool> m_conjugate{kConjugateStream};
+    bool m_extendedRange = false;
 };
 
 } // namespace dsdr::hal::colibri

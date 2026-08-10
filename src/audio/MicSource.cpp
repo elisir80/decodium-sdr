@@ -204,7 +204,15 @@ void MicSource::stop()
 
 bool MicSource::isActive() const
 {
-    return m_source && m_source->state() == QAudio::ActiveState;
+    // `ActiveState` significa «sta arrivando roba adesso», e subito dopo
+    // `start()` non è ancora vero: il dispositivo è in `IdleState` finché non
+    // consegna il primo buffer, qualche millisecondo dopo. Chiedere qui se il
+    // microfono è aperto e ricevere «no» faceva agganciare la trasmissione a
+    // un ring nullo, e il PTT mandava la radio in portante senza una parola.
+    //
+    // Quel che serve sapere è se il dispositivo è aperto, e quello è tutto ciò
+    // che non è `StoppedState`.
+    return m_source && m_source->state() != QAudio::StoppedState;
 }
 
 } // namespace dsdr::audio

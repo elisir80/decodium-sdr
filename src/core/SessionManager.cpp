@@ -2056,11 +2056,14 @@ void SessionManager::setPtt(bool transmit)
         // Il microfono si apre solo mentre si trasmette. Tenerlo aperto
         // sempre farebbe comparire l'icona di registrazione del sistema per
         // tutta la sessione, e non è ciò che l'operatore ha chiesto.
-        if (!m_mic->isActive() && !m_mic->start())
+        const bool micReady = m_mic->isActive() || m_mic->start();
+        if (!micReady)
             setStatus(m_mic->errorString());
-        const bool micReady = m_mic->isActive();
         auto *ring = micReady ? m_mic->ring() : nullptr;
         const double rate = m_mic->sampleRate();
+        qCInfo(dsdrCore) << "TX: microfono" << (micReady ? m_mic->deviceName()
+                                                         : QStringLiteral("assente"))
+                         << rate << "Hz";
         QMetaObject::invokeMethod(m_tx, [this, ring, rate] {
             m_tx->setMicSource(ring, rate);
             m_tx->setTransmitting(true);
