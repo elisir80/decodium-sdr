@@ -76,6 +76,18 @@ private:
     /// che l'handshake sia finito.
     static bool waitUntilReady(IRadioBackend *backend, int timeoutMs = 5000);
 
+    /// Attende l'esito della discovery — un device trovato, oppure la fine
+    /// della ricerca — e dice se è arrivato qualcosa. Aspettare il solo
+    /// `deviceFound` significherebbe pagare il timeout intero per ogni
+    /// backend senza hardware, e questa suite ne interroga sette in otto
+    /// prove: erano una manciata di secondi ciascuna, ed erano la ragione per
+    /// cui la suite sfiorava il tetto di ctest.
+    ///
+    /// I due spy si costruiscono prima di `startDiscovery()`, non qui dentro:
+    /// un backend che annuncia la fine subito non deve poterla annunciare a
+    /// nessuno.
+    static bool waitForDiscovery(QSignalSpy &found, QSignalSpy &finished, int timeoutMs = 5000);
+
     std::unique_ptr<dsdr::test::RtlTcpMockServer> m_mockRtlTcp;
 };
 
@@ -117,6 +129,15 @@ bool TestHalConformance::waitUntilReady(IRadioBackend *backend, int timeoutMs)
         || backend->state() == BackendState::Streaming;
 }
 
+bool TestHalConformance::waitForDiscovery(QSignalSpy &found, QSignalSpy &finished, int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (found.isEmpty() && finished.isEmpty() && timer.elapsed() < timeoutMs)
+        QTest::qWait(20);
+    return !found.isEmpty();
+}
+
 void TestHalConformance::addBackendRows()
 {
     QTest::addColumn<QString>("backendId");
@@ -134,8 +155,9 @@ std::unique_ptr<IRadioBackend> TestHalConformance::openFirstDevice(const QString
     }
 
     QSignalSpy found(backend.get(), &IRadioBackend::deviceFound);
+    QSignalSpy finished(backend.get(), &IRadioBackend::discoveryFinished);
     backend->startDiscovery();
-    if (!found.wait(3000) || found.isEmpty())
+    if (!waitForDiscovery(found, finished))
         return nullptr; // hardware assente: il chiamante decide se skippare
 
     const auto device = found.first().first().value<DeviceDescriptor>();
@@ -163,14 +185,21 @@ void TestHalConformance::discoveryIsAsynchronous()
     QVERIFY(backend);
 
     QSignalSpy found(backend.get(), &IRadioBackend::deviceFound);
+    QSignalSpy finished(backend.get(), &IRadioBackend::discoveryFinished);
     backend->startDiscovery();
 
     // Contratto: la discovery non consegna nulla in modo sincrono, altrimenti
     // il core svilupperebbe una dipendenza dal tempismo di un backend.
     QCOMPARE(found.count(), 0);
 
-    if (!found.wait(3000))
+    if (!waitForDiscovery(found, finished)) {
+        // Secondo contratto: una ricerca finisce, e lo dice. Chi non lo
+        // annuncia non fallisce nulla di visibile — costringe solo ogni
+        // chiamante, il core come questa suite, ad aspettare un timeout per
+        // sapere che non c'era niente da trovare.
+        QVERIFY2(!finished.isEmpty(), "la discovery non ha annunciato la fine");
         QSKIP("nessun device disponibile per questo backend");
+    }
 
     for (const QList<QVariant> &emission : found) {
         const auto device = emission.first().value<DeviceDescriptor>();
@@ -178,6 +207,9 @@ void TestHalConformance::discoveryIsAsynchronous()
         QCOMPARE(device.backendId, backendId);
         QVERIFY(!device.displayName.isEmpty());
     }
+
+    // Vale anche per chi trova: la fine arriva dopo i device, non al posto loro.
+    QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 5000);
 
     backend->stopDiscovery();
 }
