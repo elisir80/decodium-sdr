@@ -38,6 +38,8 @@ private slots:
     void theClassCodeDeclaresTheFormat();
     void samplesComeOutInNetworkOrder();
     void aFormatWeCannotReadIsSkipped();
+    void fixedPointIsNotMistakenForFloatingPoint();
+    void theStreamIsOpenedInFourSteps();
 };
 
 void TestFlexProtocol::theRadioIntroducesItself()
@@ -217,8 +219,13 @@ void TestFlexProtocol::theClassCodeDeclaresTheFormat()
     QVERIFY(iq.isFloatPair());
 
     // Interi invece di virgola mobile: stesso numero di bit, formato diverso.
+    // Restano una coppia — quindi un flusso IQ — ma vanno letti in un altro
+    // modo, ed è per questo che i due controlli sono separati.
     const quint16 fixedPoint = (0x3 << 5) | (0x3 << 7);
-    QVERIFY(!parseVita(vitaPacket(fixedPoint, {1.0f, 0.0f})).isFloatPair());
+    const auto fixed = parseVita(vitaPacket(fixedPoint, {1.0f, 0.0f}));
+    QVERIFY(fixed.isPair32());
+    QVERIFY(!fixed.isFloat());
+    QVERIFY(!fixed.isFloatPair());
 
     // Un canale solo: è audio, non IQ.
     const quint16 mono = (0x3 << 5) | (0x1 << 9);
@@ -245,10 +252,69 @@ void TestFlexProtocol::aFormatWeCannotReadIsSkipped()
     // Un formato che non sappiamo leggere si salta. Interpretarlo lo stesso
     // darebbe campioni plausibili e sbagliati — che è il modo peggiore di
     // essere rotti, perché sembra funzionare.
-    const quint16 fixedPoint = (0x3 << 5) | (0x3 << 7);
-    const QByteArray packet = vitaPacket(fixedPoint, {1.0f, 0.0f});
+    //
+    // La virgola fissa **si legge** (vedi il test apposta): quello che non si
+    // legge è un canale solo, che è audio e non IQ, o una precisione diversa
+    // da trentadue bit.
+    const quint16 mono = (0x3 << 5) | (0x1 << 9);
+    const QByteArray monoPacket = vitaPacket(mono, {1.0f, 0.0f});
     std::vector<float> out(2, 0.0f);
-    QCOMPARE(decodeIq(packet, parseVita(packet), out.data()), std::size_t(0));
+    QCOMPARE(decodeIq(monoPacket, parseVita(monoPacket), out.data()), std::size_t(0));
+
+    const quint16 sixteenBits = (0x2 << 5) | (0x3 << 7) | (0x1 << 9);
+    const QByteArray narrow = vitaPacket(sixteenBits, {1.0f, 0.0f});
+    QCOMPARE(decodeIq(narrow, parseVita(narrow), out.data()), std::size_t(0));
+}
+
+void TestFlexProtocol::fixedPointIsNotMistakenForFloatingPoint()
+{
+    // FlexLib stessa ha avuto questo difetto: trattava come virgola mobile un
+    // flusso che la radio mandava in virgola fissa. Lo scambio non produce
+    // silenzio — produce numeri assurdi che il DSP elabora diligentemente,
+    // cioe' rumore che sembra una banda.
+    const quint16 fixedClass = (0x3 << 5) | (0x3 << 7);   // niente bit IEEE-754
+
+    // Due campioni in virgola fissa: meta' fondo scala positivo e negativo.
+    QByteArray packet(7 * 4 + 8, '\0');
+    auto *p = reinterpret_cast<uchar *>(packet.data());
+    qToBigEndian<quint32>(0x10000000u | 0x08000000u | 0x00400000u | 0x00100000u
+                              | quint32(9), p);
+    qToBigEndian<quint32>(0x40000001u, p + 4);
+    qToBigEndian<quint32>(0x001C2Du, p + 8);
+    qToBigEndian<quint32>((0x534Cu << 16) | fixedClass, p + 12);
+    qToBigEndian<quint32>(quint32(0x40000000), p + 28);   // +0,5
+    qToBigEndian<quint32>(quint32(0xC0000000), p + 32);   // −0,5
+
+    const auto parsed = parseVita(packet);
+    QVERIFY(parsed.valid);
+    QVERIFY(parsed.isPair32());
+    QVERIFY(!parsed.isFloat());
+
+    std::vector<float> out(2, 0.0f);
+    QCOMPARE(decodeIq(packet, parsed, out.data()), std::size_t(1));
+    QVERIFY(std::abs(out[0] - 0.5f) < 1e-6f);
+    QVERIFY(std::abs(out[1] + 0.5f) < 1e-6f);
+}
+
+void TestFlexProtocol::theStreamIsOpenedInFourSteps()
+{
+    QCOMPARE(commandUdpPort(7791), QStringLiteral("client udpport 7791"));
+
+    // L'indirizzo si dice per esteso: su una macchina con piu' schede di rete
+    // la radio non puo' indovinare su quale si vogliano ricevere i campioni.
+    QCOMPARE(commandCreateIqStream(1, QStringLiteral("192.168.1.10"), 7791),
+             QStringLiteral("stream create daxiq=1 ip=192.168.1.10 port=7791"));
+
+    QCOMPARE(commandCreatePanadapter(800, 400),
+             QStringLiteral("display pan create x=800 y=400"));
+
+    // Il quarto passo decide la velocita': senza, il flusso nasce a 48 kS/s
+    // qualunque cosa si sia chiesto, e il DSP calcolerebbe tutto sulla
+    // velocita' sbagliata senza accorgersene.
+    QCOMPARE(commandBindIqStream(1, QStringLiteral("0x40000000"), 192000,
+                                 QStringLiteral("0x36A13007")),
+             QStringLiteral("dax iq s 1 pan=0x40000000 daxiq_rate=192000 "
+                            "client_handle=0x36A13007"));
 }
 
 QTEST_MAIN(TestFlexProtocol)

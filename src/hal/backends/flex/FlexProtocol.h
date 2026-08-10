@@ -70,4 +70,24 @@ QHash<QString, QString> parseFields(const QString &payload);
 /// Il modello leggibile dal numero di serie o dal campo `model`.
 QString describeRadio(const QHash<QString, QString> &fields);
 
+// ── I comandi che aprono un flusso IQ ────────────────────────────────────
+//
+// Quattro passi, e nessuno di loro si indovina: sono attestati nella
+// documentazione di FlexRadio e nelle risposte dei suoi tecnici.
+//
+//   1. si dichiara la porta UDP su cui si vuole ricevere
+//   2. si crea il flusso DAX IQ verso quella porta
+//   3. si crea un panadapter, che è ciò a cui il flusso va legato
+//   4. si lega il canale al panadapter e si sceglie la velocità
+//
+// Il quarto passo è quello che decide la frequenza di campionamento: senza,
+// il flusso nasce a 48 kS/s qualunque cosa si sia chiesto, e il DSP
+// calcolerebbe tutto sulla velocità sbagliata senza accorgersene.
+
+QString commandUdpPort(quint16 port);
+QString commandCreateIqStream(int channel, const QString &clientIp, quint16 port);
+QString commandCreatePanadapter(int width, int height);
+QString commandBindIqStream(int channel, const QString &panStreamId,
+                            int sampleRate, const QString &clientHandle);
+
 } // namespace dsdr::hal::flex

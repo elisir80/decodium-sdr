@@ -83,6 +83,12 @@ arriverà: se il pacchetto dichiara un formato che non sappiamo leggere, lo salt
 e lo dice. È la differenza fra indovinare — e quando si sbaglia si consegnano
 campioni plausibili, cioè rumore che sembra una banda — e verificare.
 
+**Che non sia teoria lo dimostra FlexLib**, la libreria del costruttore: ha
+avuto per un periodo esattamente questo difetto, trattando come virgola mobile
+un flusso DAX IQ che la radio mandava in virgola fissa. Il risultato di quello
+scambio non è silenzio — sono numeri assurdi che il DSP elabora diligentemente.
+Qui i due casi si leggono entrambi, e quale sia lo dice il bit.
+
 Due dettagli che si sbagliano in silenzio, ed entrambi hanno il loro test:
 
 - **L'intestazione non è di misura fissa.** I marcatori temporali ci sono solo
@@ -93,15 +99,34 @@ Due dettagli che si sbagliano in silenzio, ed entrambi hanno il loro test:
   funzionerebbe solo su una macchina big endian, e le nostre non lo sono: quel
   che ne uscirebbe sono numeri enormi o denormali, cioè silenzio o rumore.
 
+## La sequenza che apre il flusso
+
+Quattro passi, e nessuno si indovina — sono attestati nella documentazione di
+FlexRadio e nelle risposte dei suoi tecnici:
+
+```
+client udpport <porta>
+stream create daxiq=<canale> ip=<nostro indirizzo> port=<porta>
+display pan create x=<larghezza> y=<altezza>
+dax iq s <canale> pan=<id del pan> daxiq_rate=<velocità> client_handle=<handle>
+```
+
+L'indirizzo si dice per esteso: su una macchina con più schede di rete la radio
+non può indovinare su quale si vogliano ricevere i campioni.
+
+**Il quarto passo è quello che decide la velocità**, e senza di lui il flusso
+nasce a 48 kS/s qualunque cosa si sia chiesto — con il DSP che calcolerebbe
+tutto sulla velocità sbagliata senza accorgersene. Le velocità vanno da 24 a
+192 kS/s.
+
 ## Quello che manca
 
-La sequenza di comandi che apre il flusso: registrazione della porta UDP del
-client (`client udpport <porta>`) e creazione dello stream
-(`stream create daxiq=<canale> port=<porta>`). La forma esatta e il legame con
-la fetta e il panadapter vanno confermati su una radio vera — le fonti pubbliche
-ne danno due varianti, e provarle è questione di minuti con un Flex davanti,
-mentre indovinare quale sia significherebbe un backend che si collega e non
-riceve niente.
+Provarla. Il legame esatto fra fetta, panadapter e canale DAX cambia fra le
+versioni maggiori del firmware, e le fonti pubbliche descrivono due forme del
+comando di creazione. Con un Flex davanti è questione di minuti: si manda la
+sequenza e si guarda se la risposta è `0` o un codice d'errore. Senza, resterebbe
+un backend che si collega e non riceve niente — che è peggio di nessun
+backend.
 
 Fino ad allora `DSDR_BACKEND_FLEX` resta spento e nell'elenco delle sorgenti non
 compare niente: un backend che apre e non consegna campioni sarebbe la peggiore

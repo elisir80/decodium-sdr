@@ -91,4 +91,30 @@ QString describeRadio(const QHash<QString, QString> &fields)
     return parts.join(QStringLiteral(" · "));
 }
 
+QString commandUdpPort(quint16 port)
+{
+    return QStringLiteral("client udpport %1").arg(port);
+}
+
+QString commandCreateIqStream(int channel, const QString &clientIp, quint16 port)
+{
+    // L'indirizzo si dice per esteso: la radio manderebbe i campioni a chi ha
+    // aperto il canale di comando, e su una macchina con più schede di rete
+    // non è detto che sia quella su cui si vuole riceverli.
+    return QStringLiteral("stream create daxiq=%1 ip=%2 port=%3")
+        .arg(channel).arg(clientIp).arg(port);
+}
+
+QString commandCreatePanadapter(int width, int height)
+{
+    return QStringLiteral("display pan create x=%1 y=%2").arg(width).arg(height);
+}
+
+QString commandBindIqStream(int channel, const QString &panStreamId,
+                            int sampleRate, const QString &clientHandle)
+{
+    return QStringLiteral("dax iq s %1 pan=%2 daxiq_rate=%3 client_handle=%4")
+        .arg(channel).arg(panStreamId).arg(sampleRate).arg(clientHandle);
+}
+
 } // namespace dsdr::hal::flex

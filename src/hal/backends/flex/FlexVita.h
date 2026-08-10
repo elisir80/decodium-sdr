@@ -48,13 +48,24 @@ struct VitaPacket
     int payloadOffset = 0;     ///< dove cominciano i dati
     int payloadBytes = 0;
 
-    /// Il carico è fatto di coppie di float a 32 bit, IEEE-754, big endian.
-    bool isFloatPair() const noexcept
+    /// Coppie di valori a 32 bit: due canali, trentadue bit ciascuno. È la
+    /// forma di un flusso IQ, qualunque sia il modo di scrivere i numeri.
+    bool isPair32() const noexcept
     {
-        return (packetClass & kClassIeee754)
-            && (packetClass & kClassBitsPerSampleMask) == kClassBitsPerSample32
+        return (packetClass & kClassBitsPerSampleMask) == kClassBitsPerSample32
             && (packetClass & kClassChannelsMask) == kClassChannelsPair;
     }
+
+    /// Virgola mobile IEEE-754, invece che interi in virgola fissa.
+    ///
+    /// Non è una curiosità: **FlexLib stessa ha avuto questo difetto**,
+    /// trattando come float un flusso che la radio mandava in virgola fissa.
+    /// Il risultato di quello scambio non è silenzio — sono numeri assurdi che
+    /// il DSP elabora diligentemente, cioè rumore che sembra una banda. Il bit
+    /// c'è apposta: si legge, non si presume.
+    bool isFloat() const noexcept { return (packetClass & kClassIeee754) != 0; }
+
+    bool isFloatPair() const noexcept { return isPair32() && isFloat(); }
 };
 
 /// Legge l'intestazione. `valid` resta falso se il pacchetto non è di una

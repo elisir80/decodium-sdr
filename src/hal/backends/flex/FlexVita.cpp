@@ -92,11 +92,11 @@ std::size_t decodeIq(const QByteArray &datagram, const VitaPacket &packet, float
     if (!packet.valid || !out)
         return 0;
 
-    // Il formato lo dichiara il pacchetto. Se dice qualcosa che non sappiamo
-    // leggere — interi, un canale solo, una precisione diversa — si salta:
-    // interpretarlo lo stesso darebbe campioni plausibili e sbagliati, che è
-    // il modo peggiore di essere rotti.
-    if (!packet.isFloatPair())
+    // Il formato lo dichiara il pacchetto. Un canale solo, o una precisione
+    // diversa da trentadue bit, non è un flusso IQ e si salta: interpretarlo
+    // lo stesso darebbe campioni plausibili e sbagliati, che è il modo
+    // peggiore di essere rotti.
+    if (!packet.isPair32())
         return 0;
 
     const int values = packet.payloadBytes / 4;
@@ -106,14 +106,25 @@ std::size_t decodeIq(const QByteArray &datagram, const VitaPacket &packet, float
     const auto *p = reinterpret_cast<const uchar *>(datagram.constData())
                   + packet.payloadOffset;
 
-    // I float viaggiano in ordine di rete, come tutto il resto: leggerli
-    // com'è in memoria funzionerebbe solo su una macchina big endian, e le
-    // nostre non lo sono.
-    for (int i = 0; i < values; ++i) {
-        const quint32 bits = qFromBigEndian<quint32>(p + i * 4);
-        float value = 0.0f;
-        std::memcpy(&value, &bits, sizeof(value));
-        out[i] = value;
+    // Tutto viaggia in ordine di rete: leggere com'è in memoria funzionerebbe
+    // solo su una macchina big endian, e le nostre non lo sono.
+    if (packet.isFloat()) {
+        for (int i = 0; i < values; ++i) {
+            const quint32 bits = qFromBigEndian<quint32>(p + i * 4);
+            float value = 0.0f;
+            std::memcpy(&value, &bits, sizeof(value));
+            out[i] = value;
+        }
+    } else {
+        // Interi in virgola fissa a 32 bit. È la forma che FlexLib stessa
+        // aveva scambiato per virgola mobile: il risultato non è silenzio, ma
+        // numeri assurdi elaborati diligentemente dal DSP — rumore che sembra
+        // una banda.
+        constexpr float kScale = 1.0f / 2147483648.0f;   // 2^31
+        for (int i = 0; i < values; ++i) {
+            const auto raw = static_cast<qint32>(qFromBigEndian<quint32>(p + i * 4));
+            out[i] = static_cast<float>(raw) * kScale;
+        }
     }
 
     return static_cast<std::size_t>(values / 2);
