@@ -33,6 +33,7 @@ set(DSDR_QML_FILES
     qml/WaterfallControls.qml
     qml/TimeMachinePanel.qml
     qml/RxChainPanel.qml
+    qml/NeuralNrControl.qml
     qml/TxPanel.qml
     qml/LevelBar.qml
     qml/ChannelStrip.qml

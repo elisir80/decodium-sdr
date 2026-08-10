@@ -5,6 +5,8 @@ add_library(dsdr_audio STATIC
     MicSource.cpp
     AudioOut.h
     AudioOut.cpp
+    AudioGraph.h
+    AudioGraph.cpp
 )
 
 target_link_libraries(dsdr_audio PUBLIC dsdr::common dsdr::dsp Qt6::Core Qt6::Multimedia)

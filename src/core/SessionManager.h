@@ -8,6 +8,7 @@
 
 // I tipi esposti come Q_PROPERTY devono essere completi: moc genera un
 // metatype per ciascun puntatore e una forward declaration non basta.
+#include "audio/AudioGraph.h"
 #include "audio/AudioRouter.h"
 #include "core/CapabilitiesInfo.h"
 #include "core/ChannelModel.h"
@@ -36,6 +37,8 @@ class QTcpSocket;
 namespace dsdr::audio {
 class MicSource;
 }
+
+#include "dsp/neural/ModelStore.h"
 
 namespace dsdr::dsp::neural {
 class NeuralNrStage;
@@ -130,6 +133,19 @@ class SessionManager : public QObject
     Q_PROPERTY(bool neuralAvailable READ neuralAvailable CONSTANT)
     Q_PROPERTY(bool neuralEnabled READ neuralEnabled NOTIFY neuralChanged)
     Q_PROPERTY(double neuralLoad READ neuralLoad NOTIFY neuralChanged)
+
+    /// Lo stato dello stadio, come nome: Bypass, Warmup, Engaged, Degraded.
+    /// La UI ne fa un distintivo — chi lo vede giallo sa che la macchina non
+    /// ce la fa, invece di credere che la riduzione sia accesa.
+    Q_PROPERTY(QString neuralState READ neuralState NOTIFY neuralChanged)
+    Q_PROPERTY(double neuralLatencyMs READ neuralLatencyMs NOTIFY neuralChanged)
+    Q_PROPERTY(double neuralIntensity READ neuralIntensity WRITE setNeuralIntensity
+                   NOTIFY neuralChanged)
+    Q_PROPERTY(dsdr::dsp::neural::ModelStore *neuralModels READ neuralModels CONSTANT)
+
+    /// Come è collegato l'audio, in forma leggibile: serve a rispondere alla
+    /// domanda «quello che sto registrando è passato dalla rete?».
+    Q_PROPERTY(QStringList audioRoutes READ audioRoutes NOTIFY connectionChanged)
 
     // ── Trasmissione ────────────────────────────────────────────────────
     //
@@ -259,6 +275,12 @@ public:
     bool neuralAvailable() const;
     bool neuralEnabled() const { return m_neuralEnabled; }
     double neuralLoad() const;
+    QString neuralState() const;
+    double neuralLatencyMs() const;
+    double neuralIntensity() const { return m_neuralIntensity; }
+    void setNeuralIntensity(double db);
+    dsp::neural::ModelStore *neuralModels() const { return m_neuralModels; }
+    QStringList audioRoutes() const;
 
     /// Accende lo stadio neurale sull'audio. Non tocca il percorso IQ verso i
     /// decoder digitali: quello resta lineare per costruzione (SPEC-003 §8.3).
@@ -489,6 +511,9 @@ private:
     hal::RadioScout *m_scout = nullptr;
     QVariantList m_networkRadios;
     dsp::neural::NeuralNrStage *m_neural = nullptr;
+    dsp::neural::ModelStore *m_neuralModels = nullptr;
+    double m_neuralIntensity = 100.0;
+    audio::AudioGraph m_audioGraph;
     QThread *m_neuralThread = nullptr;
     audio::AudioRouter *m_audio = nullptr;
 

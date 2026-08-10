@@ -52,6 +52,8 @@ add_library(dsdr_dsp STATIC
     neural/RnnoiseEngine.cpp
     neural/DfnEngine.h
     neural/DfnEngine.cpp
+    neural/ModelStore.h
+    neural/ModelStore.cpp
     neural/NeuralNrStage.h
     neural/NeuralNrStage.cpp
     Demodulator.h

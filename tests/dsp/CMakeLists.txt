@@ -35,3 +35,9 @@ dsdr_add_test(tst_tx_chain
 dsdr_add_test(tst_neural_stage
     SOURCES tst_neural_stage.cpp
     LIBRARIES dsdr::dsp)
+
+# L'interlock digitale: l'audio passato dalla rete non deve mai raggiungere un
+# decodificatore, e il rifiuto avviene costruendo il collegamento.
+dsdr_add_test(tst_audio_graph
+    SOURCES tst_audio_graph.cpp
+    LIBRARIES dsdr::audio)

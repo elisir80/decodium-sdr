@@ -121,13 +121,70 @@ Il cursore di intensità agisce quindi fuori, mescolando asciutto e bagnato — 
 interruttore. La miscela è in ampiezza e non in decibel: a metà cursore si vuole
 metà effetto, e una scala logaritmica renderebbe il comando tutto-o-niente.
 
+## L'interlock digitale
+
+C'è una regola che non si può lasciare alla buona volontà: **l'audio uscito
+dalla riduzione neurale non deve mai arrivare a un decodificatore.**
+
+Il motivo è che una rete addestrata sulla voce fa il suo mestiere anche quando
+il segnale non è voce: toglie quello che non le somiglia. Su un FT8 al limite
+del rumore toglie il segnale. Il decodificatore non se ne accorge — decodifica
+meno, e nessuno ha modo di sapere perché. Non c'è errore, non c'è avviso: c'è
+una stazione che non si aggancia più.
+
+Perciò l'audio porta un'etichetta. `EarOnly` è quello passato dalla rete e va
+all'orecchio soltanto; `Clean` è quello lineare e può andare ovunque. Il
+rifiuto avviene **quando si costruisce il collegamento**, non quando passano i
+campioni: un controllo a runtime scatterebbe la millesima volta, in mezzo a un
+contest, e nessuno saprebbe leggerlo — un rifiuto alla costruzione lo vede chi
+scrive il collegamento, subito, con il motivo scritto.
+
+```cpp
+graph.connect(neuralOutput, AudioSink::DigitalDecoder, &why);  // false
+```
+
+E il rifiuto **spiega**: un «non si può» senza il perché è un vicolo cieco.
+
+La registrazione audio prende il mix **prima** della rete — il tap è dentro il
+`DspEngine` — quindi per costruzione registra il lineare, ed è il motivo per
+cui il sidecar non deve dichiarare `nr_neural`. Il grafo lo mette per iscritto
+invece di lasciarlo a un commento: `Session.audioRoutes` elenca i collegamenti
+in forma leggibile, e risponde alla domanda «quello che sto registrando è
+passato dalla rete?».
+
+## Il pannello
+
+`NeuralNrControl.qml`, dentro la catena RX. Tre cose e non una di più — se è
+accesa, quanto forte, con quale modello — più il distintivo dello stato, che è
+la parte a cui serve davvero un'occhiata: **`Degraded` vuol dire che la
+macchina non ce la fa**, e senza vederlo si crede che la riduzione sia accesa
+mentre non lo è.
+
+Accanto, latenza e costo **misurati**: sono i due numeri che dicono se questo
+stadio si può tenere acceso.
+
+Le scelte sopravvivono alla chiusura. Rifarle a ogni avvio sarebbe un rito, e
+ci si accorgerebbe di averle dimenticate ascoltando.
+
+## I modelli
+
+`ModelStore` guarda in `<dati applicativi>/models/` e **dice quale sia quella
+cartella**: è il posto giusto per starci e quello sbagliato per trovarla, e chi
+ha un file da mettere deve poter leggere il percorso. La cartella viene creata
+se non c'è, per lo stesso motivo.
+
+Un file troppo piccolo — un download interrotto — non diventa una voce
+utilizzabile: dirlo adesso costa niente, scoprirlo scegliendolo costa una
+sessione.
+
+L'elenco vuoto è il caso normale: RNNoise ha i pesi dentro di sé.
+
 ## Che cosa manca
 
 | Fase | Contenuto |
 |---|---|
 | **E2** | fatto il motore; restano il modello base nel pacchetto e la prova SI-SNR completa, che hanno bisogno della libreria costruita |
-| **E3** | `ModelStore`, pannello QML, persistenza, interlock digitale a costruzione del grafo |
-| **E4** | manifest remoto delle stagioni |
+| **E4** | manifest remoto delle stagioni, e il download degli aggiornamenti |
 
 Lo scambio con l'implementazione precedente è fatto: `core::NeuralNrWorker` non
 esiste più, e l'applicazione usa questo stadio. `dsp::NeuralDenoiser` resta

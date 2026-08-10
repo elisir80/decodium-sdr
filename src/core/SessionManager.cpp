@@ -10,6 +10,7 @@
 #endif
 #include "audio/MicSource.h"
 #include "core/SpectrumFeed.h"
+#include "dsp/neural/ModelStore.h"
 #include "dsp/neural/NeuralNrStage.h"
 #include "dsp/neural/RnnoiseEngine.h"
 #include "hal/BackendRegistry.h"
@@ -192,6 +193,7 @@ SessionManager::SessionManager(QObject *parent)
     // non deve mai contendere la CPU al DSP, che ha una scadenza vera.
     // Il worker sta in mezzo anche da spento, e allora si limita a copiare —
     // così accenderlo non richiede di cambiare ring sotto l'audio che suona.
+    m_neuralModels = new dsp::neural::ModelStore(this);
     m_neural = new dsp::neural::NeuralNrStage;
 
     // Un motore per canale: la rete non deve mai vedere due canali correlati
@@ -768,6 +770,29 @@ void SessionManager::connectToDevice(int deviceRow)
     // L'audio esce dal ring del worker neurale, non da quello del DSP: il
     // worker sta sempre in mezzo, e da spento copia soltanto.
     m_neural->setSource(m_engine->audioRing(), kAudioChannelCount);
+    // ── Il grafo dell'audio (SPEC-003 §8.3) ─────────────────────────────
+    //
+    // Non trasporta campioni: decide quali collegamenti abbiano diritto di
+    // esistere. L'uscita della riduzione neurale porta l'etichetta `EarOnly`,
+    // e il grafo rifiuta di portarla altrove — alla costruzione, dove chi
+    // scrive il collegamento lo vede subito.
+    m_audioGraph.clear();
+    QString refusal;
+
+    const audio::AudioNode neuralOut{QStringLiteral("riduzione neurale"),
+                                     audio::AudioTag::EarOnly,
+                                     m_neural->outputRing()};
+    if (!m_audioGraph.connect(neuralOut, audio::AudioSink::Ear, &refusal))
+        qCWarning(dsdrCore) << "audio:" << refusal;
+
+    // La registrazione audio prende il mix **prima** della rete: il tap è
+    // dentro il DSP Engine, e per costruzione registra il lineare. È il
+    // motivo per cui il sidecar non deve dichiarare `nr_neural`.
+    const audio::AudioNode dspMix{QStringLiteral("mix del DSP"),
+                                  audio::AudioTag::Clean,
+                                  m_engine->audioRing()};
+    m_audioGraph.connect(dspMix, audio::AudioSink::AudioRecorder);
+
     const bool audioStarted = m_audio->start(m_neural->outputRing());
     qCInfo(dsdrCore) << "device pronto:" << m_deviceName
                      << "center:" << m_centerFrequency
@@ -1966,6 +1991,43 @@ bool SessionManager::neuralAvailable() const
 double SessionManager::neuralLoad() const
 {
     return m_neural ? m_neural->load() : 0.0;
+}
+
+QString SessionManager::neuralState() const
+{
+    if (!m_neural)
+        return QStringLiteral("Bypass");
+
+    switch (m_neural->state()) {
+    case dsp::neural::NeuralNrStage::State::Bypass:   return QStringLiteral("Bypass");
+    case dsp::neural::NeuralNrStage::State::Warmup:   return QStringLiteral("Warmup");
+    case dsp::neural::NeuralNrStage::State::Engaged:  return QStringLiteral("Engaged");
+    case dsp::neural::NeuralNrStage::State::Degraded: return QStringLiteral("Degraded");
+    }
+    return QStringLiteral("Bypass");
+}
+
+double SessionManager::neuralLatencyMs() const
+{
+    return m_neural ? m_neural->latencyMs() : 0.0;
+}
+
+void SessionManager::setNeuralIntensity(double db)
+{
+    db = std::clamp(db, 0.0, 100.0);
+    if (qFuzzyCompare(m_neuralIntensity, db))
+        return;
+    m_neuralIntensity = db;
+    if (m_neural) {
+        QMetaObject::invokeMethod(m_neural, "setIntensityDb", Qt::QueuedConnection,
+                                  Q_ARG(double, db));
+    }
+    emit neuralChanged();
+}
+
+QStringList SessionManager::audioRoutes() const
+{
+    return m_audioGraph.routes();
 }
 
 void SessionManager::setNeuralNr(bool enabled)
