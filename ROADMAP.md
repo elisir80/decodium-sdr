@@ -30,7 +30,7 @@ out-of-the-box; prime release pubbliche AppImage / DMG / ZIP.
 | Backend nettcp — rtl_tcp | ✅ |
 | Backend nettcp — SpyServer | ✅ riconoscimento automatico del protocollo |
 | Backend soapy | ✅ capability lette dal driver, stream CF32 |
-| Backend colibri (ColibriNANO) | ✅ verificato sul ricevitore vero |
+| Backend colibri (ColibriNANO) | ✅ verificato sul ricevitore vero, [documentato](docs/backends/colibri.md) |
 | Multi-canale | ✅ dalla Fase 0 |
 | Registrazione IQ | ✅ WAV float32 + sidecar JSON, RF64 oltre i 4 GB |
 | Riproduzione da file IQ | ✅ backend `iqfile`: legge il nostro WAV/RF64 e anche PCM 16/8 bit |

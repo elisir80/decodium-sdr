@@ -21,7 +21,7 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Backend **demo**: banda sintetica con CW, SSB, AM, digitale, QSB | ✅ |
 | Backend **soapy**: RTL-SDR, Airspy, HackRF, LimeSDR, PlutoSDR, USRP… | ✅ |
 | Backend **nettcp**: rtl_tcp e SpyServer, con riconoscimento automatico | ✅ |
-| Backend **colibri**: ColibriNANO USB, 0,1–55 MHz | ✅ |
+| Backend **colibri**: ColibriNANO USB, 0,1–55 MHz | ✅ [documentato](docs/backends/colibri.md) |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
 | **Overload Guard**: riconosce la saturazione dell'ADC e lo dice, invece di lasciarla scambiare per propagazione scarsa | ✅ |
 | Fondo di rumore e **S/N reale** per canale | ✅ |
