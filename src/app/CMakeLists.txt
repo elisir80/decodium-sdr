@@ -209,11 +209,38 @@ install(TARGETS dsdr_app
 # log di `install_name_tool: can't open file` senza far fallire nulla. Il
 # deploy che conta è quello dell'install, sul bundle completo.
 if(DSDR_QT_CMAKE_DEPLOY)
+    # Fuori il backend multimediale di Qt. Di Qt Multimedia usiamo tre cose —
+    # QAudioSink, QAudioSource, QMediaDevices — e vivono tutte nella libreria,
+    # non nel plugin: il plugin serve a chi riproduce film, non a chi manda
+    # campioni a una scheda audio. Provato togliendolo: gli otto dispositivi
+    # di uscita e i cinque di ingresso si vedono come prima, e sia il sink sia
+    # il source si aprono.
+    #
+    # Il plugin, però, è FFmpeg. Porta ventisette megabyte di librerie dentro
+    # il pacchetto e ne pretende altre quarantadue che il deploy non raccoglie,
+    # perché non sono dipendenze dell'eseguibile ma del plugin. Quelle
+    # quarantadue sono la ragione per cui l'applicazione installata chiedeva
+    # `libx264` all'avvio: qui non si vedeva, perché su una macchina che
+    # compila il progetto stanno tutte nel PATH di MSYS2.
+    set(DSDR_DEPLOY_PLUGIN_ARGS)
+    if(Qt6_VERSION VERSION_GREATER_EQUAL 6.10)
+        list(APPEND DSDR_DEPLOY_PLUGIN_ARGS EXCLUDE_PLUGIN_TYPES multimedia)
+    elseif(WIN32)
+        # Prima della 6.10 la scelta dei plugin non passa dall'API CMake e
+        # bisogna parlare allo strumento sottostante. Solo su Windows:
+        # macdeployqt non conosce questa opzione, e il bundle macOS resta più
+        # grosso del necessario ma completo, perche' li' le dipendenze del
+        # plugin vengono risolte per davvero.
+        list(APPEND DSDR_DEPLOY_PLUGIN_ARGS
+             DEPLOY_TOOL_OPTIONS --skip-plugin-types multimedia)
+    endif()
+
     qt_generate_deploy_qml_app_script(
         TARGET dsdr_app
         OUTPUT_SCRIPT DSDR_DEPLOY_SCRIPT
         NO_UNSUPPORTED_PLATFORM_ERROR
         DEPLOY_USER_QML_MODULES_ON_UNSUPPORTED_PLATFORM
+        ${DSDR_DEPLOY_PLUGIN_ARGS}
     )
     install(SCRIPT ${DSDR_DEPLOY_SCRIPT})
 endif()
@@ -320,18 +347,46 @@ if(WIN32)
 
     install(CODE "
         set(dsdr_exe \"\${CMAKE_INSTALL_PREFIX}/bin/decodium-sdr.exe\")
-        message(STATUS \"Raccolta delle dipendenze non-Qt di \${dsdr_exe}\")
 
+        # Non solo l'eseguibile: anche le librerie e i plugin che il deploy di
+        # Qt ha appena messo nel prefisso. Chiedere le dipendenze del solo
+        # eseguibile lascia fuori quelle di secondo livello — quelle che un
+        # plugin si porta dietro — e un plugin che non si carica non fa
+        # fallire niente: fa sparire i JPEG, o l'audio, sulla macchina di
+        # qualcun altro. Questo passo gira dopo l'install(SCRIPT) del deploy,
+        # che e' dichiarato prima: quando arriviamo qui i plugin ci sono gia'.
+        file(GLOB_RECURSE dsdr_installed_libs
+             \"\${CMAKE_INSTALL_PREFIX}/bin/*.dll\"
+             \"\${CMAKE_INSTALL_PREFIX}/share/qt6/plugins/*.dll\"
+             \"\${CMAKE_INSTALL_PREFIX}/share/qt6/qml/*.dll\")
+        list(LENGTH dsdr_installed_libs dsdr_lib_count)
+        message(STATUS
+            \"Raccolta delle dipendenze non-Qt: eseguibile + \${dsdr_lib_count} librerie\")
+
+        # Il prefisso viene prima di tutto il resto. Un plugin sta in
+        # share/qt6/plugins/<tipo>/ e le sue dipendenze non sono lì accanto:
+        # senza questa riga le cerca nella directory del compilatore e trova
+        # una seconda Qt6Core.dll, quella di MSYS2. CMake se ne accorge, dice
+        # «multiple conflicting paths» e interrompe l'installazione a metà —
+        # con un pacchetto che sembra costruito e non lo è.
         file(GET_RUNTIME_DEPENDENCIES
             EXECUTABLES \"\${dsdr_exe}\"
+            MODULES \${dsdr_installed_libs}
             RESOLVED_DEPENDENCIES_VAR dsdr_resolved
             UNRESOLVED_DEPENDENCIES_VAR dsdr_unresolved
-            DIRECTORIES ${DSDR_DEP_DIRS}
+            DIRECTORIES \"\${CMAKE_INSTALL_PREFIX}/bin\" ${DSDR_DEP_DIRS}
             PRE_EXCLUDE_REGEXES \"api-ms-.*\" \"ext-ms-.*\"
             POST_EXCLUDE_REGEXES \".*[Ss]ystem32.*\" \".*[Ww]indows.*\"
         )
 
         foreach(dsdr_dep IN LISTS dsdr_resolved)
+            # Quel che è già nel pacchetto ci resta: reinstallarlo su se stesso
+            # non aggiunge niente e, se la sorgente è la copia già installata,
+            # è una copia di un file su di sé.
+            string(FIND \"\${dsdr_dep}\" \"\${CMAKE_INSTALL_PREFIX}\" dsdr_inside)
+            if(dsdr_inside EQUAL 0)
+                continue()
+            endif()
             file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/bin\"
                  TYPE SHARED_LIBRARY FOLLOW_SYMLINK_CHAIN FILES \"\${dsdr_dep}\")
         endforeach()

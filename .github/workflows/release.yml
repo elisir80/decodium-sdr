@@ -137,6 +137,16 @@ jobs:
               -exec codesign --remove-signature {} \; 2>/dev/null || true
           fi
 
+      # Il pacchetto Windows è l'unico che si costruisce dove tutte le
+      # librerie sono già nel PATH: MSYS2 le fornisce a chiunque, e un
+      # pacchetto incompleto parte lo stesso su questa macchina. Chi scopre
+      # che mancano è l'utente, all'avvio, con il nome di una DLL che non gli
+      # dice niente. Il controllo rifà quel percorso qui, dove costa un
+      # secondo e non è ancora partito niente verso nessuno.
+      - name: Il pacchetto Windows è autosufficiente
+        if: matrix.os == 'windows-latest'
+        run: bash scripts/check-windows-package.sh staging
+
       # ── Confezionamento ─────────────────────────────────────────────────
       - name: AppImage (Linux)
         if: matrix.os == 'ubuntu-24.04'

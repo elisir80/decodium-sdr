@@ -4,6 +4,24 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+### Corretto — Windows
+
+- **Il programma installato chiedeva DLL che non aveva.** Il pacchetto
+  raccoglieva le dipendenze del solo eseguibile, e i plugin di Qt hanno le
+  proprie: il backend multimediale si portava dentro FFmpeg — ventisette
+  megabyte — e ne pretendeva altri novanta che non venivano copiati. Chi
+  compila il progetto non poteva accorgersene, perché su quella macchina le
+  librerie mancanti stanno tutte nel PATH di MSYS2.
+- **Fuori il backend multimediale.** Di Qt Multimedia il programma usa solo
+  l'uscita e l'ingresso audio, che stanno nella libreria e non nel plugin.
+  Senza FFmpeg il pacchetto è più piccolo di ventitré megabyte e i dispositivi
+  audio si vedono esattamente come prima.
+- **Ora entrano anche le dipendenze dei plugin**, che prima restavano fuori in
+  silenzio: le immagini JPEG non si aprivano perché mancava `libjpeg`, e il
+  plugin che riconosce lo stato della rete non si caricava.
+- **Un pacchetto incompleto non arriva più a nessuno**: prima di ogni release
+  si verifica che ogni DLL richiesta sia nel pacchetto o parte di Windows.
+
 ## [1.1.2] — 2026-08-10
 
 Prima versione con un **programma di installazione**. Su Windows CPack produce
