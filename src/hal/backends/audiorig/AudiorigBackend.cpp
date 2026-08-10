@@ -157,6 +157,25 @@ void AudiorigBackend::startDiscovery()
 {
     if (m_discovering || (m_prober && m_prober->isRunning()))
         return;
+
+    // Una via d'uscita, e non è un dettaglio da configurazione.
+    //
+    // Sondare le porte seriali significa aprirle, e aprire una porta su
+    // Windows alza DTR e RTS per un istante prima che il programma possa
+    // abbassarli: su una radio con «CAT RTS» attivo è un colpo di
+    // trasmissione. Chi non vuole che accada — perché ha la radio accesa
+    // accanto, o perché sta facendo girare i test — deve poterlo impedire
+    // senza rinunciare al resto del programma.
+    //
+    // Serve anche alla suite: la conformance apre un backend per ogni prova, e
+    // una sonda per prova la faceva durare due minuti.
+    if (qEnvironmentVariableIsSet("DSDR_AUDIORIG_NO_PROBE")) {
+        qCInfo(dsdrHal) << "audiorig: sonda delle porte seriali disattivata "
+                           "(DSDR_AUDIORIG_NO_PROBE)";
+        setState(m_open ? BackendState::Streaming : BackendState::Idle);
+        emit discoveryFinished();
+        return;
+    }
     m_discovering = true;
     m_abortDiscovery.store(false, std::memory_order_release);
     setState(BackendState::Discovering);

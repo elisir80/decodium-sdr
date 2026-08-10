@@ -304,3 +304,25 @@ src/hal/backends/audiorig/
 src/audio/MicSource.h         la cattura, condivisa con la catena TX
 tests/hal/tst_newcat.cpp      la tabella dei modi, senza radio
 ```
+
+## Spegnere la sonda
+
+```sh
+DSDR_AUDIORIG_NO_PROBE=1 decodium-sdr
+```
+
+Con questa variabile il backend non apre nessuna porta seriale: niente
+riconoscimento automatico della radio, tutto il resto funziona.
+
+Serve a chi ha la radio accesa accanto e non vuole che il programma la tocchi
+mentre cerca. Sondare una porta vuol dire aprirla, e su Windows l'apertura alza
+DTR e RTS per qualche millisecondo prima che un programma possa abbassarli: su
+una radio con «CAT RTS» attivo quello è il PTT. La sonda apre ogni porta **una
+volta sola** per driver — è il minimo possibile — ma il minimo possibile non è
+zero, e chi vuole zero deve poterlo avere.
+
+La via giusta resta spegnere «CAT RTS» nei menù della radio: il PTT lo
+comandiamo con un comando CAT e quella linea non ci serve.
+
+La suite dei test la usa: nessuno deve poter mandare in aria una portante
+lanciando `ctest`.

@@ -9,6 +9,14 @@ dsdr_add_test(tst_hal_conformance
         RtlTcpMockServer.cpp
     LIBRARIES dsdr::hal Qt6::Network)
 
+# La suite non sonda le porte seriali. Due motivi, e il primo basta da solo:
+# aprire una porta manda un impulso su RTS e DTR, e su una radio con «CAT RTS»
+# attivo quello è il PTT — nessuno deve poter mandare in aria una portante
+# lanciando i test. Il secondo è che una sonda per ogni prova faceva durare la
+# conformance due minuti.
+set_tests_properties(tst_hal_conformance PROPERTIES
+    ENVIRONMENT "DSDR_AUDIORIG_NO_PROBE=1")
+
 # Il rilevamento in rete: i pacchetti si costruiscono a mano, e nessuna radio
 # deve essere accesa perche' il test dica qualcosa.
 dsdr_add_test(tst_radio_scout
