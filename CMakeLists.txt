@@ -4,7 +4,10 @@ project(decodium-sdr
     VERSION 1.0.0
     DESCRIPTION "DECODIUM SDR — client SDR universale dell'ecosistema DECODIUM"
     HOMEPAGE_URL "https://decodium.it"
-    LANGUAGES CXX)
+    # Il C serve a RNNoise, che è l'unico codice C del progetto: senza,
+    # i suoi sorgenti verrebbero ignorati in silenzio e la libreria uscirebbe
+    # vuota — è già successo.
+    LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +35,13 @@ find_package(Qt6 6.8 QUIET OPTIONAL_COMPONENTS GuiPrivate)
 qt_standard_project_setup(REQUIRES 6.8)
 
 enable_testing()
+
+# RNNoise, se chi compila ne ha messo il sorgente in third_party/. La
+# capability dello stadio neurale nasce da qui: non c'è un fallback a runtime,
+# perché una funzione che a volte c'è e a volte no è peggio di una che non c'è.
+if(DSDR_NEURAL_NR)
+    include(FindRnnoise)
+endif()
 
 add_subdirectory(src)
 

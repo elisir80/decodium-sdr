@@ -39,6 +39,8 @@ add_library(dsdr_dsp STATIC
     PeakFilter.cpp
     SpectralDenoiser.h
     SpectralDenoiser.cpp
+    NeuralDenoiser.h
+    NeuralDenoiser.cpp
     Demodulator.h
     Demodulator.cpp
     AudioHighPass.h
@@ -63,6 +65,13 @@ add_library(dsdr_dsp STATIC
 
 target_include_directories(dsdr_dsp PRIVATE ${FFTW3_INCLUDE_DIR})
 target_link_libraries(dsdr_dsp PUBLIC dsdr::common PRIVATE ${FFTW3F_LIBRARY})
+
+# Il motore neurale, se chi compila ne ha messo il sorgente: la macro decide
+# se lo stadio esiste, e da lì nasce la capability che la UI legge.
+if(RNNOISE_FOUND)
+    target_link_libraries(dsdr_dsp PRIVATE rnnoise)
+    target_compile_definitions(dsdr_dsp PUBLIC DSDR_HAVE_RNNOISE)
+endif()
 
 dsdr_apply_target_defaults(dsdr_dsp)
 add_library(dsdr::dsp ALIAS dsdr_dsp)

@@ -4,8 +4,26 @@ DECODIUM SDR — dipendenze di terze parti
 Il progetto è distribuito sotto GPL-3.0-or-later. Ogni dipendenza elencata qui
 è stata verificata compatibile con quella licenza.
 
-Nessun codice di terze parti è vendorizzato in questo repository: la directory
-`third_party/` è vuota. Le dipendenze sono collegate come librerie di sistema.
+Nessun codice di terze parti è vendorizzato in questo repository. Ciò che sta
+in `third_party/` arriva da monte a cura di chi compila, è escluso da git e
+resta della sua licenza originale: qui se ne dichiarano provenienza e termini.
+
+
+COSTRUITE DAL SORGENTE, NON REDISTRIBUITE
+-----------------------------------------
+
+RNNoise
+    Licenza : BSD-3-Clause
+    Sito    : https://github.com/xiph/rnnoise
+    Autori  : Jean-Marc Valin, Xiph.Org Foundation, Amazon, Mozilla
+    Uso     : motore dello stadio di riduzione di rumore neurale
+              (DSDR-SPEC-003 §8). Compilato da `third_party/rnnoise`, che non
+              sta nel repository: chi vuole lo stadio lo procura da sé con
+                git clone --depth 1 https://github.com/xiph/rnnoise                     third_party/rnnoise
+                cd third_party/rnnoise && ./download_model.sh
+              Senza, `DSDR_NEURAL_NR` resta spento e la capability assente.
+    Note    : BSD-3 è compatibile con GPL-3.0. I pesi del modello sono
+              distribuiti da Xiph con la stessa licenza del codice.
 
 
 DIPENDENZE COLLEGATE

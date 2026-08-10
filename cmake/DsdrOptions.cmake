@@ -62,6 +62,12 @@ if(NOT DSDR_COLIBRI_LIB)
     unset(dsdr_colibri_name)
 endif()
 
+# Lo stadio di riduzione di rumore neurale (DSDR-SPEC-003 §8). Si accende da
+# sé quando il sorgente di RNNoise è presente in third_party/: senza, la
+# capability resta assente e la UI non mostra un interruttore che non
+# potrebbe fare nulla.
+option(DSDR_NEURAL_NR "Stadio di riduzione di rumore neurale (RNNoise)" ON)
+
 option(DSDR_BUILD_TESTS        "Compila la suite di test (RNF-07)"              ON)
 option(DSDR_WARNINGS_AS_ERRORS "Tratta i warning del compilatore come errori"   OFF)
 

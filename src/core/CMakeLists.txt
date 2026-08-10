@@ -9,6 +9,8 @@ add_library(dsdr_core STATIC
     DeviceListModel.h
     DeviceListModel.cpp
     CapabilitiesInfo.h
+    NeuralNrWorker.h
+    NeuralNrWorker.cpp
     IqRecorder.h
     IqRecorder.cpp
     IqRecorderWriter.h

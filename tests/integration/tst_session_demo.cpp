@@ -43,6 +43,7 @@ private slots:
     void theOverloadGuardStaysQuietOnAWellBehavedBand();
     void thePassbandCanSlideWithoutChangingWidth();
     void notchesStayOnTheInterferenceWhenTuningAway();
+    void theNeuralStageNeverTouchesTheDigitalPath();
 
 private:
     /// Attende che `predicate` diventi vera, facendo girare l'event loop.
@@ -611,6 +612,49 @@ void TestSessionDemo::notchesStayOnTheInterferenceWhenTuningAway()
 
     session.clearChannelNotches(0);
     QVERIFY(session.channels()->data(index, ChannelModel::NotchesRole).toList().isEmpty());
+}
+
+void TestSessionDemo::theNeuralStageNeverTouchesTheDigitalPath()
+{
+    SessionManager session;
+    QVERIFY2(connectSession(session), "connessione al backend demo fallita");
+    QVERIFY(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 5000));
+
+    if (!session.neuralAvailable())
+        QSKIP("build senza motore neurale");
+
+    // SPEC-003 §8.3, il confine più importante dello stadio: un denoiser a
+    // valle distrugge le statistiche soft su cui lavora l'LDPC, e un FT8 che
+    // smette di decodificare per colpa di un filtro «che migliora l'audio» è
+    // un difetto impossibile da diagnosticare.
+    //
+    // Qui il confine è strutturale, non una convenzione: lo stadio vive sul
+    // ring dell'audio, mentre il flusso verso i decoder esce dalla banda base
+    // del canale, prima della demodulazione. Il test lo verifica dove conta —
+    // accendendo lo stadio, quel flusso non deve cambiare di un campione.
+    const dsp::ChannelSettings before = session.channels()->at(0)->settings;
+
+    session.setNeuralNr(true);
+    QVERIFY2(waitFor([&] { return session.neuralEnabled(); }, 3000),
+             "lo stadio neurale non si è acceso");
+
+    QTest::qWait(800);
+
+    // Le impostazioni del canale — cioè tutto ciò che governa la catena IQ e
+    // il tap verso DECODIUM 4 — sono rimaste quelle di prima.
+    QCOMPARE(session.channels()->at(0)->settings, before);
+
+    // E l'audio continua a scorrere con lo stadio acceso.
+    QVERIFY2(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 4000),
+             "audio perso con lo stadio neurale acceso");
+
+    // Il costo si misura e si può leggere: è ciò che permette allo stadio di
+    // spegnersi da solo invece di consegnare audio a scatti.
+    QVERIFY2(session.neuralLoad() >= 0.0 && session.neuralLoad() < 5.0,
+             qPrintable(QStringLiteral("costo implausibile: %1").arg(session.neuralLoad())));
+
+    session.setNeuralNr(false);
+    QVERIFY(waitFor([&] { return !session.neuralEnabled(); }, 3000));
 }
 
 QTEST_MAIN(TestSessionDemo)

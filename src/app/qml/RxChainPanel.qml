@@ -112,6 +112,48 @@ PanelFrame {
         }
     }
 
+    // ── Riduzione neurale (SPEC-003 §8) ──────────────────────────────────
+    //
+    // Compare solo se questa compilazione ha il motore: un interruttore che
+    // non può fare nulla è peggio di un interruttore assente.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacingTight
+        visible: Session.neuralAvailable
+
+        DsdrButton {
+            implicitWidth: 62
+            implicitHeight: 26
+            text: qsTr("NN")
+            checkable: true
+            checked: Session.neuralEnabled
+            enabled: Session.connected
+            onToggled: Session.setNeuralNr(checked)
+        }
+
+        Text {
+            Layout.fillWidth: true
+            // Il costo misurato, non quello promesso: se lo stadio non sta al
+            // passo si spegne da solo, e qui si vede arrivare.
+            text: Session.neuralEnabled
+                  ? qsTr("rete: %1 % del tempo reale").arg((Session.neuralLoad * 100).toFixed(0))
+                  : qsTr("riduzione di rumore neurale, sull'audio")
+            font.pixelSize: Theme.fontSmall
+            color: Session.neuralLoad > 0.7 ? Theme.warning : Theme.textSecondary
+            elide: Text.ElideRight
+        }
+    }
+
+    Text {
+        Layout.fillWidth: true
+        visible: Session.neuralEnabled
+        // Il confine del §8.3, detto dove si accende l'interruttore.
+        text: qsTr("Agisce solo sull'ascolto: il flusso verso i decoder digitali resta lineare.")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textDisabled
+        wrapMode: Text.WordWrap
+    }
+
     // ── Quanto sta lavorando ─────────────────────────────────────────────
     //
     // Un blanker acceso che non trova impulsi e uno che sta tagliuzzando

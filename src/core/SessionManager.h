@@ -15,6 +15,7 @@
 #include "core/IqRecorder.h"
 #include "core/LanguageManager.h"
 #include "core/SpectrumFeed.h"
+#include "core/NeuralNrWorker.h"
 #include "dsp/ChannelProcessor.h"
 #include "hal/Frames.h"
 
@@ -97,6 +98,15 @@ class SessionManager : public QObject
     /// un automatismo che non scatterà mai (CONSTITUTION §7).
     Q_PROPERTY(bool canCorrectGain READ canCorrectGain NOTIFY connectionChanged)
 
+    // ── Stadio neurale (SPEC-003 §8) ────────────────────────────────────
+    //
+    // `neuralAvailable` è una proprietà della compilazione: senza il motore la
+    // UI non mostra l'interruttore, invece di offrirne uno che non può fare
+    // nulla (CONSTITUTION §7).
+    Q_PROPERTY(bool neuralAvailable READ neuralAvailable CONSTANT)
+    Q_PROPERTY(bool neuralEnabled READ neuralEnabled NOTIFY neuralChanged)
+    Q_PROPERTY(double neuralLoad READ neuralLoad NOTIFY neuralChanged)
+
     /// Quanto guadagno la guardia ha tolto finora, in dB.
     Q_PROPERTY(double gainReductionDb READ gainReductionDb NOTIFY overloadChanged)
     Q_PROPERTY(int spectrumAveraging READ spectrumAveraging WRITE setSpectrumAveraging
@@ -167,6 +177,14 @@ public:
     void setOverloadMode(int mode);
     bool canCorrectGain() const;
     double gainReductionDb() const { return m_gainReductionDb; }
+
+    bool neuralAvailable() const;
+    bool neuralEnabled() const { return m_neuralEnabled; }
+    double neuralLoad() const;
+
+    /// Accende lo stadio neurale sull'audio. Non tocca il percorso IQ verso i
+    /// decoder digitali: quello resta lineare per costruzione (SPEC-003 §8.3).
+    Q_INVOKABLE void setNeuralNr(bool enabled);
 
     bool noiseBlanker() const { return m_nbEnabled; }
     double noiseBlankerThreshold() const { return m_nbThreshold; }
@@ -307,6 +325,7 @@ signals:
     void sampleRateChanged();
     void replayChanged();
     void noiseBlankerChanged();
+    void neuralChanged();
     void overloadChanged();
     void spectrumAveragingChanged();
     void errorReported(const QString &message, bool fatal);
@@ -336,6 +355,8 @@ private:
 
     DspEngine *m_engine = nullptr;
     QThread *m_dspThread = nullptr;
+    NeuralNrWorker *m_neural = nullptr;
+    QThread *m_neuralThread = nullptr;
     audio::AudioRouter *m_audio = nullptr;
 
     QString m_deviceName;
@@ -350,6 +371,7 @@ private:
     double m_gainReductionDb = 0.0;
     int m_overloadMode = 0;
     bool m_nbEnabled = false;
+    bool m_neuralEnabled = false;
     bool m_overloaded = false;
     bool m_connected = false;
     bool m_discovering = false;

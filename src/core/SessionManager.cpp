@@ -139,6 +139,26 @@ SessionManager::SessionManager(QObject *parent)
     // smette di rispondere pur continuando a produrre audio corretto.
     m_dspThread->start(QThread::HighPriority);
 
+    // Lo stadio neurale su un thread proprio, a priorità normale: l'inferenza
+    // non deve mai contendere la CPU al DSP, che ha una scadenza vera.
+    // Il worker sta in mezzo anche da spento, e allora si limita a copiare —
+    // così accenderlo non richiede di cambiare ring sotto l'audio che suona.
+    m_neural = new NeuralNrWorker;
+    m_neuralThread = new QThread(this);
+    m_neuralThread->setObjectName(QStringLiteral("dsdr-neural"));
+    m_neural->moveToThread(m_neuralThread);
+    connect(m_neuralThread, &QThread::started, m_neural, &NeuralNrWorker::start);
+    connect(m_neuralThread, &QThread::finished, m_neural, &QObject::deleteLater);
+    connect(m_neural, &NeuralNrWorker::enabledChanged, this, [this](bool enabled) {
+        m_neuralEnabled = enabled;
+        emit neuralChanged();
+    });
+    connect(m_neural, &NeuralNrWorker::overrun, this, [this](double load) {
+        setStatus(tr("Riduzione neurale spenta: costa il %1 % del tempo reale.")
+                      .arg(load * 100.0, 0, 'f', 0));
+    });
+    m_neuralThread->start();
+
     connect(m_engine, &DspEngine::metersUpdated, this,
             [this](ChannelId id, float signalDb, float noiseFloorDb,
                    float snrDb, float audioLevelDb, float agcGainDb) {
@@ -348,6 +368,11 @@ SessionManager::~SessionManager()
     disconnectDevice();
     teardownBackend();
 
+    if (m_neuralThread) {
+        m_neuralThread->quit();
+        m_neuralThread->wait();
+    }
+
     if (m_dspThread) {
         m_dspThread->quit();
         m_dspThread->wait();
@@ -525,7 +550,10 @@ void SessionManager::connectToDevice(int deviceRow)
     m_sampleRate = m_backend->sampleRate();
 
     m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
-    const bool audioStarted = m_audio->start(m_engine->audioRing());
+    // L'audio esce dal ring del worker neurale, non da quello del DSP: il
+    // worker sta sempre in mezzo, e da spento copia soltanto.
+    m_neural->setSource(m_engine->audioRing(), kInternalAudioRate, 2);
+    const bool audioStarted = m_audio->start(m_neural->outputRing());
     qCInfo(dsdrCore) << "device pronto:" << m_deviceName
                      << "center:" << m_centerFrequency
                      << "sample rate:" << m_sampleRate
@@ -1648,6 +1676,28 @@ void SessionManager::setNoiseBlanker(bool enabled, double threshold)
     m_nbEnabled = enabled;
     m_engine->setNoiseBlanker(m_nbEnabled, m_nbThreshold);
     emit noiseBlankerChanged();
+}
+
+bool SessionManager::neuralAvailable() const
+{
+    return dsp::NeuralDenoiser::isAvailable();
+}
+
+double SessionManager::neuralLoad() const
+{
+    return m_neural ? m_neural->load() : 0.0;
+}
+
+void SessionManager::setNeuralNr(bool enabled)
+{
+    if (!m_neural)
+        return;
+
+    // La chiamata attraversa i thread: il worker la recepisce al giro
+    // successivo, e conferma con `enabledChanged` — che è anche il modo in cui
+    // dice di essersi spento da solo.
+    QMetaObject::invokeMethod(m_neural, "setEnabled", Qt::QueuedConnection,
+                              Q_ARG(bool, enabled));
 }
 
 double SessionManager::noiseBlankerActivity() const

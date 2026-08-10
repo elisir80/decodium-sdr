@@ -49,6 +49,11 @@ desktop.ini
 # la trovi da sé a ogni build, ma non è nostra da ridistribuire.
 /third_party/colibrinano/
 
+# RNNoise: sorgente e pesi del modello arrivano da monte (BSD-3), non da noi.
+#   git clone --depth 1 https://github.com/xiph/rnnoise third_party/rnnoise
+#   cd third_party/rnnoise && ./download_model.sh
+/third_party/rnnoise/
+
 # Registrazioni IQ: pesano e non appartengono al repository
 *.wav
 *.sigmf-data
