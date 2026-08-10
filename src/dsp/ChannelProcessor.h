@@ -337,7 +337,7 @@ private:
     double m_stereoResamplePosition = 0.0;
     float m_signalLevelDb = -160.0f;
     bool m_squelchClosed = false;
-    float m_squelchGain = 0.0f;   ///< apertura corrente, 0..1, per non scattare
+    float m_squelchGain = 1.0f;   ///< apertura corrente, 0..1, per non scattare
     float m_deemphasisLeft = 0.0f;
     float m_deemphasisRight = 0.0f;
     std::size_t m_lastBasebandFrames = 0;

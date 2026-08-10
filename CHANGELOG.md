@@ -27,6 +27,18 @@ ricetrasmettitore via CAT deve spegnere «CAT RTS» nei menù.
   riconoscimento automatico, e nient'altro. La suite dei test la usa: non deve
   essere possibile mandare in aria una portante lanciando `ctest`.
 
+### Corretto — Ascolto
+
+- **Lo squelch chiudeva di scatto.** Azzerare l'audio da un campione all'altro
+  è un gradino, e un gradino ha uno spettro largo quanto si vuole: quello che
+  si sentiva era un clic a ogni respiro della voce sul confine della soglia.
+  Le costanti di apertura e chiusura erano dichiarate dal principio, e non
+  erano mai state collegate a niente. Ora la porta si apre in un millisecondo
+  e si chiude in dieci, e un test presidia la differenza fra una rampa e un
+  colpo secco.
+- L'isteresi dello squelch era un `3.0` scritto a mano accanto alla costante
+  che lo nomina.
+
 ### Corretto — Impianto
 
 - **Il core includeva un backend concreto** (`SessionManager` → `FlexClient`),

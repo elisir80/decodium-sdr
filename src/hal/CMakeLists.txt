@@ -126,7 +126,13 @@ if(DSDR_BACKEND_AUDIORIG)
                        "  MSYS2 : pacman -S mingw-w64-x86_64-qt6-serialport
 "
                        "  Debian: apt install qt6-serialport-dev")
+        # Spento anche fuori di qui. Senza `PARENT_SCOPE` la variabile resta
+        # spenta in questa cartella e accesa dappertutto altrove: i test si
+        # compilano credendo che il backend esista, e non lo trovano al
+        # collegamento — un errore che parla di simboli mancanti invece che
+        # del modulo Qt che manca davvero.
         set(DSDR_BACKEND_AUDIORIG OFF)
+        set(DSDR_BACKEND_AUDIORIG OFF PARENT_SCOPE)
     endif()
 endif()
 

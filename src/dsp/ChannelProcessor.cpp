@@ -50,6 +50,19 @@ constexpr float kSquelchHysteresisDb = 3.0f;
 /// così una pausa nel parlato non taglia la frase in due.
 constexpr float kSquelchAttack = 0.02f;
 constexpr float kSquelchRelease = 0.002f;
+/// Il passo successivo dell'apertura, verso `target` (1 aperto, 0 chiuso).
+/// Una porta che scatta si sente: azzerare l'audio da un campione all'altro
+/// e' un gradino, e un gradino ha uno spettro largo quanto si vuole — quello
+/// che si sente e' un clic a ogni respiro della voce sul confine.
+float stepSquelchGain(float gain, float target) noexcept
+{
+    const float rate = target > gain ? kSquelchAttack : kSquelchRelease;
+    const float delta = target - gain;
+    if (std::abs(delta) <= rate)
+        return target;
+    return gain + (delta > 0.0f ? rate : -rate);
+}
+
 bool squelchAllowed(DemodMode mode) noexcept
 {
     return mode != DemodMode::Cw && mode != DemodMode::Cwr
@@ -531,6 +544,10 @@ void ChannelProcessor::reset() noexcept
     m_deemphasisRight = 0.0f;
     m_squelchOpen = !m_settings.squelchEnabled
         && !(m_settings.ctcssEnabled && !m_settings.ctcssDecodeOnly);
+    // La rampa parte già dove deve stare: `configure` non è il percorso caldo,
+    // e un millisecondo di dissolvenza all'avvio non sarebbe una gentilezza,
+    // sarebbe l'inizio del segnale che manca.
+    m_squelchGain = m_squelchOpen ? 1.0f : 0.0f;
     m_signalLevelDb = -160.0f;
     m_noiseFloorDb = -160.0f;
     m_snrDb = 0.0f;
@@ -761,12 +778,12 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
         } else if (m_squelchOpen) {
             if (m_signalLevelDb < m_settings.squelchThresholdDb)
                 m_squelchOpen = false;
-        } else if (m_signalLevelDb >= m_settings.squelchThresholdDb + 3.0) {
-            // Isteresi di 3 dB: impedisce il tremolio della voce al confine.
+        } else if (m_signalLevelDb >= m_settings.squelchThresholdDb + kSquelchHysteresisDb) {
+            // Isteresi: impedisce il tremolio della voce al confine.
             m_squelchOpen = true;
         }
 
-        const bool squelched = !m_squelchOpen;
+        const float squelchTarget = m_squelchOpen ? 1.0f : 0.0f;
         const bool decodeStereo = m_wideFm && m_settings.fmStereo;
 
         // IQ non è un modo di demodulazione audio: quando l'operatore lo
@@ -813,10 +830,9 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
                                                           m_deemphasisLeft);
                 m_stereoAudio[i * 2 + 1] = processDeemphasis(m_stereoAudio[i * 2 + 1],
                                                               m_deemphasisRight);
-                if (squelched) {
-                    m_stereoAudio[i * 2] = 0.0f;
-                    m_stereoAudio[i * 2 + 1] = 0.0f;
-                }
+                m_squelchGain = stepSquelchGain(m_squelchGain, squelchTarget);
+                m_stereoAudio[i * 2] *= m_squelchGain;
+                m_stereoAudio[i * 2 + 1] *= m_squelchGain;
             }
 
             if (stereoOut) {
@@ -874,8 +890,8 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
             m_agc.process(m_demodulated.data(), decimated);
             for (std::size_t i = 0; i < decimated; ++i) {
                 m_demodulated[i] = processDeemphasis(m_demodulated[i], m_deemphasisLeft);
-                if (squelched)
-                    m_demodulated[i] = 0.0f;
+                m_squelchGain = stepSquelchGain(m_squelchGain, squelchTarget);
+                m_demodulated[i] *= m_squelchGain;
             }
 
             if (stereoOut) {
@@ -923,8 +939,8 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
             for (std::size_t i = 0; i < decimated; ++i) {
                 audio[i] = processDeemphasis(processAudioLowpass(audio[i]),
                                               m_deemphasisLeft);
-                if (squelched)
-                    audio[i] = 0.0f;
+                m_squelchGain = stepSquelchGain(m_squelchGain, squelchTarget);
+                audio[i] *= m_squelchGain;
                 audio[i] = std::clamp(audio[i] * gain, -1.0f, 1.0f);
                 if (stereoOut) {
                     stereoOut[(produced + i) * 2] = audio[i];

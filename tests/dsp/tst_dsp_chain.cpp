@@ -234,6 +234,7 @@ private slots:
     void channelRejectsOppositeSideband();
     void channelSurvivesSettingsChangeMidStream();
     void squelchSilencesWeakSignalsAndOpensOnStrongOnes();
+    void theSquelchClosesWithoutAClick();
     void channelSeparatesSignalNoiseAndAudioMeters();
     void synchronousAmPicksOneSideband();
     void binauralCwPutsTheNoteInSpace();
@@ -1297,6 +1298,62 @@ void TestDspChain::squelchSilencesWeakSignalsAndOpensOnStrongOnes()
     QVERIFY2(weakSquelched < weakOpen * 0.05,
              qPrintable(QStringLiteral("lo squelch non chiude: %1 contro %2 a squelch spento")
                             .arg(weakSquelched).arg(weakOpen)));
+}
+
+void TestDspChain::theSquelchClosesWithoutAClick()
+{
+    constexpr double kDeviceRate = 192000.0;
+    constexpr double kChannelOffset = 20000.0;
+
+    // Un segnale debole con lo squelch alzato: la porta e' aperta all'inizio —
+    // la si e' appena configurata — e deve chiudersi mentre l'audio scorre.
+    const std::vector<Complex> input =
+        makeTone(kChannelOffset + 1000.0, kDeviceRate, 192000, 0.0005f);
+
+    ChannelProcessor channel;
+    channel.configure(kDeviceRate, 48000.0);
+
+    ChannelSettings settings;
+    settings.offsetHz = kChannelOffset;
+    settings.mode = DemodMode::Usb;
+    settings.agcMode = AgcMode::Off;
+    settings.volume = 1.0f;
+    settings.squelchEnabled = true;
+    settings.squelchThresholdDb = -40.0;
+    channel.applySettings(settings);
+
+    std::vector<float> audio(channel.maxAudioFrames(input.size()));
+    const std::size_t produced = channel.process(input.data(), input.size(), audio.data());
+    QVERIFY(produced > 2000);
+
+    // Il salto piu' grande fra due campioni consecutivi. Una porta che scatta
+    // lo produce grande quanto il segnale stesso, ed e' quello che si sente:
+    // un gradino ha uno spettro largo quanto si vuole. Una rampa lo tiene
+    // sotto l'ampiezza di un periodo del tono.
+    double biggestJump = 0.0;
+    double peak = 0.0;
+    for (std::size_t i = 1; i < produced; ++i) {
+        biggestJump = std::max(biggestJump, std::abs(double(audio[i]) - audio[i - 1]));
+        peak = std::max(peak, std::abs(double(audio[i])));
+    }
+    QVERIFY2(peak > 0.0, "senza audio non si sta misurando niente");
+
+    // Il tono e' a 1 kHz su 48 kHz: fra due campioni consecutivi cambia gia'
+    // per conto suo di circa il 13% dell'ampiezza. La soglia lascia passare
+    // quello e non un azzeramento.
+    QVERIFY2(biggestJump < peak * 0.25,
+             qPrintable(QStringLiteral("lo squelch chiude di scatto: salto %1 su un picco di %2")
+                            .arg(biggestJump).arg(peak)));
+
+    // E deve davvero chiudersi: una rampa che non arriva a zero non e' uno
+    // squelch, e' un attenuatore.
+    const std::size_t tail = produced - produced / 8;
+    double tailPeak = 0.0;
+    for (std::size_t i = tail; i < produced; ++i)
+        tailPeak = std::max(tailPeak, std::abs(double(audio[i])));
+    QVERIFY2(tailPeak < peak * 0.02,
+             qPrintable(QStringLiteral("lo squelch non arriva a chiudere: coda %1 su %2")
+                            .arg(tailPeak).arg(peak)));
 }
 
 void TestDspChain::synchronousAmPicksOneSideband()
