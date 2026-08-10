@@ -104,7 +104,19 @@ Item {
 
         // `--no-panadapter` stacca la sorgente dal rendering GPU: serve a
         // isolare i problemi di prestazioni fra DSP e scene graph.
-        feed: Qt.application.arguments.indexOf("--no-panadapter") >= 0 ? null : Session.spectrum
+        //
+        // In trasmissione la sorgente cambia. Non è un vezzo: in mezzo duplex
+        // la radio si assorda, e la traccia resterebbe piatta proprio nei
+        // secondi in cui si vorrebbe vedere se il segnale è largo, se il
+        // compressore sta esagerando, se i due toni della prova ne sono
+        // diventati cinque.
+        feed: {
+            if (Qt.application.arguments.indexOf("--no-panadapter") >= 0)
+                return null
+            if (Session.transmitting && Session.txSpectrum)
+                return Session.txSpectrum
+            return Session.spectrum
+        }
         // Niente binding su `floorDb`/`ceilingDb`: con la scala automatica è
         // il C++ a scriverli, e un binding qui li riporterebbe indietro.
         Component.onCompleted: {
@@ -114,8 +126,13 @@ Item {
         spectrumRatio: root.spectrumRatio
         viewStart: root.viewStart
         viewSpan: root.viewSpan
-        traceColor: Theme.spectrumTrace
-        fillColor: Theme.spectrumFill
+        // In trasmissione la traccia cambia colore: si guarda il proprio
+        // segnale, e confonderlo con quello di qualcun altro sarebbe il modo
+        // migliore di credere di aver ricevuto quel che si è appena detto.
+        traceColor: Session.transmitting ? Theme.danger : Theme.spectrumTrace
+        fillColor: Session.transmitting ? Qt.rgba(Theme.danger.r, Theme.danger.g,
+                                                  Theme.danger.b, 0.25)
+                                        : Theme.spectrumFill
         peakColor: Theme.spectrumPeak
         backgroundColor: Theme.spectrumBackground
     }
@@ -375,6 +392,56 @@ Item {
     // e S-meter raccontano tutti lo stesso istante passato. Chi non lo sapesse
     // scambierebbe una banda di trenta secondi fa per la propagazione di
     // adesso — ed è il tipo di errore che si porta dietro un log sbagliato.
+    // ── In trasmissione ──────────────────────────────────────────────────
+    //
+    // La cornice rossa dice che quello che si sta guardando è il **proprio**
+    // segnale e non la banda: senza, un panadattatore con una riga in mezzo
+    // sembra una banda con una stazione sopra.
+    Rectangle {
+        anchors.fill: parent
+        color: "transparent"
+        border.width: 2
+        border.color: Theme.danger
+        opacity: 0.8
+        visible: Session.transmitting
+        z: 6
+        enabled: false
+    }
+
+    Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Theme.spacing
+        width: txLabel.implicitWidth + 2 * Theme.spacingLoose
+        height: 24
+        radius: Theme.radiusSmall
+        color: Theme.danger
+        visible: Session.transmitting
+        z: 7
+
+        Text {
+            id: txLabel
+            anchors.centerIn: parent
+            text: Session.tuning
+                  ? qsTr("TX · PROVA · %1 s").arg(Session.tuneSecondsLeft)
+                  : qsTr("TX · %1 %").arg(Math.round(Session.txLevel * 100))
+            font.pixelSize: Theme.fontSmall
+            font.bold: true
+            font.family: Theme.monoFamily
+            color: Theme.background
+        }
+
+        // Pulsa mentre si trasmette: una cornice ferma si smette di vedere
+        // dopo dieci secondi, e restare in trasmissione senza accorgersene è
+        // il modo in cui si scalda un finale.
+        SequentialAnimation on opacity {
+            running: Session.transmitting
+            loops: Animation.Infinite
+            NumberAnimation { to: 0.45; duration: 700; easing.type: Easing.InOutQuad }
+            NumberAnimation { to: 1.0;  duration: 700; easing.type: Easing.InOutQuad }
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         color: "transparent"

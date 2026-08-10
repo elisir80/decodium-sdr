@@ -17,6 +17,8 @@ add_library(dsdr_dsp STATIC
     DspTypes.cpp
     SpscRing.h
     Nco.h
+    FftwPlanning.h
+    FftwPlanning.cpp
     FirDesign.h
     FirDesign.cpp
     FirDecimator.h

@@ -64,6 +64,10 @@ public:
 
 private:
     void destroyPlans();
+
+    /// Come sopra, ma con il lucchetto della pianificazione FFTW già preso:
+    /// riprenderlo bloccherebbe il programma su se stesso.
+    void destroyPlansLocked();
     void processFrame() noexcept;
 
     fftwf_plan_s *m_forward = nullptr;

@@ -42,11 +42,21 @@ constexpr double kTuneToneHz = 1500.0;
 /// regola con il comando d'uscita, e partire già al massimo toglierebbe la
 /// possibilità di alzarlo.
 constexpr float kTestAmplitude = 0.8f;
+
+/// Trasformata del monitor. Più corta di quella della ricezione: qui non si
+/// cercano segnali deboli in mezzo al rumore, si guarda la forma del proprio
+/// segnale, e una risoluzione più grossa la disegna con meno ritardo.
+constexpr int kMonitorFftSize = 2048;
 } // namespace
 
 TxEngine::TxEngine(QObject *parent)
     : QObject(parent)
+    , m_spectrum(new SpectrumFeed(this))
 {
+    // Una sola trasformata per riga: mediarle addolcirebbe proprio i picchi
+    // che si sta cercando di vedere.
+    m_spectrum->setAveraging(1);
+
     m_speech.configure(m_audioRate);
     m_modulator.configure(m_audioRate);
     m_keyer.configure(m_audioRate);
@@ -124,6 +134,7 @@ bool TxEngine::rebuildChain()
             return false;
         }
         m_interleaved.assign(kAudioBlockFrames, 0.0f);
+        configureMonitor();
         return true;
     }
 
@@ -152,6 +163,7 @@ bool TxEngine::rebuildChain()
     m_interleaved.assign(m_upsampled.size() * 2, 0.0f);
 
     m_nco.configure(m_deviceRate, m_offsetHz);
+    configureMonitor();
     return true;
 }
 
@@ -181,9 +193,13 @@ void TxEngine::setDrive(double drive)
 
 void TxEngine::setOffsetHz(double hz)
 {
+    if (qFuzzyCompare(m_offsetHz, hz))
+        return;
     m_offsetHz = hz;
     if (m_deviceRate > 0.0)
         m_nco.setFrequency(hz);
+    if (m_domain == Domain::Audio)
+        configureMonitor();
 }
 
 void TxEngine::setTransmitting(bool transmitting)
@@ -231,6 +247,37 @@ void TxEngine::setTestSignal(int signal)
     m_testSignal.store(signal, std::memory_order_release);
     m_tonePhaseA = 0.0;
     m_tonePhaseB = 0.0;
+}
+
+void TxEngine::setMonitorCenter(qint64 hz)
+{
+    if (m_monitorCenterHz == hz)
+        return;
+    m_monitorCenterHz = hz;
+    configureMonitor();
+}
+
+void TxEngine::configureMonitor()
+{
+    // La banda del monitor è quella in cui si trasmette: con una radio che
+    // modula a bordo sono i 48 kHz dell'audio, con un SDR quelli del device.
+    // Deve combaciare con il panadattatore della ricezione, o passando in
+    // trasmissione la scala salterebbe sotto gli occhi.
+    const double span = m_domain == Domain::Audio ? m_audioRate : m_deviceRate;
+    if (span <= 0.0)
+        return;
+
+    // In banda base i campioni escono già traslati dall'NCO, e il centro
+    // della finestra è quello della banda. Con una radio che modula a bordo
+    // non c'è alcuna traslazione: il segnale nasce attorno alla frequenza del
+    // canale, ed è lì che va ancorata la scala.
+    const qint64 center = m_monitorCenterHz
+        + (m_domain == Domain::Audio ? static_cast<qint64>(m_offsetHz) : 0);
+
+    m_analyzer.configure(kMonitorFftSize, span);
+    m_analyzer.setAveraging(0.4f);
+    m_analyzer.setOverlap(0.5f);
+    m_spectrum->configure(kMonitorFftSize, span, center);
 }
 
 void TxEngine::pump()
@@ -373,6 +420,13 @@ void TxEngine::produce(std::size_t audioFrames)
         m_outputPeak.store(peak, std::memory_order_relaxed);
         if (m_txRing)
             m_txRing->write(m_interleaved.data(), audioFrames);
+
+        // Per il monitor moduliamo noi lo stesso audio: il segnale in aria lo
+        // farà la radio, e questo è ciò che ne uscirà. Costa un filtro
+        // complesso a 48 kHz, e solo mentre si trasmette.
+        m_modulator.process(m_audio.data(), audioFrames, m_baseband.data());
+        if (m_analyzer.push(m_baseband.data(), audioFrames))
+            m_spectrum->publish(m_analyzer.magnitudesDb().data());
         return;
     }
 
@@ -389,6 +443,7 @@ void TxEngine::produce(std::size_t audioFrames)
     float peak = 0.0f;
     for (std::size_t i = 0; i < produced; ++i) {
         const dsp::Complex z = m_upsampled[i] * m_drive;
+        m_upsampled[i] = z;
         m_interleaved[i * 2] = z.real();
         m_interleaved[i * 2 + 1] = z.imag();
         peak = std::max(peak, dsp::magnitudeSquared(z));
@@ -397,6 +452,12 @@ void TxEngine::produce(std::size_t audioFrames)
 
     if (m_txRing)
         m_txRing->write(m_interleaved.data(), produced * 2);
+
+    // Il monitor guarda esattamente quello che è finito nel ring, livello
+    // compreso: uno spettro che ignorasse il comando d'uscita mostrerebbe un
+    // segnale che nessuno sta trasmettendo.
+    if (m_analyzer.push(m_upsampled.data(), produced))
+        m_spectrum->publish(m_analyzer.magnitudesDb().data());
 }
 
 } // namespace dsdr::core

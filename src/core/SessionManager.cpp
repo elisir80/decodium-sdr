@@ -441,6 +441,11 @@ QString SessionManager::backendName() const
     return hal::BackendRegistry::instance().info(m_backendId).displayName;
 }
 
+SpectrumFeed *SessionManager::txSpectrum() const
+{
+    return m_tx ? m_tx->spectrumFeed() : nullptr;
+}
+
 SpectrumFeed *SessionManager::spectrum() const
 {
     return m_engine ? m_engine->spectrumFeed() : nullptr;
@@ -2204,9 +2209,17 @@ void SessionManager::pushTxConfig()
     const double compression = m_txCompressionDb;
     const double drive = m_txDrive;
 
-    QMetaObject::invokeMethod(m_tx, [this, settings, offset, gain, compression, drive] {
+    // Il centro della **banda**, non del canale: in banda base i campioni
+    // sono già stati traslati dall'NCO, e il monitor deve usare la stessa
+    // scala del panadattatore della ricezione.
+    const qint64 txCenter = m_centerFrequency;
+
+    QMetaObject::invokeMethod(m_tx, [this, settings, offset, gain, compression, drive, txCenter] {
         m_tx->setSettings(settings);
         m_tx->setOffsetHz(offset);
+        // Il monitor si ancora dove si trasmette, non al centro della banda:
+        // passando in trasmissione la scala non deve saltare.
+        m_tx->setMonitorCenter(txCenter);
         m_tx->setMicGainDb(gain);
         m_tx->setCompressionDb(compression);
         m_tx->setDrive(drive);

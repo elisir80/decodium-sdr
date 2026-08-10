@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "dsp/SpectralDenoiser.h"
+#include "dsp/FftwPlanning.h"
 #include "dsp/DspTypes.h"
 
 #include <fftw3.h>
@@ -49,6 +50,12 @@ SpectralDenoiser::~SpectralDenoiser()
 
 void SpectralDenoiser::destroyPlans()
 {
+    const std::lock_guard<std::mutex> guard(fftwPlanningMutex());
+    destroyPlansLocked();
+}
+
+void SpectralDenoiser::destroyPlansLocked()
+{
     if (m_forward) {
         fftwf_destroy_plan(reinterpret_cast<fftwf_plan>(m_forward));
         m_forward = nullptr;
@@ -72,7 +79,12 @@ bool SpectralDenoiser::configure(double sampleRate, int frameSize)
     if (!(sampleRate > 0.0) || frameSize < 64 || (frameSize & (frameSize - 1)) != 0)
         return false;
 
-    destroyPlans();
+    // Un solo lucchetto per tutta la costruzione. Qui pesa più che altrove:
+    // `FFTW_MEASURE` non si limita a pianificare, esegue trasformate vere e
+    // scrive nella sapienza globale della libreria — due canali che
+    // accendessero l'EMNR insieme si troverebbero a scriverci sopra a vicenda.
+    const std::lock_guard<std::mutex> guard(fftwPlanningMutex());
+    destroyPlansLocked();
 
     m_sampleRate = sampleRate;
     m_frameSize = frameSize;
@@ -82,7 +94,7 @@ bool SpectralDenoiser::configure(double sampleRate, int frameSize)
     m_timeBuffer = fftwf_alloc_real(static_cast<std::size_t>(frameSize));
     m_freqBuffer = fftwf_alloc_complex(static_cast<std::size_t>(m_bins));
     if (!m_timeBuffer || !m_freqBuffer) {
-        destroyPlans();
+        destroyPlansLocked();
         m_frameSize = 0;
         return false;
     }
@@ -94,7 +106,7 @@ bool SpectralDenoiser::configure(double sampleRate, int frameSize)
         frameSize, static_cast<fftwf_complex *>(m_freqBuffer), m_timeBuffer,
         FFTW_MEASURE));
     if (!m_forward || !m_inverse) {
-        destroyPlans();
+        destroyPlansLocked();
         m_frameSize = 0;
         return false;
     }

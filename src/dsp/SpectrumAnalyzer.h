@@ -54,6 +54,11 @@ public:
 
 private:
     void destroyPlan();
+
+    /// Come sopra, ma con il lucchetto della pianificazione già in mano: chi
+    /// la chiama sta già dentro la sezione protetta, e riprenderlo bloccherebbe
+    /// il programma su se stesso.
+    void destroyPlanLocked();
     void computeWindow(WindowType type);
     void transform() noexcept;
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "dsp/SpectrumAnalyzer.h"
+#include "dsp/FftwPlanning.h"
 
 #include <fftw3.h>
 
@@ -17,6 +18,12 @@ SpectrumAnalyzer::~SpectrumAnalyzer()
 }
 
 void SpectrumAnalyzer::destroyPlan()
+{
+    const std::lock_guard<std::mutex> guard(fftwPlanningMutex());
+    destroyPlanLocked();
+}
+
+void SpectrumAnalyzer::destroyPlanLocked()
 {
     if (m_plan) {
         fftwf_destroy_plan(reinterpret_cast<fftwf_plan>(m_plan));
@@ -39,15 +46,18 @@ bool SpectrumAnalyzer::configure(int fftSize, double sampleRate, WindowType wind
     if (sampleRate <= 0.0)
         return false;
 
-    destroyPlan();
-
     m_fftSize = fftSize;
     m_sampleRate = sampleRate;
+
+    // Un solo lucchetto per tutto il giro: anche `fftwf_malloc` e
+    // `fftwf_free` allocano dentro FFTW e ne condividono lo stato globale.
+    const std::lock_guard<std::mutex> guard(fftwPlanningMutex());
+    destroyPlanLocked();
 
     m_fftIn = static_cast<Complex *>(fftwf_malloc(sizeof(Complex) * static_cast<std::size_t>(fftSize)));
     m_fftOut = static_cast<Complex *>(fftwf_malloc(sizeof(Complex) * static_cast<std::size_t>(fftSize)));
     if (!m_fftIn || !m_fftOut) {
-        destroyPlan();
+        destroyPlanLocked();
         return false;
     }
 
@@ -61,7 +71,7 @@ bool SpectrumAnalyzer::configure(int fftSize, double sampleRate, WindowType wind
                           FFTW_FORWARD,
                           FFTW_ESTIMATE));
     if (!m_plan) {
-        destroyPlan();
+        destroyPlanLocked();
         return false;
     }
 

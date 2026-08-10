@@ -56,6 +56,11 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::ChannelModel *channels READ channels CONSTANT)
     Q_PROPERTY(dsdr::core::CapabilitiesInfo *capabilities READ capabilities CONSTANT)
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
+
+    /// Lo spettro di ciò che si sta trasmettendo. In mezzo duplex la radio si
+    /// assorda mentre trasmette: senza questo, il panadattatore resterebbe una
+    /// riga piatta proprio nei secondi in cui servirebbe di più.
+    Q_PROPERTY(dsdr::core::SpectrumFeed *txSpectrum READ txSpectrum CONSTANT)
     Q_PROPERTY(dsdr::audio::AudioRouter *audio READ audio CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *recorder READ recorder CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *audioRecorder READ audioRecorder CONSTANT)
@@ -170,6 +175,7 @@ public:
     ChannelModel *channels() { return &m_channels; }
     CapabilitiesInfo *capabilities() { return &m_capabilities; }
     SpectrumFeed *spectrum() const;
+    SpectrumFeed *txSpectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
     IqRecorder *recorder() { return &m_recorder; }
     IqRecorder *audioRecorder() { return &m_audioRecorder; }

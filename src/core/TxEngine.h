@@ -18,7 +18,9 @@
 #pragma once
 
 #include "common/Types.h"
+#include "core/SpectrumFeed.h"
 #include "dsp/CwKeyer.h"
+#include "dsp/SpectrumAnalyzer.h"
 #include "dsp/InterpolatorChain.h"
 #include "dsp/Modulator.h"
 #include "dsp/Nco.h"
@@ -77,6 +79,19 @@ public:
 
     bool isTransmitting() const { return m_transmitting.load(std::memory_order_acquire); }
 
+    /// Lo spettro di ciò che si sta trasmettendo.
+    ///
+    /// In mezzo duplex la radio si assorda mentre trasmette, e il
+    /// panadattatore resterebbe una riga piatta proprio nei secondi in cui
+    /// servirebbe di più: sono quelli in cui si vorrebbe vedere se il segnale
+    /// è largo, se il compressore sta esagerando, se i due toni della prova
+    /// ne sono diventati cinque.
+    ///
+    /// Con una radio che modula a bordo il segnale in aria non ce l'abbiamo:
+    /// lo ricaviamo modulando noi lo stesso audio che le stiamo mandando. È
+    /// quello che lei farà, e mostrarlo è più onesto che non mostrare niente.
+    SpectrumFeed *spectrumFeed() const noexcept { return m_spectrum; }
+
     /// Letture per gli indicatori. Sono atomiche perché la UI le legge dal
     /// proprio thread mentre il motore gira: un segnale per ogni blocco
     /// costerebbe più dell'elaborazione.
@@ -123,6 +138,9 @@ public slots:
     /// la portante piena, perché è così che si accorda in CW.
     void setTestSignal(int signal);
 
+    /// La frequenza a cui il monitor va ancorato: quella su cui si trasmette.
+    void setMonitorCenter(qint64 hz);
+
 signals:
     /// La trasmissione non può partire, e perché. La UI lo mostra invece di
     /// lasciare l'operatore davanti a un PTT premuto che non trasmette.
@@ -137,12 +155,16 @@ private slots:
 private:
     bool rebuildChain();
     void produce(std::size_t audioFrames);
+    void configureMonitor();
 
     dsp::SpeechProcessor m_speech;
     dsp::Modulator m_modulator;
     dsp::InterpolatorChain m_interpolator;
     dsp::CwKeyer m_keyer;
     dsp::Nco m_nco;
+    dsp::SpectrumAnalyzer m_analyzer;
+    SpectrumFeed *m_spectrum = nullptr;
+    qint64 m_monitorCenterHz = 0;
 
     dsp::SpscRing<float> *m_txRing = nullptr;
     dsp::SpscRing<float> *m_micRing = nullptr;
