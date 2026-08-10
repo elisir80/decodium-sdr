@@ -25,3 +25,7 @@ dsdr_add_test(tst_spectral_denoiser
 dsdr_add_test(tst_neural_denoiser
     SOURCES tst_neural_denoiser.cpp
     LIBRARIES dsdr::dsp)
+
+dsdr_add_test(tst_tx_chain
+    SOURCES tst_tx_chain.cpp
+    LIBRARIES dsdr::dsp)

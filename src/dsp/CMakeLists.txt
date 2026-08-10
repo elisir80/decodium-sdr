@@ -25,6 +25,10 @@ add_library(dsdr_dsp STATIC
     ComplexFir.cpp
     DecimatorChain.h
     DecimatorChain.cpp
+    FirInterpolator.h
+    FirInterpolator.cpp
+    InterpolatorChain.h
+    InterpolatorChain.cpp
     Agc.h
     Agc.cpp
     NoiseBlanker.h
@@ -43,6 +47,12 @@ add_library(dsdr_dsp STATIC
     NeuralDenoiser.cpp
     Demodulator.h
     Demodulator.cpp
+    Modulator.h
+    Modulator.cpp
+    SpeechProcessor.h
+    SpeechProcessor.cpp
+    CwKeyer.h
+    CwKeyer.cpp
     AudioHighPass.h
     AudioHighPass.cpp
     BroadcastFmStereo.h
