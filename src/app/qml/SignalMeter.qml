@@ -16,15 +16,11 @@ Item {
     readonly property real fraction:
         Math.max(0, Math.min(1, (levelDb - floorDb) / (ceilingDb - floorDb)))
 
-    /// S9 convenzionalmente a metà scala; oltre si conta in dB "più".
-    readonly property string readout: {
-        if (!showSUnits)
-            return qsTr("AF")
-        const sUnits = fraction * 12
-        if (sUnits <= 9)
-            return "S" + Math.max(0, Math.round(sUnits))
-        return "S9+" + Math.round((sUnits - 9) * 6) + "dB"
-    }
+    /// La lettura viene da [SMeterScale], non da un conto fatto qui: tre
+    /// strumenti che si calcolano i punti S per conto proprio prima o poi
+    /// dicono numeri diversi guardando lo stesso segnale.
+    readonly property string readout:
+        showSUnits ? SMeterScale.readout(levelDb, ceilingDb) : qsTr("AF")
 
     Rectangle {
         anchors.fill: parent
@@ -69,12 +65,20 @@ Item {
             }
         }
 
-        // Tacche a S3, S6, S9.
+        // Tacche a S3, S6, S9. Stavano a un quarto, metà e tre quarti della
+        // barra, che sono i punti giusti solo se un punto S vale un dodicesimo
+        // della dinamica: ne vale sei decibel, e la tacca «S9» cadeva dove il
+        // segnale era S9+30.
         Repeater {
-            model: [0.25, 0.5, 0.75]
+            model: [3, 6, 9]
             delegate: Rectangle {
-                required property real modelData
-                x: parent.width * modelData
+                required property int modelData
+
+                readonly property real span: root.ceilingDb - root.floorDb
+                readonly property real position: span === 0 ? 0
+                    : (SMeterScale.levelFor(modelData, root.ceilingDb) - root.floorDb) / span
+
+                x: parent.width * Math.max(0, Math.min(1, position))
                 width: 1
                 height: parent.height
                 color: Theme.background

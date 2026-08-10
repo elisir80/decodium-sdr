@@ -4,6 +4,23 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- **Pannello S-METER** nella colonna laterale: un quadrante a lancetta sul
+  vetro scuro di un apparato, con la scala S bianca fino a S9 e rossa oltre,
+  la tacca del picco che scende piano, e sotto il livello assoluto e il
+  rapporto segnale/rumore del canale. Segue il canale corrente e si sposta
+  nella colonna come gli altri pannelli.
+
+### Corretto — Strumenti
+
+- **I tre strumenti dicevano numeri diversi guardando lo stesso segnale.** La
+  conversione in punti S ora sta in un posto solo, con la convenzione IARU —
+  sei decibel per punto S — e il fondo scala a S9+60. Il quadrante a lancetta
+  puntava sulla tacca «+60» mentre la sua stessa lettura diceva «S9+18 dB»; le
+  tacche della barra sotto il VFO, dichiarate S3, S6 e S9, cadevano dove il
+  segnale era rispettivamente S6, S9 e S9+30.
+
 ### Corretto — Windows
 
 - **Il programma installato chiedeva DLL che non aveva.** Il pacchetto

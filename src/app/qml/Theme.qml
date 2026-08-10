@@ -38,6 +38,32 @@ QtObject {
     // istantanea senza gridare come il rosso della trasmissione.
     readonly property color spectrumPeak: "#FFC86E"
 
+    // ── Display LCD ──────────────────────────────────────────────────────
+    //
+    // Il quadrante dello strumento non è una superficie dell'interfaccia: è un
+    // vetro illuminato da dietro, e prende le sue tinte dal mondo degli
+    // apparati, non da quello dei pannelli. Tenerle qui invece che dentro il
+    // componente è la regola di sempre (CONSTITUTION §6); tenerle distinte da
+    // `surface*` e `text*` è ciò che impedisce che un domani qualcuno le
+    // «uniformi» al resto e spenga lo strumento.
+    readonly property color lcdGlowCenter: "#2B3531"
+    readonly property color lcdGlowMid: "#1D2623"
+    readonly property color lcdGlowEdge: "#0F1513"
+    readonly property color lcdEtch: "#E9E7E2"
+    readonly property color lcdEtchDim: "#7F8A86"
+    readonly property color lcdAlert: "#FF4A3D"
+    readonly property color lcdCyan: "#4AA8FF"
+    readonly property color lcdNeedle: "#F4F2EC"
+    readonly property color lcdNeedleTail: "#8E918B"
+    readonly property color lcdPivot: "#3A3D3A"
+
+    /// Il riflesso sul vetro, dal bordo alto verso il centro, e il filo di
+    /// luce sul bordo. Sono tinte trasparenti perché devono lasciar passare
+    /// quello che hanno sotto: un riflesso opaco non è un riflesso.
+    readonly property color lcdSheen: "#1AFFFFFF"
+    readonly property color lcdSheenSoft: "#08FFFFFF"
+    readonly property color lcdRim: "#1AFFFFFF"
+
     // ── Segmenti del piano bande ─────────────────────────────────────────
     //
     // Tinte tenute basse di proposito: la striscia sta sotto lo spettro e deve

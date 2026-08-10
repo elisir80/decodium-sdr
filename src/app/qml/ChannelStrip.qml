@@ -37,6 +37,7 @@ Rectangle {
         id: panelOrder
 
         ListElement { key: "sintonia" }
+        ListElement { key: "smeter" }
         ListElement { key: "tempo" }
         ListElement { key: "catena" }
         ListElement { key: "trasmissione" }
@@ -115,6 +116,9 @@ Rectangle {
         switch (key) {
         case "waterfall": return root.panadapter !== null
         case "canali":    return true
+        // Uno strumento senza canale su cui puntare non è uno strumento
+        // fermo: è una cornice vuota che occupa la colonna.
+        case "smeter":    return Session.connected && Session.channels.count > 0
         case "device":    return Session.connected
                               && Session.capabilities.nativePanels.length > 0
         // Su un ricevitore puro il pannello TX non viene creato: la UI si
@@ -127,6 +131,7 @@ Rectangle {
     function componentFor(key) {
         switch (key) {
         case "sintonia":  return tuningPanel
+        case "smeter":    return sMeterPanel
         case "tempo":     return timeMachinePanel
         case "catena":    return rxChainPanel
         case "trasmissione": return txPanel
@@ -208,6 +213,12 @@ Rectangle {
         FrequencyPanel {
             draggable: true
         }
+    }
+
+    Component {
+        id: sMeterPanel
+
+        SMeterPanel {}
     }
 
     Component {

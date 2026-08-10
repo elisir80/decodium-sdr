@@ -22,6 +22,14 @@ TestCase {
         ChannelStrip {}
     }
 
+    /// I pannelli che la colonna deve offrire, in un posto solo: il numero
+    /// stava scritto a mano in tre prove diverse, e aggiungerne uno le faceva
+    /// fallire tutte e tre parlando di un «7» che non spiegava niente.
+    readonly property var expectedKeys: [
+        "sintonia", "smeter", "tempo", "catena",
+        "trasmissione", "device", "waterfall", "canali"
+    ]
+
     function keysOf(strip) {
         const out = []
         for (let i = 0; i < strip.panels.count; ++i)
@@ -34,15 +42,10 @@ TestCase {
         verify(strip !== null, "colonna non istanziata")
 
         const keys = keysOf(strip)
-        compare(keys.length, 7,
-                "pannelli attesi: sintonia, tempo, catena, trasmissione, device, waterfall, canali")
-        verify(keys.indexOf("sintonia") >= 0)
-        verify(keys.indexOf("catena") >= 0)
-        verify(keys.indexOf("trasmissione") >= 0)
-        verify(keys.indexOf("tempo") >= 0)
-        verify(keys.indexOf("device") >= 0)
-        verify(keys.indexOf("waterfall") >= 0)
-        verify(keys.indexOf("canali") >= 0)
+        compare(keys.length, testCase.expectedKeys.length,
+                "pannelli attesi: " + testCase.expectedKeys.join(", "))
+        for (const key of testCase.expectedKeys)
+            verify(keys.indexOf(key) >= 0, "pannello mancante: " + key)
     }
 
     function test_moving_a_panel_is_remembered() {
@@ -70,7 +73,8 @@ TestCase {
         compare(keys[1], "waterfall")
         // E nessuno si perde per strada: i pannelli che l'ordine salvato non
         // nominava restano, in coda.
-        compare(keys.length, 7, "un pannello è sparito nel ripristino")
+        compare(keys.length, testCase.expectedKeys.length,
+                "un pannello è sparito nel ripristino")
         verify(keys.indexOf("sintonia") >= 2)
         verify(keys.indexOf("tempo") >= 2)
         verify(keys.indexOf("device") >= 2)
@@ -85,7 +89,7 @@ TestCase {
         strip.restoreOrder()
 
         const keys = keysOf(strip)
-        compare(keys.length, 7)
+        compare(keys.length, testCase.expectedKeys.length)
         compare(keys[0], "canali")
         compare(keys[1], "tempo")
     }

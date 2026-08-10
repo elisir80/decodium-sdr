@@ -29,20 +29,30 @@ Item {
     readonly property real fraction:
         Math.max(0, Math.min(1, (levelDb - floorDb) / (ceilingDb - floorDb)))
 
-    /// Unità S: dodici in tutto, S9 a metà scala, il resto in decibel «più».
-    readonly property real sUnits: fraction * 12
+    /// Punti S del segnale, secondo [SMeterScale]: sei decibel l'uno, e oltre
+    /// S9 si continua a contarli per poterli disporre sul quadrante.
+    ///
+    /// Prima erano un dodicesimo della dinamica ciascuno, e il quadrante ne
+    /// pagava il prezzo due volte: la lancetta a fondo scala puntava sulla
+    /// tacca «+60» mentre la lettura sotto diceva «S9+18 dB». Uno dei due
+    /// mentiva, e non c'era modo di sapere quale.
+    readonly property real sUnits: SMeterScale.units(levelDb, ceilingDb)
 
-    readonly property string readout: {
-        if (sUnits <= 9)
-            return "S" + Math.max(0, Math.round(sUnits))
-        return "S9+" + Math.round((sUnits - 9) * 6) + " dB"
-    }
+    readonly property string readout: SMeterScale.readout(levelDb, ceilingDb)
 
     /// Apertura del quadrante, in gradi da una parte e dall'altra della
     /// verticale.
     readonly property real sweep: 52
 
-    readonly property real needleAngle: -sweep + (sUnits / 12) * 2 * sweep
+    /// Le dodici posizioni del quadrante: nove punti S e tre gradini da venti
+    /// decibel. La lancetta le percorre come le percorre lo strumento grande,
+    /// dando alla parte bassa — quella dove si lavora — l'arco che merita.
+    function positionFor(u) {
+        const p = u <= 9 ? u : 9 + (u - 9) * SMeterScale.dbPerUnit / 20
+        return Math.max(0, Math.min(12, p))
+    }
+
+    readonly property real needleAngle: -sweep + (positionFor(sUnits) / 12) * 2 * sweep
 
     /// Il perno sta sotto il bordo inferiore: si vede solo la corona esterna
     /// del quadrante, che è come sono fatti gli strumenti veri.

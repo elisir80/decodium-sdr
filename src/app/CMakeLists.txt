@@ -19,6 +19,9 @@ set(DSDR_QML_FILES
     qml/DsdrComboBox.qml
     qml/SignalMeter.qml
     qml/AnalogMeter.qml
+    qml/SMeterScale.qml
+    qml/LcdSMeter.qml
+    qml/SMeterPanel.qml
     qml/ModeSelector.qml
     qml/FrequencyDisplay.qml
     qml/BandPlan.qml
@@ -56,6 +59,7 @@ endforeach()
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/BandPlan.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/Tuning.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/SMeterScale.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(dsdr_qml
     URI DecodiumSdr
