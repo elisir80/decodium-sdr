@@ -20,7 +20,8 @@ set(DSDR_QML_FILES
     qml/SignalMeter.qml
     qml/AnalogMeter.qml
     qml/SMeterScale.qml
-    qml/LcdSMeter.qml
+    qml/DecoMeterS.qml
+    qml/DecoMeterChip.qml
     qml/DecoMeter.qml
     qml/SMeterPanel.qml
     qml/ModeSelector.qml

@@ -60,25 +60,32 @@ TestCase {
         panel.instrument = 0
         wait(120)
 
-        const power = findByName(panel, "instrument-1")
+        const bars = findByName(panel, "instrument-1")
+        verify(bars !== null, "tasto delle barre non trovato")
+        mouseClick(bars, bars.width / 2, bars.height / 2)
+        wait(120)
+        compare(panel.instrument, 1, "premere BARRE non ha cambiato lettura")
+
+        const power = findByName(panel, "instrument-2")
         verify(power !== null, "tasto della potenza non trovato")
         mouseClick(power, power.width / 2, power.height / 2)
         wait(120)
-        compare(panel.instrument, 1, "premere POTENZA non ha cambiato strumento")
+        compare(panel.instrument, 2, "premere POTENZA non ha cambiato strumento")
         compare(panel.title, "DECØMETER")
 
-        const signal = findByName(panel, "instrument-0")
-        verify(signal !== null, "tasto del segnale non trovato")
-        mouseClick(signal, signal.width / 2, signal.height / 2)
+        const needle = findByName(panel, "instrument-0")
+        verify(needle !== null, "tasto dell'ago non trovato")
+        mouseClick(needle, needle.width / 2, needle.height / 2)
         wait(120)
         compare(panel.instrument, 0, "non si torna allo strumento di prima")
-        compare(panel.title, "S-METER")
+        compare(panel.title, "DECØMETER-S")
     }
 
     function test_instrument_choice_switches_the_title_data() {
         return [
-            { tag: "segnale", instrument: 0, title: "S-METER" },
-            { tag: "potenza", instrument: 1, title: "DECØMETER" },
+            { tag: "ago",     instrument: 0, title: "DECØMETER-S" },
+            { tag: "barre",   instrument: 1, title: "DECØMETER-S" },
+            { tag: "potenza", instrument: 2, title: "DECØMETER" },
         ]
     }
 
@@ -113,7 +120,7 @@ TestCase {
         verify(meterHeight > 80, "lo strumento non ha altezza: " + meterHeight)
 
         const panel = createTemporaryObject(panelComponent, testCase)
-        panel.instrument = 1
+        panel.instrument = 2
         wait(300)
 
         verify(panel.implicitHeight > meterHeight,
@@ -127,7 +134,7 @@ TestCase {
     // strumento scelto.
     function test_collapsing_hides_the_instrument() {
         const panel = createTemporaryObject(panelComponent, testCase)
-        panel.instrument = 1
+        panel.instrument = 2
         wait(300)
         const open = panel.implicitHeight
         verify(open > 80, "il pannello aperto non ha contenuto: " + open)

@@ -6,10 +6,10 @@
 // qualcuno che ne passa uno diverso indietro. Per questo qui si verificano i
 // numeri, non il fatto che il componente si istanzi.
 //
-// La geometria si presidia per la stessa ragione di tst_LevelScale: il raggio
-// nasce da una divisione fatta in JavaScript, e in un pannello chiuso —
-// larghezza e altezza a zero — diventerebbe negativo. Un arco di raggio
-// negativo non disegna niente e non dà alcun errore.
+// La geometria si presidia per la stessa ragione di tst_LevelScale: la
+// posizione sull'arco nasce da divisioni fatte in JavaScript, e con il
+// pannello chiuso — larghezza e altezza a zero — un raggio negativo non
+// disegna niente e non dà alcun errore.
 import QtQuick
 import QtTest
 import DecodiumSdr
@@ -24,7 +24,7 @@ TestCase {
 
     Component {
         id: meterComponent
-        LcdSMeter { levelDb: -140 }
+        DecoMeterS { levelDb: -140 }
     }
 
     // ── La scala ─────────────────────────────────────────────────────────
@@ -99,9 +99,10 @@ TestCase {
         })
         verify(meter !== null, "quadrante non istanziato")
 
-        verify(isFinite(meter.radius), "raggio non finito: " + meter.radius)
-        verify(meter.radius > 0, "raggio non positivo: " + meter.radius)
-        verify(isFinite(meter.pivotY), "perno non finito")
+        verify(isFinite(meter.targetFraction), "posizione non finita")
+        verify(meter.targetFraction >= 0 && meter.targetFraction <= 1,
+               "posizione fuori dall'arco: " + meter.targetFraction)
+        verify(isFinite(meter.floorFraction), "fondo di rumore non finito")
     }
 
     // La lancetta deve stare dentro l'apertura del quadrante a ogni livello,
@@ -122,10 +123,9 @@ TestCase {
             width: 320, height: 220, levelDb: data.level
         })
 
-        const angle = meter.angleFor(meter.units)
-        verify(isFinite(angle), "angolo non finito: " + angle)
-        verify(angle >= -meter.sweep - 0.001 && angle <= meter.sweep + 0.001,
-               "lancetta fuori dal quadrante: " + angle)
+        const f = meter.arcFraction(meter.units)
+        verify(isFinite(f), "posizione non finita: " + f)
+        verify(f >= -0.001 && f <= 1.001, "lancetta fuori dal quadrante: " + f)
     }
 
     // L'arco cresce da sinistra a destra. Sembra ovvio, e non lo è: la parte
@@ -140,11 +140,11 @@ TestCase {
         let previous = -Infinity
         for (let level = -140; level <= -20; level += 2) {
             meter.levelDb = level
-            const angle = meter.angleFor(meter.units)
-            verify(angle >= previous - 0.001,
+            const f = meter.arcFraction(meter.units)
+            verify(f >= previous - 0.001,
                    "la lancetta torna indietro a " + level + " dBFS: "
-                   + angle + " dopo " + previous)
-            previous = angle
+                   + f + " dopo " + previous)
+            previous = f
         }
     }
 

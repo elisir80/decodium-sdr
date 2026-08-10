@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Lo strumento della colonna: uno alla volta, e si sceglie quale.
 //
-// Sono due mestieri diversi. Il quadrante a lancetta misura quello che entra e
-// serve in ricezione; il DECØMETER misura quello che esce e serve mentre si
-// trasmette. Tenerli entrambi aperti vorrebbe dire che uno dei due è sempre
-// fermo a occupare la colonna, e la colonna è lo spazio che scarseggia.
+// Tre letture, non tre strumenti. Le prime due misurano lo stesso segnale in
+// due modi — l'ago ha inerzia e mostra il QSB battere, le barre tengono il
+// picco e dicono dove si è arrivati — e la terza misura quello che esce, che è
+// un altro mestiere e serve mentre si trasmette.
+//
+// Un Loader solo, non uno per strumento: due Loader in colonna si prendono lo
+// spazio del layout anche quando quello spento è alto zero, e in mezzo alla
+// colonna restava una striscia vuota che non apparteneva a niente.
 //
 // Il titolo dice quale strumento è attivo, perché a pannello chiuso il titolo
 // è tutto quello che resta. La chiave con cui si ricorda l'apertura, invece,
@@ -18,12 +22,13 @@ import DecodiumSdr
 PanelFrame {
     id: root
 
-    /// Lo strumento mostrato: 0 il quadrante S, 1 il DECØMETER.
+    /// Lo strumento mostrato: 0 il segnale con l'ago, 1 il segnale a barre,
+    /// 2 la potenza.
     property int instrument: 0
 
-    readonly property bool showingSMeter: instrument === 0
+    readonly property bool showingPower: instrument === 2
 
-    title: showingSMeter ? qsTr("S-METER") : qsTr("DECØMETER")
+    title: showingPower ? qsTr("DECØMETER") : qsTr("DECØMETER-S")
     persistKey: "strumento"
     draggable: true
 
@@ -39,8 +44,9 @@ PanelFrame {
 
         Repeater {
             model: [
-                { key: 0, label: qsTr("SEGNALE") },
-                { key: 1, label: qsTr("POTENZA") }
+                { key: 0, label: qsTr("AGO") },
+                { key: 1, label: qsTr("BARRE") },
+                { key: 2, label: qsTr("POTENZA") }
             ]
 
             delegate: Rectangle {
@@ -49,7 +55,7 @@ PanelFrame {
                 readonly property bool current: root.instrument === modelData.key
 
                 // Il nome serve al test che preme davvero il selettore: senza
-                // un modo di ritrovare questi due rettangoli, l'unica prova
+                // un modo di ritrovare questi rettangoli, l'unica prova
                 // possibile sarebbe assegnare la proprietà da fuori — che è
                 // esattamente ciò che non fa chi usa il programma.
                 objectName: "instrument-" + modelData.key
@@ -81,19 +87,46 @@ PanelFrame {
         }
     }
 
-    // ── Il quadrante del segnale ─────────────────────────────────────────
-    //
+    // ── Lo strumento ─────────────────────────────────────────────────────
+    Loader {
+        Layout.fillWidth: true
+        sourceComponent: root.showingPower ? powerMeter : signalMeter
+    }
+
+    Component {
+        id: powerMeter
+
+        DecoMeter {
+            metersAvailable: Session.txMetersAvailable
+            forwardWatt: Session.txForwardWatt
+            reflectedWatt: Session.txReflectedWatt
+            swr: Session.txSwr
+            transmitting: Session.transmitting
+        }
+    }
+
     // Un quadrante per canale, visibile quello corrente: è lo stesso modo in
     // cui il panadattatore mostra i notch del solo canale scelto. I quadranti
     // nascosti non dipingono e il loro timer sta fermo, mentre un solo
     // strumento aggiornato da fuori vorrebbe dire copiare i valori del
     // modello — e una copia si disallinea sempre.
-    Loader {
-        Layout.fillWidth: true
-        active: root.showingSMeter
+    Component {
+        id: signalMeter
 
-        sourceComponent: ColumnLayout {
+        ColumnLayout {
+            id: signalColumn
+
             spacing: 0
+
+            /// Il canale che fa da secondo: il primo diverso da quello
+            /// corrente. Non è una scelta, è quello che c'è — e con un canale
+            /// solo non c'è, e i tasti B e A+B restano spenti.
+            readonly property int secondIndex:
+                Session.channels.count > 1
+                    ? (Session.channels.currentIndex === 0 ? 1 : 0)
+                    : -1
+
+            property real secondLevelDb: -140
 
             Repeater {
                 model: Session.channels
@@ -119,33 +152,32 @@ PanelFrame {
 
                     visible: Session.channels.currentIndex === index
 
-                    LcdSMeter {
+                    // Il canale che non è quello corrente porta il suo livello
+                    // allo strumento, che lo disegna nel secondo arco: è la
+                    // riga «RX B», e senza questa non avrebbe niente da dire.
+                    onSignalDbChanged: if (index === signalColumn.secondIndex)
+                                           signalColumn.secondLevelDb = signalDb
+
+                    DecoMeterS {
                         id: meter
 
                         width: entry.width
+                        bars: root.instrument === 1
                         levelDb: entry.signalDb
                         noiseFloorDb: entry.noiseFloorDb
                         snrDb: entry.snrDb
                         modeName: entry.modeName
                         bandwidthHz: Math.max(0, entry.filterHighHz - entry.filterLowHz)
                         transmitting: Session.transmitting
+
+                        sourceLabel: Session.backendName
+                        channelLabel: qsTr("RX %1").arg(entry.index + 1)
+                        hasSecondChannel: signalColumn.secondIndex >= 0
+                        secondLevelDb: signalColumn.secondLevelDb
+                        secondChannelLabel: qsTr("RX %1").arg(signalColumn.secondIndex + 1)
                     }
                 }
             }
-        }
-    }
-
-    // ── Lo strumento di potenza ──────────────────────────────────────────
-    Loader {
-        Layout.fillWidth: true
-        active: !root.showingSMeter
-
-        sourceComponent: DecoMeter {
-            metersAvailable: Session.txMetersAvailable
-            forwardWatt: Session.txForwardWatt
-            reflectedWatt: Session.txReflectedWatt
-            swr: Session.txSwr
-            transmitting: Session.transmitting
         }
     }
 }
