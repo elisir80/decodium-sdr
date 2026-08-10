@@ -141,6 +141,11 @@ class SessionManager : public QObject
     Q_PROPERTY(double txCompressionMeter READ txCompressionMeter NOTIFY txMetersChanged)
     Q_PROPERTY(double txLevel READ txLevel NOTIFY txMetersChanged)
 
+    /// Trasmissione di prova in corso, e quanti secondi restano prima che la
+    /// sicura la chiuda.
+    Q_PROPERTY(bool tuning READ tuning NOTIFY txChanged)
+    Q_PROPERTY(int tuneSecondsLeft READ tuneSecondsLeft NOTIFY txMetersChanged)
+
     /// In CW il PTT non basta: serve il tasto, e la UI deve mostrarlo. La
     /// distinzione la fa il modo del canale di trasmissione, non l'operatore.
     Q_PROPERTY(bool txCw READ txCw NOTIFY txChanged)
@@ -246,11 +251,19 @@ public:
     double txCompressionMeter() const;
     double txLevel() const;
     bool txCw() const;
+    bool tuning() const { return m_tuning; }
+    int tuneSecondsLeft() const;
     QString txSummary() const;
 
     /// Tasto CW. Separato dal PTT perché in CW il PTT lo alza e lo abbassa il
     /// manipolatore, non l'operatore.
     Q_INVOKABLE void setCwKeyDown(bool down);
+
+    /// Trasmissione di prova: portante per accordare, o due toni per vedere se
+    /// il finale è lineare. `seconds` è la sicura — a zero vale il valore
+    /// predefinito, e non esiste un modo di chiedere «per sempre».
+    Q_INVOKABLE void startTune(bool twoTone = false, double seconds = 0.0);
+    Q_INVOKABLE void stopTune();
 
     bool noiseBlanker() const { return m_nbEnabled; }
     double noiseBlankerThreshold() const { return m_nbThreshold; }
@@ -470,6 +483,8 @@ private:
     static constexpr double kDefaultTxDrive = 0.9;
     double m_txDrive = kDefaultTxDrive;
     QString m_micDeviceId;   ///< vuoto = ingresso predefinito del sistema
+    bool m_tuning = false;
+    QTimer m_tuneTimer;
     QTimer m_scanTimer;
     QTimer m_rdsAfProbeTimer;
     std::vector<qint64> m_rdsAfCandidates;

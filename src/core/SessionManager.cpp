@@ -27,6 +27,13 @@ Q_LOGGING_CATEGORY(dsdrCore, "dsdr.core")
 namespace dsdr::core {
 
 namespace {
+/// Durata massima di una trasmissione di prova. Dieci secondi bastano a
+/// qualunque accordatore automatico e a leggere un rosmetro; oltre, si sta
+/// solo scaldando il finale e occupando la frequenza.
+constexpr double kTuneSeconds = 10.0;
+} // namespace
+
+namespace {
 
 /// Larghezza di filtro predefinita per modo: sono i valori che un operatore si
 /// aspetta di trovare già impostati aprendo la radio.
@@ -164,6 +171,12 @@ SessionManager::SessionManager(QObject *parent)
         emit txRefused(reason);
     });
     m_txThread->start(QThread::HighPriority);
+
+    m_tuneTimer.setSingleShot(true);
+    connect(&m_tuneTimer, &QTimer::timeout, this, [this] {
+        setStatus(tr("Trasmissione di prova chiusa dalla sicura."));
+        stopTune();
+    });
 
     // Lo stadio neurale su un thread proprio, a priorità normale: l'inferenza
     // non deve mai contendere la CPU al DSP, che ha una scadenza vera.
@@ -2078,14 +2091,68 @@ void SessionManager::setPtt(bool transmit)
     }
 
     m_backend->setPtt(false);
-    QMetaObject::invokeMethod(m_tx, [this] { m_tx->setTransmitting(false); });
+    QMetaObject::invokeMethod(m_tx, [this] {
+        m_tx->setTransmitting(false);
+        // Il segnale di prova non sopravvive al PTT: chi lo rilascia sta
+        // finendo, e ritrovarsi una portante alla pressione successiva
+        // sarebbe una sorpresa in trasmissione.
+        m_tx->setTestSignal(static_cast<int>(TxEngine::TestSignal::None));
+    });
     m_mic->stop();
+    if (m_tuning) {
+        m_tuning = false;
+        m_tuneTimer.stop();
+    }
     emit txChanged();
 }
 
 void SessionManager::setCwKeyDown(bool down)
 {
     QMetaObject::invokeMethod(m_tx, [this, down] { m_tx->setKeyDown(down); });
+}
+
+void SessionManager::startTune(bool twoTone, double seconds)
+{
+    if (!m_backend || !m_capabilities.canTransmit())
+        return;
+
+    const auto signal = twoTone ? TxEngine::TestSignal::TwoTone
+                                : TxEngine::TestSignal::Tone;
+    const int value = static_cast<int>(signal);
+    QMetaObject::invokeMethod(m_tx, [this, value] { m_tx->setTestSignal(value); });
+
+    m_tuning = true;
+
+    // La sicura non è un ornamento. Una portante è la cosa più facile da
+    // dimenticare accesa che ci sia — non si sente, non si vede, e chi accorda
+    // guarda il rosmetro e non lo schermo — e restare in trasmissione scalda
+    // il finale, occupa la frequenza e viola il permesso di chiunque.
+    const double limit = seconds > 0.0 ? seconds : kTuneSeconds;
+    m_tuneTimer.start(static_cast<int>(limit * 1000.0));
+
+    setPtt(true);
+    emit txChanged();
+}
+
+void SessionManager::stopTune()
+{
+    m_tuneTimer.stop();
+    if (!m_tuning)
+        return;
+
+    m_tuning = false;
+    setPtt(false);
+    QMetaObject::invokeMethod(m_tx, [this] {
+        m_tx->setTestSignal(static_cast<int>(TxEngine::TestSignal::None));
+    });
+    emit txChanged();
+}
+
+int SessionManager::tuneSecondsLeft() const
+{
+    if (!m_tuning || !m_tuneTimer.isActive())
+        return 0;
+    return (m_tuneTimer.remainingTime() + 999) / 1000;
 }
 
 void SessionManager::pushAudioSideband(DemodMode mode)

@@ -77,6 +77,57 @@ PanelFrame {
         }
     }
 
+    // ── Prova ────────────────────────────────────────────────────────────
+    //
+    // Due pulsanti e non uno: accordare e misurare la linearità sono due
+    // mestieri diversi. Il primo vuole un'ampiezza ferma da cui l'accordatore
+    // legga qualcosa; il secondo due toni, e se ne escono cinque il finale sta
+    // occupando la banda dei vicini.
+    //
+    // Entrambi si chiudono da soli: una portante è la cosa più facile da
+    // dimenticare accesa che ci sia, perché non si sente e non si vede.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacingTight
+
+        DsdrButton {
+            Layout.fillWidth: true
+            implicitWidth: 0
+            implicitHeight: 28
+            fontSize: Theme.fontSmall
+            text: qsTr("TUNE")
+            checkable: true
+            checked: Session.tuning
+            danger: true
+            enabled: Session.connected
+            onToggled: checked ? Session.startTune(false) : Session.stopTune()
+        }
+
+        DsdrButton {
+            Layout.fillWidth: true
+            implicitWidth: 0
+            implicitHeight: 28
+            fontSize: Theme.fontSmall
+            text: qsTr("2 TONI")
+            danger: true
+            enabled: Session.connected && !Session.tuning
+            onClicked: Session.startTune(true)
+        }
+
+        Text {
+            // Il conto alla rovescia della sicura: chi accorda guarda il
+            // rosmetro, non lo schermo, e sapere quanto resta evita di
+            // ripremere a metà.
+            visible: Session.tuning
+            text: Session.tuneSecondsLeft + " s"
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Theme.warning
+            Layout.preferredWidth: 34
+            horizontalAlignment: Text.AlignRight
+        }
+    }
+
     // ── Microfono ────────────────────────────────────────────────────────
     RowLayout {
         Layout.fillWidth: true

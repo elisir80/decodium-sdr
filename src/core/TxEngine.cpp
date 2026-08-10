@@ -26,6 +26,22 @@ constexpr int kMeterEvery = 20;
 
 /// Venti aggiornamenti degli indicatori: una riga di diario al secondo.
 constexpr int kLogEvery = 20;
+
+/// I due toni della prova di linearità. Non armonicamente imparentati — 1900
+/// non è un multiplo di 700 — perché i prodotti di intermodulazione devono
+/// cadere dove non c'è nient'altro, altrimenti si confondono con le armoniche
+/// e la prova non dice niente.
+constexpr double kToneAHz = 700.0;
+constexpr double kToneBHz = 1900.0;
+
+/// Tono singolo, in mezzo alla passata SSB: da lì passa qualunque filtro di
+/// trasmissione senza attenuarlo, e il livello che si legge è quello vero.
+constexpr double kTuneToneHz = 1500.0;
+
+/// Ampiezza di picco del segnale di prova. Non fondo scala: il livello si
+/// regola con il comando d'uscita, e partire già al massimo toglierebbe la
+/// possibilità di alzarlo.
+constexpr float kTestAmplitude = 0.8f;
 } // namespace
 
 TxEngine::TxEngine(QObject *parent)
@@ -193,6 +209,8 @@ void TxEngine::setTransmitting(bool transmitting)
         m_interpolator.reset();
         m_nco.reset();
         m_cwPhase = 0.0;
+        m_tonePhaseA = 0.0;
+        m_tonePhaseB = 0.0;
         m_framesSent = 0;
         m_starved.store(0, std::memory_order_relaxed);
         m_clock.restart();
@@ -206,6 +224,13 @@ void TxEngine::setKeyDown(bool down)
 {
     m_keyDown = down;
     m_keyer.setKeyDown(down);
+}
+
+void TxEngine::setTestSignal(int signal)
+{
+    m_testSignal.store(signal, std::memory_order_release);
+    m_tonePhaseA = 0.0;
+    m_tonePhaseB = 0.0;
 }
 
 void TxEngine::pump()
@@ -260,8 +285,47 @@ void TxEngine::pump()
 void TxEngine::produce(std::size_t audioFrames)
 {
     const bool cw = m_settings.mode == DemodMode::Cw || m_settings.mode == DemodMode::Cwr;
+    const auto test = static_cast<TestSignal>(m_testSignal.load(std::memory_order_acquire));
 
-    if (cw) {
+    if (test != TestSignal::None) {
+        if (cw) {
+            // In CW accordare vuol dire tenere giù il tasto: l'inviluppo resta
+            // a uno e la portante è piena. Un tono ci farebbe uscire una
+            // portante modulata in ampiezza, che non è quello che chiede
+            // l'accordatore.
+            std::fill_n(m_audio.begin(), audioFrames, kTestAmplitude);
+        } else {
+            const double stepA = dsp::kTwoPi
+                * (test == TestSignal::TwoTone ? kToneAHz : kTuneToneHz) / m_audioRate;
+            const double stepB = dsp::kTwoPi * kToneBHz / m_audioRate;
+            // Due toni si dividono l'ampiezza, non la raddoppiano: la potenza
+            // di picco resta quella del tono singolo, ed è l'unico modo di
+            // confrontare le due prove fra loro.
+            const float amplitude = test == TestSignal::TwoTone
+                ? kTestAmplitude * 0.5f : kTestAmplitude;
+
+            for (std::size_t i = 0; i < audioFrames; ++i) {
+                m_tonePhaseA += stepA;
+                if (m_tonePhaseA > dsp::kTwoPi)
+                    m_tonePhaseA -= dsp::kTwoPi;
+                float sample = amplitude * static_cast<float>(std::sin(m_tonePhaseA));
+
+                if (test == TestSignal::TwoTone) {
+                    m_tonePhaseB += stepB;
+                    if (m_tonePhaseB > dsp::kTwoPi)
+                        m_tonePhaseB -= dsp::kTwoPi;
+                    sample += amplitude * static_cast<float>(std::sin(m_tonePhaseB));
+                }
+                m_audio[i] = sample;
+            }
+        }
+
+        // Niente processore di voce: comprimere un tono non ha senso, e un
+        // limitatore che intervenisse falserebbe proprio la misura per cui la
+        // prova esiste.
+        m_micPeak.store(0.0f, std::memory_order_relaxed);
+        m_compressionDb.store(0.0f, std::memory_order_relaxed);
+    } else if (cw) {
         // In CW il microfono non c'entra: la sorgente è il tasto, e l'audio
         // che entra nel modulatore è l'inviluppo.
         m_keyer.process(m_audio.data(), audioFrames);

@@ -55,6 +55,23 @@ public:
     };
     Q_ENUM(Domain)
 
+    /// Segnale di prova al posto del microfono.
+    ///
+    /// Un tono solo serve ad accordare: un'ampiezza costante da cui
+    /// l'accordatore e il rosmetro possano leggere qualcosa di fermo.
+    ///
+    /// Due toni servono a un'altra cosa, e sono la prova che nessuno fa mai:
+    /// due sinusoidi di pari ampiezza attraversano un finale lineare e ne
+    /// escono ancora due. Se ne escono cinque o sette — i prodotti di
+    /// intermodulazione del terzo e quinto ordine — quel finale sta occupando
+    /// la banda dei vicini, e chi trasmette è l'unico a non sentirlo.
+    enum class TestSignal {
+        None,
+        Tone,
+        TwoTone,
+    };
+    Q_ENUM(TestSignal)
+
     explicit TxEngine(QObject *parent = nullptr);
     ~TxEngine() override;
 
@@ -102,6 +119,10 @@ public slots:
     /// normale accodato per nome fallirebbe in silenzio.
     void setKeyDown(bool down);
 
+    /// Sostituisce il microfono con un segnale di prova. In CW il segnale è
+    /// la portante piena, perché è così che si accorda in CW.
+    void setTestSignal(int signal);
+
 signals:
     /// La trasmissione non può partire, e perché. La UI lo mostra invece di
     /// lasciare l'operatore davanti a un PTT premuto che non trasmette.
@@ -137,6 +158,9 @@ private:
     dsp::TxSettings m_settings;
     Domain m_domain = Domain::Baseband;
     double m_cwPhase = 0.0;
+    double m_tonePhaseA = 0.0;
+    double m_tonePhaseB = 0.0;
+    std::atomic<int> m_testSignal{static_cast<int>(TestSignal::None)};
     double m_deviceRate = 0.0;
     double m_audioRate = 48000.0;
     double m_offsetHz = 0.0;

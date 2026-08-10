@@ -67,6 +67,8 @@ private slots:
     void theCarrierLandsWhereItWasAsked();
     void theRateIsTheDeviceRate();
     void aRateThatIsNotAMultipleIsRefusedOutLoud();
+    void theTuneCarrierIsSteady();
+    void twoTonesStayTwo();
 };
 
 void TestTxEngine::nothingLeavesWithThePttUp()
@@ -170,6 +172,85 @@ void TestTxEngine::aRateThatIsNotAMultipleIsRefusedOutLoud()
     // deve sentirselo dire, non solo chi era presente quando è stata scelta
     // la velocità.
     QVERIFY(refused.count() >= 2);
+}
+
+void TestTxEngine::theTuneCarrierIsSteady()
+{
+    dsp::SpscRing<float> ring(1 << 21);
+    TxEngine engine;
+    engine.attach(&ring, kDeviceRate);
+    engine.start();
+
+    dsp::TxSettings settings;
+    settings.mode = DemodMode::Usb;
+    engine.setSettings(settings);
+    engine.setOffsetHz(0.0);
+    engine.setTestSignal(static_cast<int>(TxEngine::TestSignal::Tone));
+    engine.setTransmitting(true);
+
+    spin(250);
+
+    std::vector<float> out(ring.available());
+    out.resize(ring.read(out.data(), out.size()));
+    QVERIFY(out.size() > 40000);
+
+    const std::size_t skip = 8192;
+    // Il tono di accordo sta a 1500 Hz sopra la portante: in USB è lì che
+    // finisce un tono audio di 1500 Hz, ed è la riga che l'accordatore vede.
+    const double carrier = amplitudeAt(out, 1500.0, kDeviceRate, skip);
+    QVERIFY2(carrier > 0.1, qPrintable(QStringLiteral("portante a %1").arg(carrier)));
+
+    // E dev'essere **ferma**: un accordatore automatico che leggesse
+    // un'ampiezza che ondeggia non troverebbe mai il punto.
+    double minimum = 1e9;
+    double maximum = 0.0;
+    for (std::size_t i = skip; i + 1 < out.size() / 2; ++i) {
+        const double magnitude = std::hypot(out[i * 2], out[i * 2 + 1]);
+        minimum = std::min(minimum, magnitude);
+        maximum = std::max(maximum, magnitude);
+    }
+    QVERIFY2(maximum - minimum < maximum * 0.05,
+             qPrintable(QStringLiteral("ampiezza fra %1 e %2").arg(minimum).arg(maximum)));
+}
+
+void TestTxEngine::twoTonesStayTwo()
+{
+    dsp::SpscRing<float> ring(1 << 21);
+    TxEngine engine;
+    engine.attach(&ring, kDeviceRate);
+    engine.start();
+
+    dsp::TxSettings settings;
+    settings.mode = DemodMode::Usb;
+    engine.setSettings(settings);
+    engine.setOffsetHz(0.0);
+    engine.setTestSignal(static_cast<int>(TxEngine::TestSignal::TwoTone));
+    engine.setTransmitting(true);
+
+    spin(250);
+
+    std::vector<float> out(ring.available());
+    out.resize(ring.read(out.data(), out.size()));
+    QVERIFY(out.size() > 40000);
+
+    const std::size_t skip = 8192;
+    const double a = amplitudeAt(out, 700.0, kDeviceRate, skip);
+    const double b = amplitudeAt(out, 1900.0, kDeviceRate, skip);
+
+    QVERIFY2(a > 0.05 && b > 0.05,
+             qPrintable(QStringLiteral("toni a %1 e %2").arg(a).arg(b)));
+    QVERIFY2(std::abs(a - b) < a * 0.1,
+             qPrintable(QStringLiteral("toni sbilanciati: %1 contro %2").arg(a).arg(b)));
+
+    // I prodotti del terzo ordine cadono a 2·700−1900 = −500 e a
+    // 2·1900−700 = 3100. Se la nostra catena ne producesse, la prova non
+    // servirebbe a misurare il finale: misurerebbe noi.
+    for (double product : {-500.0, 3100.0}) {
+        const double level = amplitudeAt(out, product, kDeviceRate, skip);
+        QVERIFY2(level < a * 0.01,
+                 qPrintable(QStringLiteral("intermodulazione nostra a %1 Hz: %2")
+                                .arg(product).arg(level)));
+    }
 }
 
 QTEST_MAIN(TestTxEngine)
