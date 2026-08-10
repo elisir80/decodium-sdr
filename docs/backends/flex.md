@@ -10,12 +10,10 @@ Un FlexRadio 6000 parla due lingue insieme:
 | **canale di comando** | TCP 4992, righe di testo | frequenze, modi, fette, stato della radio |
 | **flusso dati** | UDP, pacchetti VITA-49 | IQ, audio, panadapter, waterfall |
 
-Il primo è implementato e provato. Il secondo no, e la ragione è la stessa per
-cui non ho scritto una sonda per il SunSDR: **non conosco con certezza i codici
-di classe VITA-49 di Flex né il formato esatto del carico DAX IQ**, e scriverli
-a memoria produrrebbe un decodificatore che gira, non fallisce, e consegna
-campioni sbagliati. Un difetto così non si vede: si vede una banda che sembra
-rumore, e si dà la colpa all'antenna.
+Il canale di comando è implementato. Del flusso dati c'è la **decodifica**, ed
+è scritta sui numeri che FlexRadio pubblica nel proprio SDK, non a memoria:
+manca la sequenza di comandi che apre un flusso IQ, che va confermata su una
+radio vera.
 
 ## Quello che c'è
 
@@ -57,16 +55,53 @@ sbagliare:
 
 Entrambe hanno il loro test.
 
-## Quello che manca, e come si completa
+## Il flusso dati: VITA-49
 
-1. I codici di classe VITA-49 usati da Flex, e il formato del carico per DAX IQ.
-2. La sequenza di comandi che apre un flusso IQ: registrazione della porta UDP
-   del client, creazione della fetta, creazione dello stream.
-3. La decodifica dei pacchetti — che, come per l'Hermes-Lite, è aritmetica di
-   offset e va scritta con i suoi test prima di vedere una radio.
+I pacchetti arrivano su UDP. L'intestazione è quella dello standard; quello che
+serve sapere di FlexRadio sono tre numeri, e stanno nell'SDK che il costruttore
+pubblica:
 
-I punti 1 e 2 vanno confermati sulla documentazione dell'API di SmartSDR o su
-una radio vera. Il punto 3 è lavoro meccanico una volta noti i primi due.
+| | |
+|---|---|
+| OUI | `0x001C2D` |
+| information class | `0x534C` |
+| packet class | un **campo di bit** |
+
+Il terzo è la parte che conta, ed è quella che evita di indovinare. **Il codice
+di classe non è un identificativo opaco da confrontare con una tabella: è la
+descrizione del carico.** Dice quanti bit per campione, quanti canali, e se sono
+in virgola mobile IEEE-754:
+
+```
+bit 5..6   bit per campione   (3 = 32)
+bit 7..8   canali             (3 = due, cioè I e Q)
+bit 9      IEEE-754
+```
+
+Un decodificatore che lo legge non ha bisogno di sapere in anticipo che cosa gli
+arriverà: se il pacchetto dichiara un formato che non sappiamo leggere, lo salta
+e lo dice. È la differenza fra indovinare — e quando si sbaglia si consegnano
+campioni plausibili, cioè rumore che sembra una banda — e verificare.
+
+Due dettagli che si sbagliano in silenzio, ed entrambi hanno il loro test:
+
+- **L'intestazione non è di misura fissa.** I marcatori temporali ci sono solo
+  se i bit TSI e TSF lo dicono: sette parole con, cinque senza. Darla per fissa
+  funziona finché una radio non ne manda uno senza, e allora tutti i campioni
+  scivolano di due parole restando plausibili.
+- **I float viaggiano in ordine di rete.** Leggerli com'è in memoria
+  funzionerebbe solo su una macchina big endian, e le nostre non lo sono: quel
+  che ne uscirebbe sono numeri enormi o denormali, cioè silenzio o rumore.
+
+## Quello che manca
+
+La sequenza di comandi che apre il flusso: registrazione della porta UDP del
+client (`client udpport <porta>`) e creazione dello stream
+(`stream create daxiq=<canale> port=<porta>`). La forma esatta e il legame con
+la fetta e il panadapter vanno confermati su una radio vera — le fonti pubbliche
+ne danno due varianti, e provarle è questione di minuti con un Flex davanti,
+mentre indovinare quale sia significherebbe un backend che si collega e non
+riceve niente.
 
 Fino ad allora `DSDR_BACKEND_FLEX` resta spento e nell'elenco delle sorgenti non
 compare niente: un backend che apre e non consegna campioni sarebbe la peggiore

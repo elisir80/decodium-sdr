@@ -8,6 +8,11 @@
 // funziona finché il firmware non ne aggiunge una in mezzo.
 
 #include "hal/backends/flex/FlexProtocol.h"
+#include "hal/backends/flex/FlexVita.h"
+
+#include <QtEndian>
+
+#include <cstring>
 
 #include <QTest>
 
@@ -26,6 +31,13 @@ private slots:
     void aCommandCarriesItsSequence();
     void whatIsNotALineIsNotMistakenForOne();
     void theRadioIsDescribedByWhatTheOperatorWrote();
+
+    // ── VITA-49 ─────────────────────────────────────────────────────────
+    void theHeaderTellsWhereTheDataBegins();
+    void aPacketFromSomeoneElseIsNotOurs();
+    void theClassCodeDeclaresTheFormat();
+    void samplesComeOutInNetworkOrder();
+    void aFormatWeCannotReadIsSkipped();
 };
 
 void TestFlexProtocol::theRadioIntroducesItself()
@@ -128,6 +140,115 @@ void TestFlexProtocol::theRadioIsDescribedByWhatTheOperatorWrote()
     QCOMPARE(describeRadio(fields), QStringLiteral("FLEX-6400 · IU8LMC"));
 
     QVERIFY(describeRadio(QHash<QString, QString>()).isEmpty());
+}
+
+namespace {
+
+/// Un pacchetto VITA-49 come lo manda un FlexRadio: intestazione, flusso,
+/// classe, marcatori temporali, e coppie di float in ordine di rete.
+QByteArray vitaPacket(quint16 packetClass, const QVector<float> &samples,
+                      bool timestamps = true, quint32 oui = 0x001C2D)
+{
+    const int words = 4 + (timestamps ? 3 : 0) + samples.size();
+
+    QByteArray packet(words * 4, '\0');
+    auto *p = reinterpret_cast<uchar *>(packet.data());
+
+    quint32 header = 0x10000000        // dati con identificativo di flusso
+                   | 0x08000000        // classe presente
+                   | quint32(words);   // misura totale, in parole
+    if (timestamps)
+        header |= 0x00400000 | 0x00100000;   // TSI UTC, TSF conteggio campioni
+
+    qToBigEndian<quint32>(header, p);
+    qToBigEndian<quint32>(0x40000001u, p + 4);            // identificativo di flusso
+    qToBigEndian<quint32>(oui, p + 8);                    // OUI
+    qToBigEndian<quint32>((0x534Cu << 16) | packetClass, p + 12);
+
+    const int payload = (4 + (timestamps ? 3 : 0)) * 4;
+    for (int i = 0; i < samples.size(); ++i) {
+        quint32 bits = 0;
+        const float value = samples.at(i);
+        std::memcpy(&bits, &value, sizeof(bits));
+        qToBigEndian<quint32>(bits, p + payload + i * 4);
+    }
+    return packet;
+}
+
+/// Il codice di classe di un flusso IQ: 32 bit per campione, due canali,
+/// virgola mobile IEEE-754.
+constexpr quint16 kIqClass = (0x3 << 5) | (0x3 << 7) | (0x1 << 9);
+
+} // namespace
+
+void TestFlexProtocol::theHeaderTellsWhereTheDataBegins()
+{
+    // Con i marcatori temporali l'intestazione è di sette parole, senza di
+    // cinque. Darla per fissa funziona finché una radio non ne manda uno
+    // senza — e allora tutti i campioni scivolano di due parole, restando
+    // plausibili.
+    const auto withTs = parseVita(vitaPacket(kIqClass, {1.0f, 0.0f}, true));
+    QVERIFY(withTs.valid);
+    QCOMPARE(withTs.payloadOffset, 28);
+    QCOMPARE(withTs.payloadBytes, 8);
+
+    const auto withoutTs = parseVita(vitaPacket(kIqClass, {1.0f, 0.0f}, false));
+    QVERIFY(withoutTs.valid);
+    QCOMPARE(withoutTs.payloadOffset, 16);
+    QCOMPARE(withoutTs.payloadBytes, 8);
+}
+
+void TestFlexProtocol::aPacketFromSomeoneElseIsNotOurs()
+{
+    // Sulla stessa porta può arrivare di tutto. L'OUI del costruttore è il
+    // filtro: senza, un pacchetto VITA di un altro apparato diventerebbe
+    // rumore spacciato per banda.
+    QVERIFY(!parseVita(vitaPacket(kIqClass, {1.0f, 0.0f}, true, 0x00ABCDEF)).valid);
+    QVERIFY(!parseVita(QByteArray()).valid);
+    QVERIFY(!parseVita(QByteArray(12, '\0')).valid);
+}
+
+void TestFlexProtocol::theClassCodeDeclaresTheFormat()
+{
+    // Non è un identificativo opaco da confrontare con una tabella: descrive
+    // il carico. È quello che permette di verificare invece di indovinare.
+    const auto iq = parseVita(vitaPacket(kIqClass, {1.0f, 0.0f}));
+    QVERIFY(iq.valid);
+    QVERIFY(iq.isFloatPair());
+
+    // Interi invece di virgola mobile: stesso numero di bit, formato diverso.
+    const quint16 fixedPoint = (0x3 << 5) | (0x3 << 7);
+    QVERIFY(!parseVita(vitaPacket(fixedPoint, {1.0f, 0.0f})).isFloatPair());
+
+    // Un canale solo: è audio, non IQ.
+    const quint16 mono = (0x3 << 5) | (0x1 << 9);
+    QVERIFY(!parseVita(vitaPacket(mono, {1.0f, 0.0f})).isFloatPair());
+}
+
+void TestFlexProtocol::samplesComeOutInNetworkOrder()
+{
+    const QVector<float> samples = {1.0f, -1.0f, 0.25f, -0.5f};
+    const QByteArray packet = vitaPacket(kIqClass, samples);
+    const auto parsed = parseVita(packet);
+
+    std::vector<float> out(samples.size(), 0.0f);
+    QCOMPARE(decodeIq(packet, parsed, out.data()), std::size_t(2));
+
+    // Letti com'è in memoria, questi valori uscirebbero come numeri enormi o
+    // denormali: l'ordine di rete non è un dettaglio.
+    for (int i = 0; i < samples.size(); ++i)
+        QVERIFY(std::abs(out[i] - samples.at(i)) < 1e-6f);
+}
+
+void TestFlexProtocol::aFormatWeCannotReadIsSkipped()
+{
+    // Un formato che non sappiamo leggere si salta. Interpretarlo lo stesso
+    // darebbe campioni plausibili e sbagliati — che è il modo peggiore di
+    // essere rotti, perché sembra funzionare.
+    const quint16 fixedPoint = (0x3 << 5) | (0x3 << 7);
+    const QByteArray packet = vitaPacket(fixedPoint, {1.0f, 0.0f});
+    std::vector<float> out(2, 0.0f);
+    QCOMPARE(decodeIq(packet, parseVita(packet), out.data()), std::size_t(0));
 }
 
 QTEST_MAIN(TestFlexProtocol)

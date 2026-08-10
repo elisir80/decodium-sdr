@@ -79,6 +79,8 @@ if(DSDR_BACKEND_FLEX_PROBE)
         backends/flex/FlexProtocol.cpp
         backends/flex/FlexClient.h
         backends/flex/FlexClient.cpp
+        backends/flex/FlexVita.h
+        backends/flex/FlexVita.cpp
     )
     list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_FLEX_PROBE)
     set(DSDR_HAL_NEEDS_NETWORK ON)
