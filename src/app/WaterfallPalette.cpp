@@ -49,8 +49,6 @@ constexpr float kFloorBrightness = 0.25f;
 /// larghi: `tst_waterfall` verifica che due livelli a un quarto di scala di
 /// distanza restino distinguibili, ed è quel test a dire fin dove si può
 /// spingere questa scelta.
-constexpr float kTrafficPivot = 0.40f;
-
 /// Le palette, nell'ordine in cui la UI le elenca.
 ///
 /// Tutte crescono in intensità percepita, ma non tutte in pura luminanza: nel
@@ -59,10 +57,12 @@ constexpr float kTrafficPivot = 0.40f;
 /// vale la pena rispettare — sui ricevitori il rosso significa "forte" da
 /// sempre.
 ///
-/// In tutte, il passaggio dal freddo al caldo è centrato su `kTrafficPivot`:
-/// gli stop che lo delimitano gli stanno attorno, il tratto freddo sotto è
+/// In tutte, il passaggio dal freddo al caldo è centrato attorno a 0,40: gli
+/// stop che lo delimitano gli stanno intorno, il tratto freddo sotto è
 /// compresso e il tratto caldo sopra è tirato per non perdere risoluzione dove
-/// stanno i segnali forti.
+/// stanno i segnali forti. Il contratto verificato è `kWarmBreakLimit`, che
+/// sta nell'header perché è quello che `tst_waterfall` controlla: 0,40 è dove
+/// si è scelto di stare, 0,60 è dove non si può andare oltre.
 const std::vector<std::vector<ColorStop>> &palettes()
 {
     static const std::vector<std::vector<ColorStop>> table = {

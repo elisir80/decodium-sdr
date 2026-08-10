@@ -100,6 +100,13 @@ if(DSDR_BACKEND_HERMES)
     set(DSDR_HAL_NEEDS_NETWORK ON)
 endif()
 
+# Quello che si e' compilato davvero, non quello che si e' chiesto. Le due
+# cose divergono quando un modulo Qt manca, e chi sta fuori di qui — i test —
+# deve poter leggere la prima. `INTERNAL` perche' non e' una scelta di chi
+# compila: si ricalcola a ogni configurazione, e installando il modulo mancante
+# torna da sé al valore giusto.
+set(DSDR_BUILT_AUDIORIG OFF CACHE INTERNAL "audiorig compilato davvero")
+
 if(DSDR_BACKEND_AUDIORIG)
     # Serve la seriale (piano di controllo) e il multimedia (piano dati). Se
     # Qt non li porta, il backend si spegne da sé con una spiegazione invece di
@@ -120,19 +127,14 @@ if(DSDR_BACKEND_AUDIORIG)
         )
         list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_AUDIORIG)
         set(DSDR_HAL_NEEDS_SERIAL ON)
+        set(DSDR_BUILT_AUDIORIG ON CACHE INTERNAL "audiorig compilato davvero")
     else()
         message(STATUS "audiorig disattivato: mancano Qt6::SerialPort o Qt6::Multimedia
 "
                        "  MSYS2 : pacman -S mingw-w64-x86_64-qt6-serialport
 "
                        "  Debian: apt install qt6-serialport-dev")
-        # Spento anche fuori di qui. Senza `PARENT_SCOPE` la variabile resta
-        # spenta in questa cartella e accesa dappertutto altrove: i test si
-        # compilano credendo che il backend esista, e non lo trovano al
-        # collegamento — un errore che parla di simboli mancanti invece che
-        # del modulo Qt che manca davvero.
         set(DSDR_BACKEND_AUDIORIG OFF)
-        set(DSDR_BACKEND_AUDIORIG OFF PARENT_SCOPE)
     endif()
 endif()
 

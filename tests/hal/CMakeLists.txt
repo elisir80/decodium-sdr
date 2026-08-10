@@ -42,7 +42,12 @@ if(DSDR_BACKEND_NETTCP)
         LIBRARIES dsdr::hal Qt6::Network)
 endif()
 
-if(DSDR_BACKEND_AUDIORIG)
+# `DSDR_BUILT_AUDIORIG`, non `DSDR_BACKEND_AUDIORIG`: la seconda dice cosa si
+# e' chiesto, la prima cosa si e' ottenuto. Dove manca Qt6::SerialPort le due
+# divergono, e compilare questi test sulla richiesta invece che sul risultato
+# fa fallire il collegamento parlando di simboli mancanti invece che del
+# modulo Qt che manca davvero.
+if(DSDR_BUILT_AUDIORIG)
     # La tabella dei modi newcat è l'unica parte del backend verificabile
     # senza radio, ed è quella in cui un errore manda in aria il modo
     # sbagliato invece di far fallire qualcosa.
