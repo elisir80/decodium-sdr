@@ -32,6 +32,7 @@ class QThread;
 class QTimer;
 
 namespace dsdr::audio {
+class AudioOut;
 class MicSource;
 }
 
@@ -113,7 +114,11 @@ private:
     PanId m_nextPanId = 1;
 
     std::unique_ptr<audio::MicSource> m_capture;
-    std::unique_ptr<SampleRing> m_txRing;
+
+    /// L'uscita verso il codec della radio. Il ring TX del seam **è** il suo:
+    /// tenerne due e copiare fra l'uno e l'altro aggiungerebbe latenza al
+    /// percorso più sensibile che ci sia, quello fra il PTT e l'antenna.
+    std::unique_ptr<audio::AudioOut> m_playback;
     QThread *m_catThread = nullptr;
     QPointer<CatController> m_cat;
     QTimer *m_publishTimer = nullptr;

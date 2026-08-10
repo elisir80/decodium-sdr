@@ -18,9 +18,16 @@ Attiva con `-DDSDR_BACKEND_AUDIORIG=ON` (predefinito, se Qt porta con sé
 ## I due piani
 
 ```
-piano dati        device audio d'ingresso → ring audio del seam
+piano dati RX      ingresso audio della radio → ring audio del seam
+piano dati TX      ring TX del seam → uscita audio verso la radio
 piano di controllo ICatDriver su thread proprio → frequenza, modo, PTT, S-meter
 ```
+
+Il ring TX del seam **è** quello dell'uscita audio, non una copia: chi
+trasmette scrive direttamente dove il driver legge, e fra il PTT e l'antenna
+non si aggiunge un passaggio. L'uscita si apre insieme alla ricezione e resta
+aperta — aprirla al PTT costerebbe i primi decimi di secondo di ogni chiamata,
+che sono esattamente quelli in cui si dice il nominativo.
 
 Il polling CAT gira su un thread suo e non è mai bloccante verso il seam. Non è
 un vezzo: ogni lettura sulla seriale costa qualche millisecondo di attesa, e a
@@ -153,7 +160,7 @@ Usabili **solo** dal pannello `AudiorigPanel` (CONSTITUTION §4.1).
 | Comando | Argomenti | Risposta |
 |---|---|---|
 | `audiorig.inputs` | — | elenco degli ingressi audio, con `likelyRadio` per quelli che sembrano un codec |
-| `audiorig.status` | — | radio, porta CAT, velocità, ingresso audio, S-meter grezzo, overrun |
+| `audiorig.status` | — | radio, porta CAT, velocità, ingresso e uscita audio, S-meter grezzo, scarti |
 | `audiorig.setAudioInput` | `id` | vero se l'ingresso è stato aperto |
 
 ## Come l'audio ridiventa banda base
@@ -214,6 +221,18 @@ funzionano le Yaesu newcat.
 **Il layer newcat è scritto qui**, non ripreso da `yaesu-tci-bridge`. La
 proposta di estrarre una `libnewcat` condivisa fra i due progetti (SPEC-004
 §8.1) resta aperta: quando succederà, questo file sarà il primo a cambiare.
+
+**Il livello di trasmissione parte al 25 %, non al 90.** Il fondo scala è il
+livello giusto per un SDR — è lì che sta la dinamica — ma l'ingresso DATA di un
+ricetrasmettitore ne vuole un decimo: spinto al massimo fa lavorare l'ALC in
+permanenza, e quello che esce in aria è largo il doppio di quanto dovrebbe. Il
+giudice è l'ALC della radio, non il nostro cursore.
+
+**Il microfono di trasmissione è quello predefinito del sistema**, non un
+dispositivo scelto. Su una macchina dove l'ingresso predefinito è il codec
+della radio stessa, la trasmissione rimanderebbe in aria ciò che si sta
+ricevendo: il pannello TX mostra il nome del microfono aperto proprio per
+questo. Una scelta esplicita è lavoro che manca.
 
 **Una porta CAT, un programma solo.** Se un altro software tiene aperta la porta
 — DECODIUM 4, WSJT-X, un rigctld — questo backend non la trova, e viceversa: chi

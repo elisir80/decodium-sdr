@@ -449,7 +449,11 @@ private:
     int m_txChannel = 0;
     double m_micGainDb = 6.0;
     double m_txCompressionDb = 6.0;
-    double m_txDrive = 0.9;
+    /// Livello d'uscita di partenza per un SDR, che lavora a fondo scala.
+    /// Verso una radio tradizionale si parte molto più bassi: vedi
+    /// `connectToDevice`.
+    static constexpr double kDefaultTxDrive = 0.9;
+    double m_txDrive = kDefaultTxDrive;
     QTimer m_scanTimer;
     QTimer m_rdsAfProbeTimer;
     std::vector<qint64> m_rdsAfCandidates;

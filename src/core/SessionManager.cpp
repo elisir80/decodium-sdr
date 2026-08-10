@@ -622,6 +622,15 @@ void SessionManager::connectToDevice(int deviceRow)
         const double rate = deviceModulates ? kInternalAudioRate : m_sampleRate;
         const auto domain = deviceModulates ? TxEngine::Domain::Audio
                                             : TxEngine::Domain::Baseband;
+        // Verso una radio si parte bassi. Il fondo scala di un convertitore è
+        // il livello giusto per un SDR — è lì che sta la dinamica — ma
+        // l'ingresso DATA di un ricetrasmettitore vuole un decimo di quello:
+        // spinto al massimo fa lavorare l'ALC in permanenza, e quello che esce
+        // in aria è largo il doppio di quanto dovrebbe. Il valore resta
+        // regolabile: è un punto di partenza, non un limite.
+        if (deviceModulates && qFuzzyCompare(m_txDrive, kDefaultTxDrive))
+            setTxDrive(0.25);
+
         QMetaObject::invokeMethod(m_tx, [this, txRing, rate, domain] {
             m_tx->attach(txRing, rate, domain);
         });
@@ -954,6 +963,15 @@ void SessionManager::setSampleRate(double rate)
         const double rate = deviceModulates ? kInternalAudioRate : m_sampleRate;
         const auto domain = deviceModulates ? TxEngine::Domain::Audio
                                             : TxEngine::Domain::Baseband;
+        // Verso una radio si parte bassi. Il fondo scala di un convertitore è
+        // il livello giusto per un SDR — è lì che sta la dinamica — ma
+        // l'ingresso DATA di un ricetrasmettitore vuole un decimo di quello:
+        // spinto al massimo fa lavorare l'ALC in permanenza, e quello che esce
+        // in aria è largo il doppio di quanto dovrebbe. Il valore resta
+        // regolabile: è un punto di partenza, non un limite.
+        if (deviceModulates && qFuzzyCompare(m_txDrive, kDefaultTxDrive))
+            setTxDrive(0.25);
+
         QMetaObject::invokeMethod(m_tx, [this, txRing, rate, domain] {
             m_tx->attach(txRing, rate, domain);
         });

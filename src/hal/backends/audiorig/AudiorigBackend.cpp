@@ -2,6 +2,7 @@
 #include "hal/backends/audiorig/AudiorigBackend.h"
 #include "hal/backends/audiorig/CatController.h"
 #include "hal/backends/audiorig/NewcatDriver.h"
+#include "audio/AudioOut.h"
 #include "audio/MicSource.h"
 #include "hal/HalLog.h"
 
@@ -44,23 +45,32 @@ bool looksLikeRadioCodec(const QString &description)
     return false;
 }
 
-/// L'ingresso audio da usare con questa radio: prima uno che sembri un codec,
+/// Il dispositivo da usare con questa radio: prima uno che sembri un codec,
 /// altrimenti nessuno — meglio chiedere che ascoltare la stanza credendo di
-/// ascoltare la banda.
-QAudioDevice pickInput(const QString &preferredId)
+/// ascoltare la banda, o parlare negli altoparlanti credendo di trasmettere.
+QAudioDevice pick(const QList<QAudioDevice> &devices, const QString &preferredId)
 {
-    const QList<QAudioDevice> inputs = dsdr::audio::MicSource::inputs();
     if (!preferredId.isEmpty()) {
-        for (const QAudioDevice &device : inputs) {
+        for (const QAudioDevice &device : devices) {
             if (QString::fromUtf8(device.id()) == preferredId)
                 return device;
         }
     }
-    for (const QAudioDevice &device : inputs) {
+    for (const QAudioDevice &device : devices) {
         if (looksLikeRadioCodec(device.description()))
             return device;
     }
     return QAudioDevice();
+}
+
+QAudioDevice pickInput(const QString &preferredId)
+{
+    return pick(dsdr::audio::MicSource::inputs(), preferredId);
+}
+
+QAudioDevice pickOutput(const QString &preferredId)
+{
+    return pick(dsdr::audio::AudioOut::outputs(), preferredId);
 }
 
 } // namespace
@@ -68,7 +78,7 @@ QAudioDevice pickInput(const QString &preferredId)
 AudiorigBackend::AudiorigBackend(QObject *parent)
     : IRadioBackend(parent)
     , m_capture(std::make_unique<dsdr::audio::MicSource>())
-    , m_txRing(std::make_unique<SampleRing>(static_cast<std::size_t>(kAudioRate) * 2))
+    , m_playback(std::make_unique<dsdr::audio::AudioOut>())
 {
 }
 
@@ -251,6 +261,23 @@ void AudiorigBackend::open(const DeviceDescriptor &device)
     }
     m_sampleRate = m_capture->sampleRate();
 
+    // L'uscita verso il codec della radio: è il percorso di trasmissione, e
+    // senza di lei il PTT manda la radio in portante e non esce una parola —
+    // il motore TX riempie diligentemente un ring che nessuno svuota.
+    //
+    // Si apre insieme alla ricezione e resta aperta: aprirla al PTT
+    // costerebbe i primi decimi di secondo di ogni chiamata, che sono
+    // esattamente quelli in cui si dice il nominativo.
+    const QAudioDevice output =
+        pickOutput(device.extra.value(QStringLiteral("audioOutput")).toString());
+    if (output.isNull()) {
+        reportError(BackendError::Code::NotFound,
+                    tr("Nessuna uscita audio riconoscibile come codec di una radio: "
+                       "la ricezione funziona, la trasmissione no."));
+    } else if (!m_playback->start(output)) {
+        reportError(BackendError::Code::NotFound, m_playback->errorString());
+    }
+
     // ── Piano di controllo ──────────────────────────────────────────────
     auto controller = new CatController(std::make_unique<NewcatDriver>());
     m_catThread = new QThread(this);
@@ -310,7 +337,7 @@ void AudiorigBackend::close()
     }
 
     m_capture->stop();
-    m_txRing->clear();
+    m_playback->stop();
     m_channels.clear();
     m_panadapters.clear();
 
@@ -440,6 +467,16 @@ void AudiorigBackend::setPtt(bool transmit)
     if (m_ptt == transmit)
         return;
     m_ptt = transmit;
+
+    if (!transmit) {
+        // Si svuota **rilasciando** il PTT, non premendolo: l'uscita audio
+        // resta aperta e svuota il ring da sé, ma se non si fosse aperta il
+        // ring resterebbe pieno e la chiamata dopo comincerebbe con la coda
+        // di questa. Farlo premendo il PTT mangerebbe invece il primo blocco,
+        // che il motore TX ha già scritto.
+        m_playback->ring()->clear();
+    }
+
     if (m_cat) {
         QMetaObject::invokeMethod(m_cat, "setPtt", Qt::QueuedConnection,
                                   Q_ARG(bool, transmit));
@@ -456,7 +493,9 @@ void AudiorigBackend::setTxFrequency(qint64 hz)
 
 SampleRing *AudiorigBackend::txStream()
 {
-    return m_txRing.get();
+    // Il ring dell'uscita audio, non una copia: chi trasmette scrive
+    // direttamente dove il driver legge.
+    return m_playback->ring();
 }
 
 SampleRing *AudiorigBackend::iqStream(ChannelId channel) const
@@ -528,6 +567,10 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
                       m_device.extra.value(QStringLiteral("catBaud")));
         status.insert(QStringLiteral("audioInput"), m_capture->deviceName());
         status.insert(QStringLiteral("audioActive"), m_capture->isActive());
+        status.insert(QStringLiteral("audioOutput"), m_playback->deviceName());
+        status.insert(QStringLiteral("txAudioActive"), m_playback->isActive());
+        status.insert(QStringLiteral("txUnderruns"),
+                      QVariant::fromValue(m_playback->underrunCount()));
         status.insert(QStringLiteral("sMeterRaw"), m_sMeterRaw);
         status.insert(QStringLiteral("micOverruns"),
                       QVariant::fromValue(m_capture->overrunCount()));

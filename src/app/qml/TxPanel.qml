@@ -201,4 +201,16 @@ PanelFrame {
         color: Theme.textDisabled
         elide: Text.ElideRight
     }
+
+    // Quando modula la radio, il livello d'uscita non è potenza: è quanto
+    // audio le si manda nell'ingresso dati. Il giudice è il suo ALC, non
+    // questo cursore, e conviene dirlo dove il cursore sta.
+    Text {
+        Layout.fillWidth: true
+        visible: !Session.capabilities.clientModulation
+        text: qsTr("Modula la radio: alza OUT finché l'ALC comincia a muoversi, poi torna indietro.")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textDisabled
+        wrapMode: Text.WordWrap
+    }
 }
