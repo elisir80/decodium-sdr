@@ -235,10 +235,16 @@ void TestNeuralStage::aStageThatCannotKeepUpSaysSo()
 
     // Si riempie il ring d'ingresso più in fretta di quanto il motore lento
     // possa svuotarlo, e si insiste oltre il mezzo secondo di soglia.
+    //
+    // Il tempo concesso è molte volte quella soglia, e non per prudenza: ogni
+    // giro costa otto fotogrammi da quindici millisecondi, quindi la soglia si
+    // può superare solo dopo qualche giro, e su una macchina carica i giri
+    // sono più lenti e più radi. Un margine stretto qui non misura il degrado
+    // — misura quanto è occupata la macchina che fa girare i test.
     const std::vector<float> input = ramp(9600);
     QElapsedTimer clock;
     clock.start();
-    while (clock.elapsed() < 900 && degraded.isEmpty()) {
+    while (clock.elapsed() < 4000 && degraded.isEmpty()) {
         stage.inputRing()->write(input.data(), input.size());
         stage.pump();
     }

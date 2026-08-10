@@ -182,6 +182,13 @@ void TestIqRecorder::recordsAudioMixWithAudioSidecar()
     SessionManager session;
     QVERIFY2(connectDemo(session), "connessione al backend demo fallita");
 
+    // Registrare l'audio vuol dire registrare quello che esce, e se non esce
+    // da nessuna parte non c'è niente da registrare: su una macchina senza
+    // scheda audio — le macchine della CI — questa prova non ha oggetto. Si
+    // salta dicendolo, che è diverso dal passare.
+    if (!session.audio() || !session.audio()->isActive())
+        QSKIP("nessuna uscita audio su questa macchina");
+
     const QString path = dir.filePath(QStringLiteral("audio.wav"));
     QVERIFY2(session.startAudioRecording(path), "avvio registrazione audio fallito");
     QVERIFY(session.audioRecorder()->isRecording());
