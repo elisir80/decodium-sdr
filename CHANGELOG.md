@@ -4,6 +4,21 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.3] — 2026-08-11
+
+Due strumenti nella colonna e un pacchetto Windows che si regge in piedi.
+
+Il pannello degli strumenti mostra il segnale in due letture — l'ago, che ha
+inerzia, e le barre, che tengono il picco — o la potenza, e si sceglie con tre
+tasti. Sotto, sempre gli stessi numeri: punti S, decibel, rapporto
+segnale/rumore e fondo di rumore, che il DSP misurava già per ogni canale
+senza che nessuno lo mostrasse.
+
+Su Windows, il programma installato chiedeva librerie che non aveva: il
+pacchetto raccoglieva le dipendenze del solo eseguibile, e quelle dei plugin
+restavano fuori. Ora entrano, il pacchetto è più piccolo di ventitré megabyte,
+e prima di ogni release si verifica che ogni DLL richiesta ci sia davvero.
+
 ### Aggiunto
 
 - **DECØMETER-S**, lo strumento del segnale, in due letture che si scelgono:
