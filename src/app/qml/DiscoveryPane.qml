@@ -139,12 +139,12 @@ Rectangle {
                             // riceve campioni, ma distingue un problema di
                             // rete da un problema di programma.
                             DsdrButton {
-                                visible: modelData.family === "FlexRadio"
+                                visible: modelData.describable === true
                                 implicitWidth: 96
                                 implicitHeight: 24
                                 fontSize: Theme.fontSmall
                                 text: qsTr("Interroga")
-                                onClicked: Session.probeFlex(modelData.address)
+                                onClicked: Session.probeNetworkRadio(modelData.address)
                             }
                         }
                     }

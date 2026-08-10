@@ -56,9 +56,31 @@ public:
     void stop();
     bool isScanning() const;
 
+    /// Chiede a una radio già trovata di raccontarsi meglio, aprendo il suo
+    /// canale di controllo per qualche secondo.
+    ///
+    /// Sta qui e non nel core per la stessa ragione della ricerca: descrivere
+    /// una radio è conoscenza di protocollo, e sopra la HAL nessuno sa che
+    /// esistano dei protocolli (CONSTITUTION §4). Il core chiede un indirizzo
+    /// e riceve una frase; quale famiglia sia, e se questa compilazione sappia
+    /// parlarle, è affare di qui.
+    ///
+    /// Se non si sa parlare con quell'indirizzo, arriva `describeFailed` con
+    /// il motivo. Non è un errore: è la risposta.
+    void describe(const QString &address);
+
+    /// Se questa compilazione sa far raccontare questa radio. Serve alla UI
+    /// per non offrire un pulsante che non farebbe niente: una promessa non
+    /// mantenuta vale meno di un pulsante assente (CONSTITUTION §7).
+    static bool canDescribe(const ScoutedRadio &radio);
+
 signals:
     void radioFound(const dsdr::hal::ScoutedRadio &radio);
     void finished();
+
+    /// La radio si è raccontata: `detail` è pronto da mostrare.
+    void radioDescribed(const QString &address, const QString &detail);
+    void describeFailed(const QString &address, const QString &reason);
 
 public:
     // ── Interpretazione delle risposte ──────────────────────────────────

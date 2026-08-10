@@ -245,11 +245,11 @@ public:
     /// non sappiamo aprire.
     Q_INVOKABLE void scoutNetwork(int seconds = 6);
 
-    /// Prova a parlare con un FlexRadio trovato in rete: apre il canale di
+    /// Prova a parlare con una radio trovata in rete: apre il canale di
     /// comando, ascolta quello che la radio dice di sé e lo rimette
     /// nell'elenco. Dal «c'è» al «ci parlo», che è la differenza fra un
     /// problema di rete e un problema di programma.
-    Q_INVOKABLE void probeFlex(const QString &address);
+    Q_INVOKABLE void probeNetworkRadio(const QString &address);
     QVariantList networkRadios() const { return m_networkRadios; }
     bool scoutingNetwork() const;
     Q_INVOKABLE void connectToDevice(int deviceRow);

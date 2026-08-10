@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hal/RadioScout.h"
+
+#ifdef DSDR_BACKEND_FLEX_PROBE
+#    include "hal/backends/flex/FlexClient.h"
+#endif
 #include "hal/HalLog.h"
 
 #include <QNetworkInterface>
@@ -291,6 +295,47 @@ void RadioScout::report(const ScoutedRadio &radio)
     qCInfo(dsdrHal) << "scout:" << radio.family << radio.model
                     << "su" << radio.address << radio.detail;
     emit radioFound(radio);
+}
+
+bool RadioScout::canDescribe(const ScoutedRadio &radio)
+{
+#ifdef DSDR_BACKEND_FLEX_PROBE
+    return radio.family == QLatin1String("FlexRadio");
+#else
+    Q_UNUSED(radio)
+    return false;
+#endif
+}
+
+void RadioScout::describe(const QString &address)
+{
+#ifdef DSDR_BACKEND_FLEX_PROBE
+    // Il client vive quanto la prova: qualche secondo, il tempo che la radio
+    // si presenti e mandi i suoi stati. Tenerlo aperto occuperebbe uno dei
+    // posti che il Flex concede ai programmi collegati.
+    auto *client = new flex::FlexClient(this);
+
+    connect(client, &flex::FlexClient::described, this,
+            [this, address, client](const QString &summary) {
+                emit radioDescribed(address,
+                                    QStringLiteral("%1 · SmartSDR %2")
+                                        .arg(summary, client->version()));
+            });
+
+    connect(client, &flex::FlexClient::failed, this,
+            [this, address, client](const QString &reason) {
+                emit describeFailed(address, reason);
+                client->deleteLater();
+            });
+
+    client->connectTo(address);
+
+    // Cinque secondi bastano: la radio si presenta subito, e restare
+    // collegati senza saper ricevere non serve a niente.
+    QTimer::singleShot(5000, client, &QObject::deleteLater);
+#else
+    emit describeFailed(address, tr("questa compilazione non ha il collegamento SmartSDR"));
+#endif
 }
 
 } // namespace dsdr::hal
