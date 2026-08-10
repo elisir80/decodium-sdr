@@ -78,3 +78,35 @@ Prima di creare il DMG, verificare la presenza di
 - **Icona dell'applicazione**: oggi è un segnaposto generato al volo. Arriverà
   con l'identità visiva di DECODIUM.
 - **Flathub**: previsto in Fase 5.
+
+## Il programma di installazione
+
+Lo fa **CPack**, che sta dentro CMake e non aggiunge dipendenze a chi compila:
+
+```sh
+cmake --build build
+cd build && cpack -G NSIS      # Windows: l'installatore
+cd build && cpack -G ZIP       # ovunque: l'archivio portable
+```
+
+Su Windows serve `makensis`:
+
+```sh
+pacman -S mingw-w64-x86_64-nsis
+```
+
+Senza, `cpack` fa comunque lo ZIP e dice che il generatore manca. È la stessa
+regola delle opzioni di build: quella che esiste deve funzionare, e quella che
+non può funzionare non deve comparire.
+
+L'installatore mette un collegamento nel menu Start, offre quello sul desktop,
+usa l'icona dell'eseguibile — la stessa, o il programma sembrerebbe un altro a
+metà dell'installazione — e disinstallando toglie quello che ha messo e
+nient'altro: preferenze e registrazioni sono dell'operatore.
+
+**All'installazione mostra un avviso che vale la radio di qualcuno**: chi
+collega un ricetrasmettitore via CAT deve spegnere «CAT RTS» nei menù. Noi il
+PTT lo comandiamo con un comando CAT e quella linea non ci serve; lasciandola
+attiva, qualunque programma che apra la porta seriale può mandare la radio in
+trasmissione per un istante — è il transitorio che Windows produce dentro
+l'apertura della porta, prima che un programma possa farci niente.

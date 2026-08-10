@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(decodium-sdr
-    VERSION 1.0.0
+    VERSION 1.1.1
     DESCRIPTION "DECODIUM SDR — client SDR universale dell'ecosistema DECODIUM"
     HOMEPAGE_URL "https://decodium.it"
     # Il C serve a RNNoise, che è l'unico codice C del progetto: senza,
@@ -48,5 +48,10 @@ add_subdirectory(src)
 if(DSDR_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+# Il programma di installazione. Va per ultimo: CPack vuole sapere che cosa si
+# installa, e lo sa solo dopo che i sottoprogetti hanno dichiarato i loro
+# `install()`.
+include(DsdrPackaging)
 
 dsdr_print_configuration()

@@ -31,9 +31,9 @@ jobs:
           - name: macOS DMG (Apple Silicon)
             os: macos-14
             artifact: decodium-sdr-macos-arm64.dmg
-          - name: Windows ZIP portable
+          - name: Windows (installer + ZIP)
             os: windows-latest
-            artifact: decodium-sdr-windows-x86_64.zip
+            artifact: decodium-sdr-windows-x86_64-setup.exe
 
     defaults:
       run:
@@ -89,6 +89,7 @@ jobs:
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw
             mingw-w64-x86_64-soapysdr
+            mingw-w64-x86_64-nsis
             zip
 
       # ── Build e installazione ───────────────────────────────────────────
@@ -209,11 +210,26 @@ jobs:
           # chiederà conferma all'apertura.
           echo "::warning::DMG non firmato: serve un Apple Developer ID per la notarizzazione"
 
-      - name: ZIP portable (Windows)
+      - name: Installer e ZIP (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          mv staging decodium-sdr
-          zip -qr "${{ matrix.artifact }}" decodium-sdr
+          # L'installatore lo fa CPack, dalla stessa regola di `install()` da
+          # cui esce lo staging: due strade diverse per lo stesso contenuto
+          # diventerebbero due pacchetti diversi al primo ritocco.
+          cd build
+          cpack -G "NSIS;ZIP"
+          cd ..
+
+          mv build/decodium-sdr-*-Windows-*.exe "${{ matrix.artifact }}"
+          mv build/decodium-sdr-*-Windows-*.zip decodium-sdr-windows-x86_64.zip
+
+      - name: Carica anche lo ZIP portable (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: decodium-sdr-windows-x86_64.zip
+          path: decodium-sdr-windows-x86_64.zip
+          retention-days: 14
 
       # ── Verifica minima del pacchetto ───────────────────────────────────
       - name: Il pacchetto ha una dimensione plausibile
@@ -261,7 +277,8 @@ jobs:
           body: |
             ## DECODIUM SDR ${{ github.ref_name }}
 
-            Pacchetti per Linux (AppImage), macOS (DMG) e Windows (ZIP portable).
+            Pacchetti per Linux (AppImage), macOS (DMG) e Windows — installatore
+            e ZIP portable.
 
             > Il DMG non è ancora firmato né notarizzato: al primo avvio macOS
             > chiederà conferma. Serve un Apple Developer ID.
