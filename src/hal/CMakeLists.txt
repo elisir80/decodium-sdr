@@ -74,6 +74,20 @@ endif()
 if(DSDR_BACKEND_SOAPY)
     # SoapySDR è opzionale: se manca si spiega come installarlo invece di
     # lasciare all'utente un errore di CMake da decifrare.
+    # La build locale ha la precedenza su quella di sistema.
+    #
+    # Su MSYS2 il pacchetto di SoapySDR manda l'applicazione in crash, e per
+    # questo lo si compila a parte in `third_party/soapysdr`. Finora il
+    # percorso andava passato a mano con `-DSoapySDR_DIR=...`: chi se ne
+    # dimenticava otteneva una build che *sembrava* buona e moriva all'avvio
+    # con `0xC0000139`, perché al link e all'esecuzione rispondevano due
+    # librerie diverse. La cartella se la cerca CMake, come fa già per la
+    # libreria del ColibriNANO e per RNNoise.
+    if(NOT SoapySDR_DIR AND EXISTS "${CMAKE_SOURCE_DIR}/third_party/soapysdr/cmake")
+        set(SoapySDR_DIR "${CMAKE_SOURCE_DIR}/third_party/soapysdr/cmake")
+        message(STATUS "SoapySDR: build locale in third_party/soapysdr")
+    endif()
+
     find_package(SoapySDR CONFIG QUIET)
     if(NOT SoapySDR_FOUND)
         message(FATAL_ERROR
@@ -106,6 +120,41 @@ endif()
 
 if(DSDR_BACKEND_SOAPY)
     target_link_libraries(dsdr_hal PRIVATE SoapySDR)
+
+    # Su Windows la libreria dinamica va messa accanto agli eseguibili.
+    #
+    # Non è un vezzo: se SoapySDR viene da `third_party/` — la build locale,
+    # perché quella dei pacchetti MSYS2 va in crash — ma la sua DLL non è lì,
+    # Windows va a pescarne un'altra dal PATH. È una copia diversa, con gli
+    # stessi nomi e simboli diversi, e il programma muore all'avvio con
+    # `0xC0000139`, «entry point non trovato»: un messaggio che non nomina né
+    # la libreria né il simbolo, e manda a cercare il guasto ovunque tranne
+    # che qui. È già costato una release.
+    if(WIN32)
+        get_target_property(dsdr_soapy_config SoapySDR IMPORTED_CONFIGURATIONS)
+        if(dsdr_soapy_config)
+            list(GET dsdr_soapy_config 0 dsdr_soapy_first)
+            get_target_property(dsdr_soapy_lib SoapySDR
+                                IMPORTED_LOCATION_${dsdr_soapy_first})
+        endif()
+
+        if(dsdr_soapy_lib)
+            get_filename_component(dsdr_soapy_dir "${dsdr_soapy_lib}" DIRECTORY)
+            get_filename_component(dsdr_soapy_root "${dsdr_soapy_dir}" DIRECTORY)
+            find_file(DSDR_SOAPY_DLL
+                NAMES libSoapySDR.dll SoapySDR.dll
+                HINTS "${dsdr_soapy_root}/bin" "${dsdr_soapy_dir}"
+                NO_DEFAULT_PATH)
+
+            if(DSDR_SOAPY_DLL)
+                add_custom_command(TARGET dsdr_hal POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            "${DSDR_SOAPY_DLL}" "${CMAKE_BINARY_DIR}/bin"
+                    COMMENT "SoapySDR: libreria accanto agli eseguibili")
+                install(FILES "${DSDR_SOAPY_DLL}" DESTINATION bin)
+            endif()
+        endif()
+    endif()
 endif()
 
 dsdr_apply_target_defaults(dsdr_hal)

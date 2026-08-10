@@ -54,6 +54,15 @@ desktop.ini
 #   cd third_party/rnnoise && ./download_model.sh
 /third_party/rnnoise/
 
+# Pacchetti di release: si costruiscono, non si versionano. Un archivio da
+# settanta megabyte resta nella storia di git per sempre, anche dopo essere
+# stato cancellato.
+/decodium-sdr-*.zip
+/decodium-sdr-*.dmg
+/decodium-sdr-*.AppImage
+/staging/
+/decodium-sdr/
+
 # Registrazioni IQ: pesano e non appartengono al repository
 *.wav
 *.sigmf-data
