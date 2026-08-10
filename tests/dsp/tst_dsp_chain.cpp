@@ -235,6 +235,8 @@ private slots:
     void channelSurvivesSettingsChangeMidStream();
     void squelchSilencesWeakSignalsAndOpensOnStrongOnes();
     void channelSeparatesSignalNoiseAndAudioMeters();
+    void synchronousAmPicksOneSideband();
+    void binauralCwPutsTheNoteInSpace();
 };
 
 void TestDspChain::factorizationPrefersLargeStagesFirst()
@@ -1295,6 +1297,134 @@ void TestDspChain::squelchSilencesWeakSignalsAndOpensOnStrongOnes()
     QVERIFY2(weakSquelched < weakOpen * 0.05,
              qPrintable(QStringLiteral("lo squelch non chiude: %1 contro %2 a squelch spento")
                             .arg(weakSquelched).arg(weakOpen)));
+}
+
+void TestDspChain::synchronousAmPicksOneSideband()
+{
+    // SPEC-003 §7: scegliere una banda laterale è l'arma contro
+    // l'interferenza adiacente. Si costruisce una portante con due toni di
+    // modulazione, uno per lato, e si verifica che scegliendo una banda
+    // l'altro sparisca.
+    constexpr double kDeviceRate = 96'000.0;
+    constexpr std::size_t kFrames = 48'000;
+
+    ChannelProcessor channel;
+    QVERIFY(channel.configure(kDeviceRate, 48'000.0));
+
+    ChannelSettings settings;
+    settings.mode = DemodMode::Sam;
+    settings.filterLowHz = -4000;
+    settings.filterHighHz = 4000;
+    settings.agcMode = AgcMode::Off;
+    settings.volume = 1.0f;
+
+    // Portante a DC più due righe: −1200 Hz (banda inferiore) e +2500 Hz
+    // (superiore). Sono distinguibili all'ascolto perché danno due note
+    // audio diverse.
+    std::vector<Complex> iq(kFrames);
+    for (std::size_t i = 0; i < kFrames; ++i) {
+        const double t = static_cast<double>(i) / kDeviceRate;
+        Complex sample(1.0f, 0.0f);                          // portante
+        sample += Complex(static_cast<float>(0.5 * std::cos(-kTwoPi * 1200.0 * t)),
+                          static_cast<float>(0.5 * std::sin(-kTwoPi * 1200.0 * t)));
+        sample += Complex(static_cast<float>(0.5 * std::cos(kTwoPi * 2500.0 * t)),
+                          static_cast<float>(0.5 * std::sin(kTwoPi * 2500.0 * t)));
+        iq[i] = sample * 0.3f;
+    }
+
+    const auto energyAt = [](const std::vector<float> &audio, double hz) {
+        double re = 0.0;
+        double im = 0.0;
+        const std::size_t from = audio.size() / 2;
+        for (std::size_t i = from; i < audio.size(); ++i) {
+            const double phase = kTwoPi * hz * static_cast<double>(i) / 48'000.0;
+            re += audio[i] * std::cos(phase);
+            im += audio[i] * std::sin(phase);
+        }
+        const double n = static_cast<double>(audio.size() - from);
+        return 2.0 * std::sqrt(re * re + im * im) / n;
+    };
+
+    const auto run = [&](ChannelSettings::SamSideband sideband) {
+        ChannelSettings s = settings;
+        s.samSideband = sideband;
+        channel.reset();
+        channel.applySettings(s);
+        std::vector<float> audio(channel.maxAudioFrames(kFrames) + 16, 0.0f);
+        const std::size_t produced = channel.process(iq.data(), kFrames, audio.data());
+        audio.resize(produced);
+        return audio;
+    };
+
+    const auto both = run(ChannelSettings::SamSideband::Both);
+    QVERIFY2(energyAt(both, 1200.0) > 0.01, "la banda inferiore non arriva in DSB");
+    QVERIFY2(energyAt(both, 2500.0) > 0.01, "la banda superiore non arriva in DSB");
+
+    const auto upper = run(ChannelSettings::SamSideband::Upper);
+    QVERIFY2(energyAt(upper, 2500.0) > 0.01, "la banda scelta è sparita");
+    QVERIFY2(energyAt(upper, 1200.0) < energyAt(upper, 2500.0) * 0.35,
+             qPrintable(QStringLiteral("la banda scartata è ancora lì: %1 contro %2")
+                            .arg(energyAt(upper, 1200.0)).arg(energyAt(upper, 2500.0))));
+
+    const auto lower = run(ChannelSettings::SamSideband::Lower);
+    QVERIFY2(energyAt(lower, 1200.0) > 0.01, "la banda scelta è sparita");
+    QVERIFY2(energyAt(lower, 2500.0) < energyAt(lower, 1200.0) * 0.35,
+             qPrintable(QStringLiteral("la banda scartata è ancora lì: %1 contro %2")
+                            .arg(energyAt(lower, 2500.0)).arg(energyAt(lower, 1200.0))));
+}
+
+void TestDspChain::binauralCwPutsTheNoteInSpace()
+{
+    // I due canali devono portare componenti *diverse*: se fossero identici
+    // non ci sarebbe spazializzazione, e l'interruttore non farebbe nulla —
+    // il modo più silenzioso di non implementare una funzione.
+    constexpr double kDeviceRate = 96'000.0;
+    constexpr std::size_t kFrames = 24'000;
+
+    ChannelProcessor channel;
+    QVERIFY(channel.configure(kDeviceRate, 48'000.0));
+
+    ChannelSettings settings;
+    settings.mode = DemodMode::Cw;
+    settings.cwPitchHz = 600.0;
+    settings.filterLowHz = -250;
+    settings.filterHighHz = 250;
+    settings.agcMode = AgcMode::Off;
+    settings.volume = 1.0f;
+    settings.binauralCw = true;
+    channel.applySettings(settings);
+
+    // Nota CW alla frequenza che il BFO porta al pitch.
+    std::vector<Complex> iq(kFrames);
+    for (std::size_t i = 0; i < kFrames; ++i) {
+        const double phase = kTwoPi * 600.0 * static_cast<double>(i) / kDeviceRate;
+        iq[i] = Complex(static_cast<float>(0.3 * std::cos(phase)),
+                        static_cast<float>(0.3 * std::sin(phase)));
+    }
+
+    std::vector<float> stereo(2 * (channel.maxAudioFrames(kFrames) + 16), 0.0f);
+    const std::size_t produced =
+        channel.processStereo(iq.data(), kFrames, stereo.data());
+    QVERIFY(produced > 1000);
+
+    // Correlazione fra i due canali: in quadratura vale circa zero, mentre
+    // due canali identici darebbero uno.
+    double left = 0.0;
+    double right = 0.0;
+    double cross = 0.0;
+    for (std::size_t i = produced / 2; i < produced; ++i) {
+        const double l = stereo[i * 2];
+        const double r = stereo[i * 2 + 1];
+        left += l * l;
+        right += r * r;
+        cross += l * r;
+    }
+
+    QVERIFY2(left > 1e-6 && right > 1e-6, "un canale è muto");
+    const double correlation = cross / std::sqrt(left * right);
+    QVERIFY2(std::abs(correlation) < 0.5,
+             qPrintable(QStringLiteral("i due canali sono quasi identici: "
+                                       "correlazione %1").arg(correlation)));
 }
 
 QTEST_APPLESS_MAIN(TestDspChain)

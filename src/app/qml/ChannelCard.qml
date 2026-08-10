@@ -69,6 +69,8 @@ Rectangle {
     required property var notches
     required property bool apfEnabled
     required property real apfQ
+    required property bool binauralCw
+    required property int samSideband
 
     readonly property bool current: Session.channels.currentIndex === index
 
@@ -208,6 +210,51 @@ Rectangle {
                 font.family: Theme.monoFamily
                 color: entry.apfEnabled ? Theme.textPrimary : Theme.textDisabled
                 Layout.preferredWidth: 42
+            }
+
+            // Due stazioni che si accavallano smettono di stare nello stesso
+            // punto: è il trucco più economico che esista in un pile-up.
+            DsdrButton {
+                text: qsTr("BIN")
+                implicitWidth: 52
+                implicitHeight: 24
+                checkable: true
+                checked: entry.binauralCw
+                onToggled: Session.setChannelBinaural(entry.index, checked)
+            }
+        }
+
+        // ── Banda laterale della AM sincrona ─────────────────
+        //
+        // L'interferenza adiacente di solito sta da un lato solo, e in AM le
+        // due bande portano la stessa informazione: buttarne via una non
+        // costa nulla in fedeltà e toglie il disturbo.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+            visible: entry.modeName === "SAM"
+
+            Text {
+                text: qsTr("SAM")
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+            }
+
+            Repeater {
+                model: [qsTr("DSB"), qsTr("LSB"), qsTr("USB")]
+
+                delegate: DsdrButton {
+                    required property int index
+                    required property string modelData
+
+                    Layout.fillWidth: true
+                    implicitWidth: 0
+                    implicitHeight: 24
+                    text: modelData
+                    checkable: true
+                    checked: entry.samSideband === index
+                    onClicked: Session.setChannelSamSideband(entry.index, index)
+                }
             }
         }
 

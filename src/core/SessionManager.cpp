@@ -1713,6 +1713,28 @@ void SessionManager::setChannelPeakFilter(int row, bool enabled, double q)
     pushChannelToEngine(row);
 }
 
+void SessionManager::setChannelBinaural(int row, bool enabled)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+    entry->settings.binauralCw = enabled;
+    m_channels.entryChanged(row, {ChannelModel::BinauralRole});
+    pushChannelToEngine(row);
+}
+
+void SessionManager::setChannelSamSideband(int row, int sideband)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+
+    entry->settings.samSideband =
+        static_cast<dsp::ChannelSettings::SamSideband>(std::clamp(sideband, 0, 2));
+    m_channels.entryChanged(row, {ChannelModel::SamSidebandRole});
+    pushChannelToEngine(row);
+}
+
 void SessionManager::addChannelNotch(int row, qint64 frequencyHz, double widthHz)
 {
     ChannelEntry *entry = m_channels.mutableAt(row);

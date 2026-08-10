@@ -68,6 +68,8 @@ public:
         NotchesRole,
         ApfEnabledRole,
         ApfQRole,
+        BinauralRole,
+        SamSidebandRole,
         AudioHighPassEnabledRole,
         AudioHighPassHzRole,
         FmStereoRole,

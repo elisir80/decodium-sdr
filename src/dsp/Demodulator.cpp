@@ -140,16 +140,28 @@ std::size_t Demodulator::demodSam(const Complex *in, std::size_t n, float *out) 
                                         static_cast<double>(rotated.real()));
 
         m_samFrequency += m_samBeta * error;
-        m_samFrequency = std::clamp(m_samFrequency, -0.05, 0.05);
+        m_samFrequency = std::clamp(m_samFrequency, -m_samCaptureRange, m_samCaptureRange);
         m_samPhase += m_samFrequency + m_samAlpha * error;
         if (m_samPhase > kPi)
             m_samPhase -= kTwoPi;
         else if (m_samPhase < -kPi)
             m_samPhase += kTwoPi;
 
+        // L'aggancio si giudica sull'errore *medio*, non su quello istantaneo:
+        // il rumore lo fa ballare a ogni campione, e una spia che lampeggia
+        // non dice niente a nessuno.
+        m_samErrorAverage += (std::abs(error) - m_samErrorAverage) * 0.001;
+        m_samLocked = m_samErrorAverage < 0.25;
+
         out[i] = m_dcBlocker.process(rotated.real());
     }
     return n;
+}
+
+void Demodulator::setSamCaptureRangeHz(double hz) noexcept
+{
+    const double clamped = std::clamp(hz, 50.0, 2000.0);
+    m_samCaptureRange = kTwoPi * clamped / std::max(m_sampleRate, 1.0);
 }
 
 std::size_t Demodulator::demodFm(const Complex *in, std::size_t n, float *out) noexcept

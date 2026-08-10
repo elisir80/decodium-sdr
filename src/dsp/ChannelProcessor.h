@@ -114,6 +114,30 @@ struct ChannelSettings
     bool apfEnabled = false;
     double apfQ = 12.0;
 
+    /// Ascolto binaurale in CW (SPEC-003 §7).
+    ///
+    /// I due canali portano le due componenti in quadratura del segnale di
+    /// banda base: toni a frequenze diverse arrivano con differenze di fase
+    /// diverse, e l'orecchio li separa nello spazio. In un pile-up è il modo
+    /// più economico di distinguere due stazioni che si accavallano.
+    bool binauralCw = false;
+
+    /// AM sincrona: quale banda laterale ascoltare, e quanto largo è il
+    /// campo in cui il PLL può agganciare la portante.
+    ///
+    /// Scegliere una sola banda laterale è l'arma contro l'interferenza
+    /// adiacente: la stazione che disturba di solito sta da un lato solo, e
+    /// buttarla via non costa nulla in fedeltà perché in AM le due bande
+    /// portano la stessa informazione.
+    enum class SamSideband
+    {
+        Both,      ///< entrambe, com'è l'AM
+        Lower,
+        Upper,
+    };
+    SamSideband samSideband = SamSideband::Both;
+    double samCaptureRangeHz = 500.0;
+
     static constexpr int kMaxNotches = 8;
     std::array<Notch, kMaxNotches> notches{};
 
@@ -204,6 +228,14 @@ public:
     /// una riga fissa, ed è esattamente ciò che l'ANF toglie. Non è una
     /// raccomandazione all'operatore ma un interlock (SPEC-003 §5) — il modo
     /// in cui il segnale sparisce è troppo somigliante a una radio guasta.
+    /// L'ascolto binaurale è attivo: acceso, e in CW — altrove i due canali
+    /// in quadratura non vorrebbero dire niente.
+    bool binauralActive() const noexcept
+    {
+        return m_settings.binauralCw
+            && (m_settings.mode == DemodMode::Cw || m_settings.mode == DemodMode::Cwr);
+    }
+
     /// Il filtro di picco sta lavorando: acceso, e in un modo dove ha senso.
     bool peakFilterActive() const noexcept
     {

@@ -43,6 +43,16 @@ public:
     /// Restituisce il numero di campioni audio prodotti (uno per campione IQ).
     std::size_t process(const Complex *in, std::size_t n, float *out) noexcept;
 
+    /// Quanto lontano può andare a cercare la portante il PLL della AM
+    /// sincrona, in hertz. Largo aggancia anche con la radio scentrata, ma
+    /// può agganciarsi a un'interferenza vicina invece che alla portante.
+    void setSamCaptureRangeHz(double hz) noexcept;
+
+    /// Il PLL sta seguendo la portante: l'errore residuo è piccolo e stabile.
+    /// Serve come spia — una AM sincrona sganciata suona peggio di una AM
+    /// normale, e senza indicazione non si capisce perché.
+    bool samLocked() const noexcept { return m_samLocked; }
+
     /// Errore di aggancio del PLL SAM, in Hz (diagnostica UI).
     float samLockErrorHz() const noexcept;
 
@@ -68,6 +78,9 @@ private:
     double m_samFrequency = 0.0;
     double m_samAlpha = 0.0;
     double m_samBeta = 0.0;
+    double m_samCaptureRange = 0.05;   ///< in radianti per campione
+    double m_samErrorAverage = 0.0;
+    bool m_samLocked = false;
 };
 
 } // namespace dsdr::dsp

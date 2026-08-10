@@ -41,6 +41,9 @@ bool ChannelSettings::operator==(const ChannelSettings &o) const noexcept
         && anfEnabled == o.anfEnabled
         && notches == o.notches
         && apfEnabled == o.apfEnabled && apfQ == o.apfQ
+        && binauralCw == o.binauralCw
+        && samSideband == o.samSideband
+        && samCaptureRangeHz == o.samCaptureRangeHz
         && agcAttackMs == o.agcAttackMs && agcDecayMs == o.agcDecayMs
         && amCarrierAgc == o.amCarrierAgc
         && cwPitchHz == o.cwPitchHz && volume == o.volume && muted == o.muted
@@ -247,6 +250,30 @@ void ChannelProcessor::computeFilterEdges(double &loHz, double &hiHz) const
     }
     case DemodMode::Am:
     case DemodMode::Sam:
+        // La banda laterale si sceglie spostando i bordi del passa-banda che
+        // c'è già: il PLL aggancia comunque la portante e non serve un secondo
+        // filtro. Il taglio le lascia un margine attorno a DC — fuori dal
+        // passa-banda il PLL non avrebbe più nulla da agganciare, e la
+        // demodulazione sincrona diventerebbe un battimento con tutte e due
+        // le bande di ritorno.
+        {
+            const double halfWidth = std::min(std::abs(lo), std::abs(hi));
+            switch (m_settings.samSideband) {
+            case ChannelSettings::SamSideband::Lower:
+                loHz = -halfWidth;
+                hiHz = 250.0;
+                break;
+            case ChannelSettings::SamSideband::Upper:
+                loHz = -250.0;
+                hiHz = halfWidth;
+                break;
+            case ChannelSettings::SamSideband::Both:
+                loHz = -halfWidth;
+                hiHz = halfWidth;
+                break;
+            }
+        }
+        break;
     case DemodMode::Dsb:
     case DemodMode::Fm:
     case DemodMode::Nfm:
@@ -319,7 +346,8 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
         || settings.filterLowHz != m_settings.filterLowHz
         || settings.filterHighHz != m_settings.filterHighHz
         || settings.passbandShiftHz != m_settings.passbandShiftHz
-        || settings.cwPitchHz != m_settings.cwPitchHz;
+        || settings.cwPitchHz != m_settings.cwPitchHz
+        || settings.samSideband != m_settings.samSideband;
     const bool amCarrierAgcChanged = settings.amCarrierAgc != m_settings.amCarrierAgc;
     const bool tuningChanged = settings.offsetHz != m_settings.offsetHz
         || settings.cwPitchHz != m_settings.cwPitchHz || settings.mode != m_settings.mode;
@@ -424,6 +452,7 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     // scelto di sentire, e spostarla altrove vorrebbe dire esaltare il rumore
     // accanto al segnale.
     m_apf.setPeak(m_settings.cwPitchHz, m_settings.apfQ);
+    m_demod.setSamCaptureRangeHz(m_settings.samCaptureRangeHz);
 
     for (int i = 0; i < ChannelSettings::kMaxNotches; ++i) {
         const auto &spec = m_settings.notches[static_cast<std::size_t>(i)];
@@ -701,10 +730,18 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
         // IQ non è un modo di demodulazione audio: quando l'operatore lo
         // seleziona, L/R diventano rispettivamente I/Q così il monitor
         // conserva entrambe le componenti invece di perdere Q.
-        if (stereoOut && m_settings.mode == DemodMode::Iq) {
+        // Monitor IQ e CW binaurale escono dallo stesso ramo: in entrambi i
+        // casi i due canali portano le componenti in quadratura della banda
+        // base, e la differenza sta solo nel perché.
+        //
+        // In CW quella quadratura diventa spazio: toni a frequenze diverse
+        // arrivano all'orecchio con differenze di fase diverse, e due
+        // stazioni che si accavallano smettono di stare nello stesso punto.
+        if (stereoOut && (m_settings.mode == DemodMode::Iq || binauralActive())) {
+            const float scale = binauralActive() ? 2.0f : 1.0f;
             for (std::size_t i = 0; i < decimated; ++i) {
-                m_stereoAudio[i * 2] = m_filtered[i].real();
-                m_stereoAudio[i * 2 + 1] = m_filtered[i].imag();
+                m_stereoAudio[i * 2] = m_filtered[i].real() * scale;
+                m_stereoAudio[i * 2 + 1] = m_filtered[i].imag() * scale;
             }
             const std::size_t audioProduced = m_resampleAudio
                 ? resampleAudioStereo(m_stereoAudio.data(), decimated,

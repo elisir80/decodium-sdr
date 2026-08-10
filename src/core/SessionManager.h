@@ -229,6 +229,13 @@ public:
     /// Filtro di picco sulla nota CW: esalta il tono di battimento e
     /// allontana il resto (SPEC-003 §7).
     Q_INVOKABLE void setChannelPeakFilter(int row, bool enabled, double q);
+
+    /// Ascolto binaurale in CW: i due canali portano le componenti in
+    /// quadratura, e le stazioni si separano nello spazio (SPEC-003 §7).
+    Q_INVOKABLE void setChannelBinaural(int row, bool enabled);
+
+    /// Banda laterale della AM sincrona: 0 entrambe, 1 inferiore, 2 superiore.
+    Q_INVOKABLE void setChannelSamSideband(int row, int sideband);
     /// Mette un notch su una frequenza RF assoluta. Resta lì anche quando il
     /// ricevitore si sposta: è un disturbo, non un tono audio (SPEC-003 §5).
     Q_INVOKABLE void addChannelNotch(int row, qint64 frequencyHz, double widthHz = 120.0);
