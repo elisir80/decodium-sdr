@@ -1009,7 +1009,11 @@ void SessionManager::handleRigctlLine(QTcpSocket *socket, const QByteArray &line
     }
 
     if (parts.size() >= 2 && parts.at(0) == "M") {
-        DemodMode mode;
+        // Inizializzata anche se il ramo che la usa passa dalla conversione
+        // riuscita: il compilatore non lo sa dimostrare, e una variabile che
+        // «forse» ha un valore in un protocollo di rete non è una cosa da
+        // lasciare al forse.
+        DemodMode mode = DemodMode::Usb;
         if (!demodModeFromRigctl(QString::fromLatin1(parts.at(1)), mode) || row < 0) {
             socket->write("RPRT -1\n");
             return;

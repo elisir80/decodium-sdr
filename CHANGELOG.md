@@ -4,6 +4,40 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.2] — 2026-08-10
+
+Prima versione con un **programma di installazione**. Su Windows CPack produce
+un `.exe` NSIS accanto allo ZIP portable: collegamento nel menu Start, opzione
+per quello sul desktop, l'icona dell'eseguibile, e disinstallando si toglie
+quello che si è messo e nient'altro — le preferenze sono dell'operatore.
+
+L'installatore mostra un avviso che vale la radio di qualcuno: chi collega un
+ricetrasmettitore via CAT deve spegnere «CAT RTS» nei menù.
+
+### Corretto — Sicurezza
+
+- **La ricerca della radio mandava in trasmissione.** Aprire una porta seriale
+  su Windows alza DTR e RTS per qualche millisecondo prima che il programma
+  possa abbassarli, e su una radio con «CAT RTS» attivo quelle linee *sono* il
+  PTT. La sonda apriva ogni porta undici volte — sei velocità newcat più cinque
+  CI-V — e ogni apertura era un colpo di trasmissione. Ora apre una volta sola
+  per driver, cambiando velocità sulla porta già aperta.
+- **`DSDR_AUDIORIG_NO_PROBE=1`** spegne del tutto la sonda, per chi ha la radio
+  accesa accanto e non vuole che il programma la tocchi. Si perde il
+  riconoscimento automatico, e nient'altro. La suite dei test la usa: non deve
+  essere possibile mandare in aria una portante lanciando `ctest`.
+
+### Corretto — Impianto
+
+- **Il core includeva un backend concreto** (`SessionManager` → `FlexClient`),
+  contro la prima regola del progetto. L'interrogazione di una radio trovata in
+  rete è passata in `RadioScout`, accanto alla ricerca: è lo stesso mestiere, e
+  sopra il seam nessuno deve sapere che esista uno SmartSDR.
+
+> La 1.1.1 non è mai stata pubblicata: il suo tag punta all'albero in cui il
+> core includeva ancora un backend. È rimasto lì per non spostare un
+> riferimento già visibile, ma non c'è niente da scaricare.
+
 ### Cambiato — Impianto dell'interfaccia
 
 - **I comandi del waterfall smettono di galleggiare.** Erano un riquadro

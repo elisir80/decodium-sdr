@@ -57,6 +57,7 @@ std::vector<float> speechLike(std::size_t n, float amplitude)
     return out;
 }
 
+#ifdef DSDR_HAVE_RNNOISE
 double rms(const std::vector<float> &v, std::size_t from, std::size_t to)
 {
     double sum = 0.0;
@@ -64,6 +65,7 @@ double rms(const std::vector<float> &v, std::size_t from, std::size_t to)
         sum += static_cast<double>(v[i]) * v[i];
     return std::sqrt(sum / static_cast<double>(to - from));
 }
+#endif
 
 } // namespace
 

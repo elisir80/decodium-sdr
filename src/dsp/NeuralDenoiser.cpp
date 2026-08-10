@@ -9,6 +9,7 @@
 
 namespace dsdr::dsp {
 
+#ifdef DSDR_HAVE_RNNOISE
 namespace {
 
 /// RNNoise lavora su campioni in scala PCM a 16 bit, ma in virgola mobile:
@@ -19,6 +20,7 @@ namespace {
 constexpr float kPcmScale = 32768.0f;
 
 } // namespace
+#endif
 
 NeuralDenoiser::~NeuralDenoiser()
 {

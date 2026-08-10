@@ -10,6 +10,7 @@
 
 namespace dsdr::dsp::neural {
 
+#ifdef DSDR_HAVE_RNNOISE
 namespace {
 
 /// La scala in cui RNNoise è stata addestrata: PCM a 16 bit, non ±1.
@@ -20,6 +21,7 @@ constexpr float kPcmScale = 32768.0f;
 constexpr int kFrameSamples = 480;
 
 } // namespace
+#endif
 
 RnnoiseEngine::RnnoiseEngine() = default;
 
