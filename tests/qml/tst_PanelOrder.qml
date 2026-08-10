@@ -34,10 +34,11 @@ TestCase {
         verify(strip !== null, "colonna non istanziata")
 
         const keys = keysOf(strip)
-        compare(keys.length, 6,
-                "pannelli attesi: sintonia, tempo, catena, device, waterfall, canali")
+        compare(keys.length, 7,
+                "pannelli attesi: sintonia, tempo, catena, trasmissione, device, waterfall, canali")
         verify(keys.indexOf("sintonia") >= 0)
         verify(keys.indexOf("catena") >= 0)
+        verify(keys.indexOf("trasmissione") >= 0)
         verify(keys.indexOf("tempo") >= 0)
         verify(keys.indexOf("device") >= 0)
         verify(keys.indexOf("waterfall") >= 0)
@@ -69,7 +70,7 @@ TestCase {
         compare(keys[1], "waterfall")
         // E nessuno si perde per strada: i pannelli che l'ordine salvato non
         // nominava restano, in coda.
-        compare(keys.length, 6, "un pannello è sparito nel ripristino")
+        compare(keys.length, 7, "un pannello è sparito nel ripristino")
         verify(keys.indexOf("sintonia") >= 2)
         verify(keys.indexOf("tempo") >= 2)
         verify(keys.indexOf("device") >= 2)
@@ -84,7 +85,7 @@ TestCase {
         strip.restoreOrder()
 
         const keys = keysOf(strip)
-        compare(keys.length, 6)
+        compare(keys.length, 7)
         compare(keys[0], "canali")
         compare(keys[1], "tempo")
     }

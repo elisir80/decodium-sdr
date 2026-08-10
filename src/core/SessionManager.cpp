@@ -3,11 +3,14 @@
 
 #include "audio/AudioRouter.h"
 #include "core/DspEngine.h"
+#include "core/TxEngine.h"
+#include "audio/MicSource.h"
 #include "core/SpectrumFeed.h"
 #include "hal/BackendRegistry.h"
 #include "hal/IRadioBackend.h"
 
 #include <QLoggingCategory>
+#include <QMetaEnum>
 #include <QCoreApplication>
 #include <QDir>
 #include <QHostAddress>
@@ -138,6 +141,28 @@ SessionManager::SessionManager(QObject *parent)
     // priorità time-critical affama il thread della UI, e l'applicazione
     // smette di rispondere pur continuando a produrre audio corretto.
     m_dspThread->start(QThread::HighPriority);
+
+    // Il motore di trasmissione su un thread proprio. Non condivide quello
+    // del DSP perché le due catene hanno scadenze indipendenti: in half-duplex
+    // non lavorano nemmeno insieme, e in full-duplex un ritardo di una non
+    // deve diventare un ritardo dell'altra.
+    m_mic = new audio::MicSource(this);
+    m_tx = new TxEngine;
+    m_txThread = new QThread(this);
+    m_txThread->setObjectName(QStringLiteral("dsdr-tx"));
+    m_tx->moveToThread(m_txThread);
+    connect(m_txThread, &QThread::started, m_tx, &TxEngine::start);
+    connect(m_txThread, &QThread::finished, m_tx, &QObject::deleteLater);
+    connect(m_tx, &TxEngine::metersUpdated, this, &SessionManager::txMetersChanged);
+    connect(m_tx, &TxEngine::refused, this, [this](const QString &reason) {
+        // Il PTT torna su da solo: lasciarlo premuto mentre non esce nulla è
+        // il modo migliore per far cercare il guasto nell'antenna.
+        if (m_transmitting && m_backend)
+            m_backend->setPtt(false);
+        setStatus(reason);
+        emit txRefused(reason);
+    });
+    m_txThread->start(QThread::HighPriority);
 
     // Lo stadio neurale su un thread proprio, a priorità normale: l'inferenza
     // non deve mai contendere la CPU al DSP, che ha una scadenza vera.
@@ -373,6 +398,11 @@ SessionManager::~SessionManager()
         m_neuralThread->wait();
     }
 
+    if (m_txThread) {
+        m_txThread->quit();
+        m_txThread->wait();
+    }
+
     if (m_dspThread) {
         m_dspThread->quit();
         m_dspThread->wait();
@@ -550,6 +580,18 @@ void SessionManager::connectToDevice(int deviceRow)
     m_sampleRate = m_backend->sampleRate();
 
     m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+
+    // Il motore TX riceve il ring del backend, non il backend: sopra la HAL
+    // nessuno conosce il tipo concreto della radio, e il seam resta stretto
+    // anche nel verso opposto.
+    if (m_capabilities.canTransmit()) {
+        hal::SampleRing *txRing = m_backend->txStream();
+        const double rate = m_sampleRate;
+        QMetaObject::invokeMethod(m_tx, [this, txRing, rate] {
+            m_tx->attach(txRing, rate);
+        });
+        pushTxConfig();
+    }
     // L'audio esce dal ring del worker neurale, non da quello del DSP: il
     // worker sta sempre in mezzo, e da spento copia soltanto.
     m_neural->setSource(m_engine->audioRing(), kInternalAudioRate, 2);
@@ -594,6 +636,8 @@ void SessionManager::disconnectDevice()
     stopAudioRecording();
 
     m_audio->stop();
+    m_mic->stop();
+    QMetaObject::invokeMethod(m_tx, [this] { m_tx->detach(); });
     if (m_engine)
         m_engine->clearSource();
 
@@ -853,6 +897,18 @@ void SessionManager::setSampleRate(double rate)
 
     // Il worker del backend riparte con un ring nuovo: il DSP va riagganciato.
     m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+
+    // Il motore TX riceve il ring del backend, non il backend: sopra la HAL
+    // nessuno conosce il tipo concreto della radio, e il seam resta stretto
+    // anche nel verso opposto.
+    if (m_capabilities.canTransmit()) {
+        hal::SampleRing *txRing = m_backend->txStream();
+        const double rate = m_sampleRate;
+        QMetaObject::invokeMethod(m_tx, [this, txRing, rate] {
+            m_tx->attach(txRing, rate);
+        });
+        pushTxConfig();
+    }
     emit sampleRateChanged();
 }
 
@@ -901,6 +957,13 @@ int SessionManager::addChannel(qint64 frequencyHz)
     QMetaObject::invokeMethod(m_engine, "addChannel", Qt::QueuedConnection,
                               Q_ARG(dsdr::ChannelId, id),
                               Q_ARG(dsdr::dsp::ChannelSettings, entry.settings));
+
+    // Il canale di trasmissione può essere proprio questo — all'apertura del
+    // device il primo canale nasce dopo che la sessione è connessa, e senza
+    // questo giro il pannello TX resterebbe a «nessun canale» finché non si
+    // tocca qualcosa.
+    if (m_capabilities.canTransmit())
+        pushTxConfig();
     return row;
 }
 
@@ -916,6 +979,13 @@ void SessionManager::removeChannel(int row)
     QMetaObject::invokeMethod(m_engine, "removeChannel", Qt::QueuedConnection,
                               Q_ARG(dsdr::ChannelId, id));
     m_channels.removeAt(row);
+
+    // Chi trasmetteva su un canale che non c'è più torna sul primo: meglio un
+    // canale diverso da quello scelto che un PTT che non sa dove andare.
+    if (m_txChannel >= m_channels.rowCount())
+        m_txChannel = 0;
+    if (m_capabilities.canTransmit())
+        pushTxConfig();
 }
 
 void SessionManager::pushChannelToEngine(int row)
@@ -927,6 +997,12 @@ void SessionManager::pushChannelToEngine(int row)
     QMetaObject::invokeMethod(m_engine, "updateChannel", Qt::QueuedConnection,
                               Q_ARG(dsdr::ChannelId, entry->id),
                               Q_ARG(dsdr::dsp::ChannelSettings, entry->settings));
+
+    // Si trasmette sul canale che si sta ascoltando: se cambia lui, cambia
+    // anche la trasmissione. Passa di qui ogni modifica a un canale — modo,
+    // filtro, frequenza — ed è l'unico punto in cui serva ricordarsene.
+    if (row == m_txChannel && m_capabilities.canTransmit())
+        pushTxConfig();
 }
 
 void SessionManager::refreshChannelOffsets()
@@ -1899,7 +1975,159 @@ void SessionManager::setPtt(bool transmit)
         setStatus(tr("Questo device è solo in ricezione."));
         return;
     }
-    m_backend->setPtt(transmit);
+
+    if (transmit) {
+        pushTxConfig();
+        // Il microfono si apre solo mentre si trasmette. Tenerlo aperto
+        // sempre farebbe comparire l'icona di registrazione del sistema per
+        // tutta la sessione, e non è ciò che l'operatore ha chiesto.
+        if (!m_mic->isActive() && !m_mic->start())
+            setStatus(m_mic->errorString());
+        const bool micReady = m_mic->isActive();
+        auto *ring = micReady ? m_mic->ring() : nullptr;
+        const double rate = m_mic->sampleRate();
+        QMetaObject::invokeMethod(m_tx, [this, ring, rate] {
+            m_tx->setMicSource(ring, rate);
+            m_tx->setTransmitting(true);
+        });
+        emit txChanged();
+        // La catena parte prima della radio: il ring deve avere qualcosa
+        // dentro quando il device comincia a leggerlo, altrimenti il primo
+        // istante di ogni trasmissione è un buco.
+        m_backend->setPtt(true);
+        return;
+    }
+
+    m_backend->setPtt(false);
+    QMetaObject::invokeMethod(m_tx, [this] { m_tx->setTransmitting(false); });
+    m_mic->stop();
+    emit txChanged();
+}
+
+void SessionManager::setCwKeyDown(bool down)
+{
+    QMetaObject::invokeMethod(m_tx, [this, down] { m_tx->setKeyDown(down); });
+}
+
+void SessionManager::pushTxConfig()
+{
+    const ChannelEntry *entry = m_channels.at(m_txChannel);
+    if (!entry)
+        entry = m_channels.at(0);
+    if (!entry)
+        return;
+
+    dsp::TxSettings settings;
+    settings.mode = entry->settings.mode;
+    settings.lowHz = entry->settings.filterLowHz;
+    settings.highHz = entry->settings.filterHighHz;
+
+    // In SSB il filtro parte da qualche centinaio di hertz; in AM e FM il
+    // canale dichiara una banda simmetrica e il limite basso non serve.
+    const double offset = static_cast<double>(entry->frequencyHz - m_centerFrequency);
+    const double gain = m_micGainDb;
+    const double compression = m_txCompressionDb;
+    const double drive = m_txDrive;
+
+    QMetaObject::invokeMethod(m_tx, [this, settings, offset, gain, compression, drive] {
+        m_tx->setSettings(settings);
+        m_tx->setOffsetHz(offset);
+        m_tx->setMicGainDb(gain);
+        m_tx->setCompressionDb(compression);
+        m_tx->setDrive(drive);
+    });
+
+    // Il riepilogo che la UI mostra sopra il PTT viene da qui: si aggiorna
+    // insieme a ciò che descrive, non per conto suo.
+    emit txChanged();
+}
+
+void SessionManager::setTxChannel(int row)
+{
+    if (m_txChannel == row)
+        return;
+    m_txChannel = row;
+    pushTxConfig();
+    emit txChanged();
+}
+
+void SessionManager::setMicGainDb(double db)
+{
+    db = std::clamp(db, -20.0, 40.0);
+    if (qFuzzyCompare(m_micGainDb, db))
+        return;
+    m_micGainDb = db;
+    QMetaObject::invokeMethod(m_tx, [this, db] { m_tx->setMicGainDb(db); });
+    emit txChanged();
+}
+
+void SessionManager::setTxCompressionDb(double db)
+{
+    db = std::clamp(db, 0.0, 20.0);
+    if (qFuzzyCompare(m_txCompressionDb, db))
+        return;
+    m_txCompressionDb = db;
+    QMetaObject::invokeMethod(m_tx, [this, db] { m_tx->setCompressionDb(db); });
+    emit txChanged();
+}
+
+void SessionManager::setTxDrive(double drive)
+{
+    drive = std::clamp(drive, 0.0, 1.0);
+    if (qFuzzyCompare(m_txDrive, drive))
+        return;
+    m_txDrive = drive;
+    QMetaObject::invokeMethod(m_tx, [this, drive] { m_tx->setDrive(drive); });
+    emit txChanged();
+}
+
+bool SessionManager::micActive() const { return m_mic && m_mic->isActive(); }
+
+QString SessionManager::micDeviceName() const
+{
+    return m_mic ? m_mic->deviceName() : QString();
+}
+
+double SessionManager::micLevel() const
+{
+    // Fuori trasmissione l'indicatore segue comunque il microfono, se è
+    // aperto: è così che si regola il guadagno prima di premere il PTT.
+    if (!m_tx)
+        return 0.0;
+    return m_transmitting ? m_tx->micPeak() : (m_mic ? m_mic->lastPeak() : 0.0f);
+}
+
+double SessionManager::txCompressionMeter() const
+{
+    return m_tx ? m_tx->compressionDb() : 0.0;
+}
+
+double SessionManager::txLevel() const
+{
+    return m_tx ? m_tx->outputPeak() : 0.0;
+}
+
+bool SessionManager::txCw() const
+{
+    const ChannelEntry *entry = m_channels.at(m_txChannel);
+    if (!entry)
+        return false;
+    return entry->settings.mode == DemodMode::Cw || entry->settings.mode == DemodMode::Cwr;
+}
+
+QString SessionManager::txSummary() const
+{
+    const ChannelEntry *entry = m_channels.at(m_txChannel);
+    if (!entry)
+        return tr("nessun canale");
+
+    // In megahertz, come il resto della radio: la stessa frequenza scritta in
+    // kilohertz nel pannello e in megahertz sul display costringe a
+    // convertire a mente proprio prima di premere il PTT.
+    const QMetaEnum modes = QMetaEnum::fromType<DemodMode>();
+    return QStringLiteral("%1 · %2 MHz")
+        .arg(QString::fromLatin1(modes.valueToKey(static_cast<int>(entry->settings.mode))).toUpper())
+        .arg(entry->frequencyHz / 1e6, 0, 'f', 6);
 }
 
 bool SessionManager::startRecording(const QString &path)

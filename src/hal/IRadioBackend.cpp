@@ -27,4 +27,13 @@ double IRadioBackend::gainReduction() const
     return 0.0;
 }
 
+SampleRing *IRadioBackend::txStream()
+{
+    // Come sopra: un ricevitore puro dichiara `tx = None` e nessuno gli chiede
+    // il ring. Restituire nullptr in silenzio è la risposta esatta, e il
+    // chiamante deve comunque verificarla — anche un backend che trasmette può
+    // non avere il ring pronto prima dell'apertura del device.
+    return nullptr;
+}
+
 } // namespace dsdr::hal

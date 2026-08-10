@@ -94,6 +94,22 @@ public:
     virtual bool ptt() const = 0;
     virtual void setTxFrequency(qint64 hz) = 0;
 
+    /// Ring in cui il **client scrive** i campioni da trasmettere, interleaved
+    /// I,Q alla frequenza di `sampleRate()`.
+    ///
+    /// È l'unico punto del seam in cui i dati vanno nella direzione opposta, e
+    /// per il resto la regola non cambia: i campioni non passano dai signal
+    /// (§4.1), il produttore scrive e il consumatore legge alla propria
+    /// cadenza. Il backend consuma quando la radio glielo chiede — nessuno lo
+    /// avvisa, come nessuno avvisa noi quando arrivano i campioni in ricezione.
+    ///
+    /// Il default restituisce `nullptr`: un backend che non trasmette non
+    /// scrive una riga, e chi vuole trasmettere deve comunque guardare
+    /// `capabilities().tx` prima di chiedere il ring. Un `nullptr` restituito
+    /// a fronte di `tx != None` è un difetto del backend, e la conformance
+    /// suite lo tratta come tale.
+    virtual SampleRing *txStream();
+
     // ── Accesso ai dati ──────────────────────────────────────────────────
     // I campioni NON passano dai signal (§4.1). Il consumatore legge da qui
     // quando il signal corrispondente segnala disponibilità.

@@ -39,6 +39,7 @@ Rectangle {
         ListElement { key: "sintonia" }
         ListElement { key: "tempo" }
         ListElement { key: "catena" }
+        ListElement { key: "trasmissione" }
         ListElement { key: "device" }
         ListElement { key: "waterfall" }
         ListElement { key: "canali" }
@@ -116,6 +117,9 @@ Rectangle {
         case "canali":    return true
         case "device":    return Session.connected
                               && Session.capabilities.nativePanels.length > 0
+        // Su un ricevitore puro il pannello TX non viene creato: la UI si
+        // genera dalle capability, non le disabilita (CONSTITUTION §7).
+        case "trasmissione": return Session.connected && Session.capabilities.canTransmit
         default:          return Session.connected
         }
     }
@@ -125,6 +129,7 @@ Rectangle {
         case "sintonia":  return tuningPanel
         case "tempo":     return timeMachinePanel
         case "catena":    return rxChainPanel
+        case "trasmissione": return txPanel
         case "device":    return devicePanels
         case "waterfall": return waterfallPanel
         case "canali":    return channelsPanel
@@ -191,6 +196,12 @@ Rectangle {
     }
 
     // ── I pannelli ───────────────────────────────────────────────────────
+    Component {
+        id: txPanel
+
+        TxPanel {}
+    }
+
     Component {
         id: tuningPanel
 

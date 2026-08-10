@@ -62,6 +62,8 @@ private slots:
 
     void gainReductionKeepsItsPromise_data();
     void gainReductionKeepsItsPromise();
+    void whoPromisesTxOffersSomewhereToPutIt_data();
+    void whoPromisesTxOffersSomewhereToPutIt();
 
 private:
     static void addBackendRows();
@@ -426,6 +428,34 @@ void TestHalConformance::gainReductionKeepsItsPromise()
     // renderebbe il ricevitore sordo per il resto della sessione.
     QCOMPARE(backend->setGainReduction(0.0), 0.0);
     QCOMPARE(backend->gainReduction(), 0.0);
+}
+
+void TestHalConformance::whoPromisesTxOffersSomewhereToPutIt_data() { addBackendRows(); }
+
+void TestHalConformance::whoPromisesTxOffersSomewhereToPutIt()
+{
+    QFETCH(QString, backendId);
+    std::unique_ptr<IRadioBackend> backend(BackendRegistry::instance().create(backendId));
+    QVERIFY(backend);
+
+    if (!backend->capabilities().canTransmit()) {
+        // Un ricevitore puro non deve avere il ring, e chiederglielo non deve
+        // costare niente: la UI non gli mostrerà mai un PTT (§7).
+        QCOMPARE(backend->txStream(), nullptr);
+        return;
+    }
+
+    // Chi dichiara di trasmettere deve dire dove mettere i campioni. La
+    // promessa `tx = Ptt` senza un ring è la peggiore delle risposte: la UI
+    // costruisce il PTT, l'operatore preme, e non esce nulla senza che nessuno
+    // possa dire perché.
+    QVERIFY2(backend->txStream() != nullptr,
+             qPrintable(QStringLiteral("%1 dichiara TX ma non offre il ring")
+                            .arg(backendId)));
+
+    // E dev'essere lo stesso ring a ogni chiamata: un puntatore che cambia
+    // lascerebbe il motore a scrivere in un anello che nessuno legge più.
+    QCOMPARE(backend->txStream(), backend->txStream());
 }
 
 void TestHalConformance::unknownNativeCommandReturnsInvalid()

@@ -62,6 +62,7 @@ public:
     void setPtt(bool transmit) override;
     bool ptt() const override { return m_ptt; }
     void setTxFrequency(qint64 hz) override;
+    SampleRing *txStream() override;
 
     SampleRing *iqStream(ChannelId channel = kInvalidChannel) const override;
     SampleRing *audioStream(ChannelId channel) const override;
@@ -96,6 +97,7 @@ private:
     PanId m_nextPanId = 1;
 
     std::unique_ptr<SampleRing> m_iqRing;
+    std::unique_ptr<SampleRing> m_txRing;
     QThread *m_thread = nullptr;
     QPointer<DemoWorker> m_worker;
     quint64 m_sequence = 0;

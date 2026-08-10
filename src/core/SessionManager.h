@@ -33,9 +33,14 @@ class IRadioBackend;
 class QThread;
 class QTcpSocket;
 
+namespace dsdr::audio {
+class MicSource;
+}
+
 namespace dsdr::core {
 
 class DspEngine;
+class TxEngine;
 
 class SessionManager : public QObject
 {
@@ -106,6 +111,33 @@ class SessionManager : public QObject
     Q_PROPERTY(bool neuralAvailable READ neuralAvailable CONSTANT)
     Q_PROPERTY(bool neuralEnabled READ neuralEnabled NOTIFY neuralChanged)
     Q_PROPERTY(double neuralLoad READ neuralLoad NOTIFY neuralChanged)
+
+    // ── Trasmissione ────────────────────────────────────────────────────
+    //
+    // Esistono sempre, ma la UI le mostra solo se `capabilities.canTransmit`:
+    // un pannello TX disabilitato su un ricevitore puro sarebbe una promessa
+    // non mantenuta (CONSTITUTION §7).
+    //
+    // Il canale di trasmissione è uno dei canali di ricezione — il suo, non
+    // un'entità separata: si trasmette dove si stava ascoltando, con il modo
+    // con cui si stava ascoltando, che è ciò che l'operatore si aspetta.
+    Q_PROPERTY(int txChannel READ txChannel WRITE setTxChannel NOTIFY txChanged)
+    Q_PROPERTY(double micGainDb READ micGainDb WRITE setMicGainDb NOTIFY txChanged)
+    Q_PROPERTY(double txCompressionDb READ txCompressionDb WRITE setTxCompressionDb
+                   NOTIFY txChanged)
+    Q_PROPERTY(double txDrive READ txDrive WRITE setTxDrive NOTIFY txChanged)
+    Q_PROPERTY(bool micActive READ micActive NOTIFY txChanged)
+    Q_PROPERTY(QString micDeviceName READ micDeviceName NOTIFY txChanged)
+    Q_PROPERTY(double micLevel READ micLevel NOTIFY txMetersChanged)
+    Q_PROPERTY(double txCompressionMeter READ txCompressionMeter NOTIFY txMetersChanged)
+    Q_PROPERTY(double txLevel READ txLevel NOTIFY txMetersChanged)
+
+    /// In CW il PTT non basta: serve il tasto, e la UI deve mostrarlo. La
+    /// distinzione la fa il modo del canale di trasmissione, non l'operatore.
+    Q_PROPERTY(bool txCw READ txCw NOTIFY txChanged)
+    /// Modo e frequenza su cui si trasmetterebbe adesso, già formattati: chi
+    /// preme il PTT deve poterlo leggere senza cercarlo altrove.
+    Q_PROPERTY(QString txSummary READ txSummary NOTIFY txChanged)
 
     /// Quanto guadagno la guardia ha tolto finora, in dB.
     Q_PROPERTY(double gainReductionDb READ gainReductionDb NOTIFY overloadChanged)
@@ -185,6 +217,28 @@ public:
     /// Accende lo stadio neurale sull'audio. Non tocca il percorso IQ verso i
     /// decoder digitali: quello resta lineare per costruzione (SPEC-003 §8.3).
     Q_INVOKABLE void setNeuralNr(bool enabled);
+
+    // ── Trasmissione ────────────────────────────────────────────────────
+
+    int txChannel() const { return m_txChannel; }
+    void setTxChannel(int row);
+    double micGainDb() const { return m_micGainDb; }
+    void setMicGainDb(double db);
+    double txCompressionDb() const { return m_txCompressionDb; }
+    void setTxCompressionDb(double db);
+    double txDrive() const { return m_txDrive; }
+    void setTxDrive(double drive);
+    bool micActive() const;
+    QString micDeviceName() const;
+    double micLevel() const;
+    double txCompressionMeter() const;
+    double txLevel() const;
+    bool txCw() const;
+    QString txSummary() const;
+
+    /// Tasto CW. Separato dal PTT perché in CW il PTT lo alza e lo abbassa il
+    /// manipolatore, non l'operatore.
+    Q_INVOKABLE void setCwKeyDown(bool down);
 
     bool noiseBlanker() const { return m_nbEnabled; }
     double noiseBlankerThreshold() const { return m_nbThreshold; }
@@ -320,6 +374,10 @@ signals:
     void scanResultsChanged();
     void rigctlChanged();
     void transmittingChanged();
+    void txChanged();
+    void txMetersChanged();
+    /// La trasmissione è stata rifiutata, e per quale motivo.
+    void txRefused(const QString &reason);
     void statusMessageChanged();
     void centerFrequencyChanged();
     void sampleRateChanged();
@@ -335,6 +393,12 @@ private:
     void setDiscovering(bool discovering);
     void teardownBackend();
     void pushChannelToEngine(int row);
+
+    /// Riporta al motore TX il canale su cui si trasmette: offset dal
+    /// centro, modo e banda. Si chiama a ogni cosa che li cambi — anche
+    /// a un cambio di centro banda, che sposta l'offset senza che il
+    /// canale si sia mosso.
+    void pushTxConfig();
     void refreshChannelOffsets();
     void advanceScan();
     void handleAutomaticRdsAf(ChannelId id, bool synced, const QString &pi);
@@ -355,6 +419,9 @@ private:
 
     DspEngine *m_engine = nullptr;
     QThread *m_dspThread = nullptr;
+    TxEngine *m_tx = nullptr;
+    QThread *m_txThread = nullptr;
+    audio::MicSource *m_mic = nullptr;
     NeuralNrWorker *m_neural = nullptr;
     QThread *m_neuralThread = nullptr;
     audio::AudioRouter *m_audio = nullptr;
@@ -376,6 +443,10 @@ private:
     bool m_connected = false;
     bool m_discovering = false;
     bool m_transmitting = false;
+    int m_txChannel = 0;
+    double m_micGainDb = 6.0;
+    double m_txCompressionDb = 6.0;
+    double m_txDrive = 0.9;
     QTimer m_scanTimer;
     QTimer m_rdsAfProbeTimer;
     std::vector<qint64> m_rdsAfCandidates;

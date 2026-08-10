@@ -16,12 +16,16 @@ namespace {
 constexpr std::size_t kBlockFrames = 4096;
 } // namespace
 
-DemoWorker::DemoWorker(dsp::SpscRing<float> *ring, QObject *parent)
+DemoWorker::DemoWorker(dsp::SpscRing<float> *ring,
+                       dsp::SpscRing<float> *txRing,
+                       QObject *parent)
     : QObject(parent)
     , m_ring(ring)
+    , m_txRing(txRing)
 {
     m_block.resize(kBlockFrames);
     m_interleaved.resize(kBlockFrames * 2);
+    m_txInterleaved.resize(kBlockFrames * 2);
 }
 
 DemoWorker::~DemoWorker() = default;
@@ -109,8 +113,24 @@ void DemoWorker::tick()
             std::min<quint64>(pending, kBlockFrames));
 
         if (m_transmitting) {
-            // Half-duplex simulato: in TX il ricevitore è muto, non fermo.
-            std::fill_n(m_block.begin(), count, dsp::Complex(0.0f, 0.0f));
+            // Half-duplex simulato. Il ricevitore non è fermo: sente ciò che
+            // stiamo trasmettendo, perché è l'unica cosa che il demo può
+            // onestamente mettere in antenna. Il risultato è che la modalità
+            // demo prova la catena TX per intero — si parla nel microfono e ci
+            // si vede sul panadattatore — senza una radio attaccata
+            // (CONSTITUTION §9).
+            std::size_t got = 0;
+            if (m_txRing)
+                got = m_txRing->read(m_txInterleaved.data(), count * 2) / 2;
+            for (std::size_t i = 0; i < got; ++i) {
+                m_block[i] = dsp::Complex(m_txInterleaved[i * 2],
+                                          m_txInterleaved[i * 2 + 1]);
+            }
+            // Quel che manca è silenzio: chi trasmette senza modulare non
+            // deve vedere comparire rumore che non ha prodotto.
+            std::fill(m_block.begin() + static_cast<std::ptrdiff_t>(got),
+                      m_block.begin() + static_cast<std::ptrdiff_t>(count),
+                      dsp::Complex(0.0f, 0.0f));
         } else {
             m_band.generate(m_block.data(), count);
         }

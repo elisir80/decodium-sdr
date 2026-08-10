@@ -28,7 +28,12 @@ class DemoWorker : public QObject
     Q_OBJECT
 
 public:
-    explicit DemoWorker(dsp::SpscRing<float> *ring, QObject *parent = nullptr);
+    /// `txRing` è il verso opposto: ciò che il client ha scritto per essere
+    /// trasmesso. Il demo non ha un'antenna, quindi glielo rimanda indietro —
+    /// vedi `tick()`.
+    explicit DemoWorker(dsp::SpscRing<float> *ring,
+                        dsp::SpscRing<float> *txRing = nullptr,
+                        QObject *parent = nullptr);
     ~DemoWorker() override;
 
     /// Chiamata dal thread proprietario PRIMA di `moveToThread()`: evita di
@@ -59,12 +64,14 @@ private slots:
 
 private:
     dsp::SpscRing<float> *m_ring = nullptr;
+    dsp::SpscRing<float> *m_txRing = nullptr;
     QTimer *m_timer = nullptr;
     SyntheticBand m_band;
     QElapsedTimer m_clock;
 
     std::vector<dsp::Complex> m_block;
     std::vector<float> m_interleaved;
+    std::vector<float> m_txInterleaved;
 
     double m_sampleRate = 192000.0;
     qint64 m_centerHz = 7'100'000;

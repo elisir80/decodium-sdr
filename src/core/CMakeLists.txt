@@ -3,6 +3,8 @@ add_library(dsdr_core STATIC
     SpectrumFeed.cpp
     DspEngine.h
     DspEngine.cpp
+    TxEngine.h
+    TxEngine.cpp
     IqModuleApi.h
     ChannelModel.h
     ChannelModel.cpp

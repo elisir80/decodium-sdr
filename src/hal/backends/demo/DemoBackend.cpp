@@ -25,6 +25,7 @@ constexpr int kMaxRxChannels = 4;
 DemoBackend::DemoBackend(QObject *parent)
     : IRadioBackend(parent)
     , m_iqRing(std::make_unique<SampleRing>(kIqRingFloats))
+    , m_txRing(std::make_unique<SampleRing>(kIqRingFloats))
 {
 }
 
@@ -202,9 +203,12 @@ void DemoBackend::restartWorker()
         return;
 
     m_iqRing->clear();
+    // Anche il ring di trasmissione: quel che era in coda apparteneva alla
+    // configurazione precedente e uscirebbe adesso, alla frequenza sbagliata.
+    m_txRing->clear();
     m_sequence = 0;
 
-    auto *worker = new DemoWorker(m_iqRing.get());
+    auto *worker = new DemoWorker(m_iqRing.get(), m_txRing.get());
     worker->configure(m_sampleRate, m_centerHz, bandPlanFor(m_device));
 
     m_thread = new QThread(this);
@@ -396,6 +400,11 @@ void DemoBackend::setPtt(bool transmit)
 void DemoBackend::setTxFrequency(qint64 hz)
 {
     m_txFrequencyHz = hz;
+}
+
+SampleRing *DemoBackend::txStream()
+{
+    return m_txRing.get();
 }
 
 SampleRing *DemoBackend::iqStream(ChannelId channel) const

@@ -5,6 +5,12 @@ dsdr_add_test(tst_session_demo
     SOURCES tst_session_demo.cpp
     LIBRARIES dsdr::core)
 
+# Il percorso di trasmissione senza microfono: in CW la sorgente è il tasto,
+# e tutto il resto della catena è lo stesso.
+dsdr_add_test(tst_tx_engine
+    SOURCES tst_tx_engine.cpp
+    LIBRARIES dsdr::core)
+
 dsdr_add_test(tst_iq_recorder
     SOURCES tst_iq_recorder.cpp
     LIBRARIES dsdr::core)

@@ -1,6 +1,8 @@
 add_library(dsdr_audio STATIC
     AudioRouter.h
     AudioRouter.cpp
+    MicSource.h
+    MicSource.cpp
 )
 
 target_link_libraries(dsdr_audio PUBLIC dsdr::common dsdr::dsp Qt6::Core Qt6::Multimedia)
