@@ -42,6 +42,28 @@ Item {
 
     anchors.fill: parent
 
+    // ── Il gesto, in un posto solo ───────────────────────────────────────
+    //
+    // Si può afferrare la bandierina in cima o l'asse per tutta la sua
+    // altezza, e devono comportarsi allo stesso modo: due copie della stessa
+    // geometria diventerebbero due comportamenti diversi al primo ritocco.
+    property real grabOffsetHz: 0
+
+    function beginDrag(pointerX) {
+        selectRequested()
+        // L'offset di presa serve a non far saltare il canale sotto il punto
+        // in cui lo si è toccato. Ma vale solo finché la bandierina sta dov'è
+        // il canale: quando è alla deriva al bordo, quell'offset è la distanza
+        // dal canale — anche di megahertz — e il trascinamento non lo
+        // riporterebbe mai sotto il puntatore. Lì il gesto torna a essere
+        // quello che ci si aspetta: il canale va dove si punta.
+        grabOffsetHz = adrift ? 0 : vfoFrequency - frequencyAt(pointerX)
+    }
+
+    function dragTo(pointerX) {
+        tuneRequested(Math.round(frequencyAt(pointerX) + grabOffsetHz))
+    }
+
     // ── Banda passante ───────────────────────────────────────────────────
     Rectangle {
         x: Math.min(root.filterLeft, root.filterRight)
@@ -66,6 +88,38 @@ Item {
         color: root.vfoColor
         opacity: 0.9
         visible: x > -4 && x < root.width + 4
+    }
+
+    // La presa sull'asse. Una riga larga un pixel non si afferra: questa è
+    // larga quattordici e invisibile, e copre tutta l'altezza — spettro e
+    // waterfall insieme, perché è lì che si guarda quando si sposta un
+    // ricevitore, non sull'etichetta in cima.
+    //
+    // Prenderla seleziona anche il ricevitore: chi tocca una barra sta
+    // dicendo di quale si vuole occupare, ed è il modo in cui si passa da un
+    // ricevitore all'altro senza cercare l'elenco.
+    MouseArea {
+        id: axisGrip
+
+        x: root.centerX - width / 2
+        width: 14
+        y: 0
+        height: parent.height
+        visible: !root.adrift && x + width > 0 && x < root.width
+        cursorShape: Qt.SizeHorCursor
+        acceptedButtons: Qt.LeftButton
+
+        onPressed: (mouse) => {
+            const pointer = mapToItem(root, mouse.x, mouse.y)
+            root.beginDrag(pointer.x)
+        }
+
+        onPositionChanged: (mouse) => {
+            if (!pressed)
+                return
+            const pointer = mapToItem(root, mouse.x, mouse.y)
+            root.dragTo(pointer.x)
+        }
     }
 
     // ── Bandierina con etichetta ─────────────────────────────────────────
@@ -111,29 +165,16 @@ Item {
             cursorShape: Qt.SizeHorCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
 
-            property real grabOffsetHz: 0
-
             onPressed: (mouse) => {
-                root.selectRequested()
                 const pointer = mapToItem(root, mouse.x, mouse.y)
-                // L'offset di presa serve a non far saltare il canale sotto il
-                // centro della bandierina appena la si tocca. Ma vale solo
-                // finché la bandierina sta dov'è il canale: quando è alla
-                // deriva al bordo, quell'offset è la distanza dal canale
-                // — anche di megahertz — e il trascinamento non lo
-                // riporterebbe mai sotto il puntatore. Lì il gesto torna a
-                // essere quello che ci si aspetta: il canale va dove si punta.
-                grabOffsetHz = root.adrift
-                             ? 0
-                             : root.vfoFrequency - root.frequencyAt(pointer.x)
+                root.beginDrag(pointer.x)
             }
 
             onPositionChanged: (mouse) => {
                 if (!pressed)
                     return
                 const pointer = mapToItem(root, mouse.x, mouse.y)
-                const target = root.frequencyAt(pointer.x) + grabOffsetHz
-                root.tuneRequested(Math.round(target))
+                root.dragTo(pointer.x)
             }
 
             onClicked: (mouse) => {

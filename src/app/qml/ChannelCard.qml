@@ -277,6 +277,66 @@ Rectangle {
             color: Theme.textDisabled
         }
 
+        // ── Filtri di disturbo ───────────────────────────────
+        //
+        // Gli interruttori mancavano del tutto: c'erano i cursori, che
+        // comparivano solo a stadio già acceso — e non c'era modo di
+        // accenderlo. È l'ultimo pezzo rimasto indietro dalla fusione.
+        //
+        // Il blanker a banda piena non sta qui e non è una svista: un impulso
+        // è dell'ambiente, arriva su tutta la banda campionata e va tolto una
+        // volta sola prima che i canali decimino la loro fetta (SPEC-003 §4).
+        // Sta nel pannello CATENA RX, dove vale per tutti.
+        Text {
+            text: qsTr("Disturbi")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textSecondary
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+
+            DsdrButton {
+                Layout.fillWidth: true
+                implicitWidth: 0
+                implicitHeight: 24
+                fontSize: Theme.fontSmall
+                text: qsTr("NR")
+                checkable: true
+                checked: entry.nrEnabled
+                onToggled: Session.setChannelNoiseReduction(entry.index, checked,
+                                                            entry.nrStrength)
+            }
+
+            DsdrButton {
+                Layout.fillWidth: true
+                implicitWidth: 0
+                implicitHeight: 24
+                fontSize: Theme.fontSmall
+                text: qsTr("ANF")
+                checkable: true
+                checked: entry.anfEnabled
+                // In CW la nota che si ascolta è una riga fissa, ed è
+                // esattamente ciò che l'ANF toglie: il motore lo esclude da
+                // sé, e qui si dice invece di lasciar premere a vuoto.
+                enabled: entry.modeName.indexOf("CW") !== 0
+                onToggled: Session.setChannelAutoNotch(entry.index, checked)
+            }
+
+            DsdrButton {
+                Layout.fillWidth: true
+                implicitWidth: 0
+                implicitHeight: 24
+                fontSize: Theme.fontSmall
+                text: qsTr("NOTCH")
+                // Un notch si mette dove dà fastidio: il tasto destro sul
+                // panadattatore lo pianta lì. Questo lo aggiunge sulla
+                // portante, che è il caso in cui si sa già dove sta.
+                onClicked: Session.addChannelNotch(entry.index, entry.frequencyHz)
+            }
+        }
+
         // Un solo comando per il NR, come vuole la specifica: alza e abbassa
         // il fondo del guadagno. Più in alto si sente meno rumore e più
         // campanellini, ed è l'unica cosa che si giudica a orecchio.
