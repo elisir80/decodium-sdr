@@ -71,6 +71,34 @@ if(DSDR_BACKEND_IQFILE)
     list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_IQFILE)
 endif()
 
+if(DSDR_BACKEND_AUDIORIG)
+    # Serve la seriale (piano di controllo) e il multimedia (piano dati). Se
+    # Qt non li porta, il backend si spegne da sé con una spiegazione invece di
+    # far fallire tutta la configurazione: chi non ha una radio tradizionale
+    # non deve installare due moduli Qt per compilare.
+    find_package(Qt6 QUIET COMPONENTS SerialPort Multimedia)
+    if(Qt6SerialPort_FOUND AND Qt6Multimedia_FOUND)
+        list(APPEND DSDR_HAL_SOURCES
+            backends/audiorig/ICatDriver.h
+            backends/audiorig/NewcatDriver.h
+            backends/audiorig/NewcatDriver.cpp
+            backends/audiorig/CatController.h
+            backends/audiorig/CatController.cpp
+            backends/audiorig/AudiorigBackend.h
+            backends/audiorig/AudiorigBackend.cpp
+        )
+        list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_AUDIORIG)
+        set(DSDR_HAL_NEEDS_SERIAL ON)
+    else()
+        message(STATUS "audiorig disattivato: mancano Qt6::SerialPort o Qt6::Multimedia
+"
+                       "  MSYS2 : pacman -S mingw-w64-x86_64-qt6-serialport
+"
+                       "  Debian: apt install qt6-serialport-dev")
+        set(DSDR_BACKEND_AUDIORIG OFF)
+    endif()
+endif()
+
 if(DSDR_BACKEND_SOAPY)
     # SoapySDR è opzionale: se manca si spiega come installarlo invece di
     # lasciare all'utente un errore di CMake da decifrare.
@@ -116,6 +144,13 @@ target_link_libraries(dsdr_hal PUBLIC dsdr::common dsdr::dsp Qt6::Core)
 
 if(DSDR_HAL_NEEDS_NETWORK)
     target_link_libraries(dsdr_hal PUBLIC Qt6::Network)
+endif()
+
+if(DSDR_HAL_NEEDS_SERIAL)
+    # Il piano dati di `audiorig` è una scheda audio, e per leggerla si passa
+    # da dsdr::audio: è l'unico backend che dipende dallo strato audio, e la
+    # dipendenza va in quel verso solo — audio non conosce la HAL.
+    target_link_libraries(dsdr_hal PUBLIC Qt6::SerialPort dsdr::audio)
 endif()
 
 if(DSDR_BACKEND_SOAPY)

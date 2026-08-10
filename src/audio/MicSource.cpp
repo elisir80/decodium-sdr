@@ -125,12 +125,21 @@ MicSource::~MicSource()
     stop();
 }
 
+QList<QAudioDevice> MicSource::inputs()
+{
+    return QMediaDevices::audioInputs();
+}
+
 bool MicSource::start()
+{
+    return start(QMediaDevices::defaultAudioInput());
+}
+
+bool MicSource::start(const QAudioDevice &device)
 {
     if (isActive())
         return true;
 
-    const QAudioDevice device = QMediaDevices::defaultAudioInput();
     if (device.isNull()) {
         m_error = tr("Nessun ingresso audio disponibile.");
         return false;

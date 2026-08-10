@@ -10,6 +10,7 @@ option(DSDR_BACKEND_HPSDR   "Backend OpenHPSDR P1/P2 (RF-02)"                   
 option(DSDR_BACKEND_DLINK   "Backend DLINK / DECODIUM SDR One (RF-03)"          OFF)
 option(DSDR_BACKEND_COLIBRI "Backend ColibriNANO (Expert Electronics)"          ON)
 option(DSDR_BACKEND_IQFILE  "Riproduzione di registrazioni IQ (RF-17)"          ON)
+option(DSDR_BACKEND_AUDIORIG "Radio tradizionali via audio + CAT (SPEC-004)"       ON)
 option(DSDR_BACKEND_FLEX    "Backend FlexRadio SmartSDR (RF-04)"                OFF)
 option(DSDR_BACKEND_TCI     "Backend TCI / SunSDR (RF-05)"                      OFF)
 option(DSDR_BACKEND_KIWI    "Backend KiwiSDR (RF-06)"                           OFF)

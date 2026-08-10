@@ -23,6 +23,10 @@
 #include "hal/backends/iqfile/IqFileBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_AUDIORIG
+#include "hal/backends/audiorig/AudiorigBackend.h"
+#endif
+
 namespace dsdr::hal {
 
 BackendRegistry &BackendRegistry::instance()
@@ -149,6 +153,18 @@ void registerBuiltinBackends()
                                    "sintonizzabile, demodulabile, con il suo waterfall. "
                                    "Con la differenza che il tempo si può riavvolgere.")},
         [](QObject *parent) -> IRadioBackend * { return new IqFileBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_AUDIORIG
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("audiorig"),
+                    QStringLiteral("Radio tradizionale (audio + CAT)"),
+                    QStringLiteral("Una radio senza uscita IF — un FT-991A, un IC-7300, "
+                                   "un TS-590 — trattata per quello che è: la radio "
+                                   "demodula, noi riceviamo audio e comandiamo via CAT. "
+                                   "Panadattatore ancorato al VFO, largo quanto la "
+                                   "passata.")},
+        [](QObject *parent) -> IRadioBackend * { return new AudiorigBackend(parent); });
 #endif
 
     // Gli altri backend si aggiungono qui, uno per fase (§9). Ogni blocco è

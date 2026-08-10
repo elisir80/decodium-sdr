@@ -94,8 +94,18 @@ public:
     virtual bool ptt() const = 0;
     virtual void setTxFrequency(qint64 hz) = 0;
 
-    /// Ring in cui il **client scrive** i campioni da trasmettere, interleaved
-    /// I,Q alla frequenza di `sampleRate()`.
+    /// Ring in cui il **client scrive** i campioni da trasmettere.
+    ///
+    /// Che cosa ci sia dentro lo dice la capability `demod`, come per il verso
+    /// della ricezione:
+    ///
+    ///   `DspLocation::Client`  IQ interleaved I,Q alla frequenza `sampleRate()`
+    ///   `DspLocation::Device`  audio mono a 48 kHz — la radio modula da sé, e
+    ///                          consegnarle banda base vorrebbe dire modulare
+    ///                          due volte
+    ///
+    /// Non sono due metodi perché non sono due percorsi: è lo stesso ring, e
+    /// chi lo riempie legge la capability che già consulta per tutto il resto.
     ///
     /// È l'unico punto del seam in cui i dati vanno nella direzione opposta, e
     /// per il resto la regola non cambia: i campioni non passano dai signal

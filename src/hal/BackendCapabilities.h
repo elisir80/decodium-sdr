@@ -31,6 +31,13 @@ struct BackendCapabilities
     DspLocation spectrum = DspLocation::Client;
     DspLocation agc = DspLocation::Client;
 
+    /// Chi modula, in trasmissione. Non si ricava da `demod`: una radio
+    /// tradizionale demodula **e** modula a bordo, ma esistono anche device
+    /// che consegnano IQ in ricezione e vogliono audio in trasmissione. Da
+    /// questo campo dipende che cosa il client scrive in `txStream()`, e
+    /// sbagliarlo vuol dire modulare due volte.
+    DspLocation modulation = DspLocation::Client;
+
     // ── Segnale ──────────────────────────────────────────────────────────
     QList<double> sampleRates;    ///< rate IQ disponibili (vuoto se server-DSP)
     double defaultSampleRate = 0.0;

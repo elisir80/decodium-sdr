@@ -27,3 +27,12 @@ if(DSDR_BACKEND_NETTCP)
             SpyServerMockServer.cpp
         LIBRARIES dsdr::hal Qt6::Network)
 endif()
+
+if(DSDR_BACKEND_AUDIORIG)
+    # La tabella dei modi newcat è l'unica parte del backend verificabile
+    # senza radio, ed è quella in cui un errore manda in aria il modo
+    # sbagliato invece di far fallire qualcosa.
+    dsdr_add_test(tst_newcat
+        SOURCES tst_newcat.cpp
+        LIBRARIES dsdr::hal)
+endif()

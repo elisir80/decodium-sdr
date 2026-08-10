@@ -14,6 +14,7 @@
 
 #include "dsp/SpscRing.h"
 
+#include <QAudioDevice>
 #include <QAudioFormat>
 #include <QObject>
 #include <QString>
@@ -41,7 +42,17 @@ public:
     /// dice con `errorString()` — se non ce n'è uno utilizzabile: un computer
     /// senza microfono deve poter usare tutto il resto dell'applicazione.
     bool start();
+
+    /// Apre un dispositivo scelto. Serve al backend `audiorig`, dove
+    /// l'ingresso non è «il microfono» ma il codec di una radio precisa, e
+    /// prendere quello predefinito vorrebbe dire ascoltare la stanza invece
+    /// della banda.
+    bool start(const QAudioDevice &device);
+
     void stop();
+
+    /// Gli ingressi audio disponibili, per chi deve sceglierne uno.
+    static QList<QAudioDevice> inputs();
 
     bool isActive() const;
     QString deviceName() const { return m_deviceName; }

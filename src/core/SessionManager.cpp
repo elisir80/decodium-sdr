@@ -586,9 +586,15 @@ void SessionManager::connectToDevice(int deviceRow)
     // anche nel verso opposto.
     if (m_capabilities.canTransmit()) {
         hal::SampleRing *txRing = m_backend->txStream();
-        const double rate = m_sampleRate;
-        QMetaObject::invokeMethod(m_tx, [this, txRing, rate] {
-            m_tx->attach(txRing, rate);
+        // Chi demodula a bordo modula a bordo, e da noi vuole audio: la
+        // catena si accorcia da sé. La distinzione la fa la capability, non
+        // l'identità del backend — sopra la HAL nessuno sa che radio sia.
+        const bool deviceModulates = !m_capabilities.clientModulation();
+        const double rate = deviceModulates ? kInternalAudioRate : m_sampleRate;
+        const auto domain = deviceModulates ? TxEngine::Domain::Audio
+                                            : TxEngine::Domain::Baseband;
+        QMetaObject::invokeMethod(m_tx, [this, txRing, rate, domain] {
+            m_tx->attach(txRing, rate, domain);
         });
         pushTxConfig();
     }
@@ -903,9 +909,15 @@ void SessionManager::setSampleRate(double rate)
     // anche nel verso opposto.
     if (m_capabilities.canTransmit()) {
         hal::SampleRing *txRing = m_backend->txStream();
-        const double rate = m_sampleRate;
-        QMetaObject::invokeMethod(m_tx, [this, txRing, rate] {
-            m_tx->attach(txRing, rate);
+        // Chi demodula a bordo modula a bordo, e da noi vuole audio: la
+        // catena si accorcia da sé. La distinzione la fa la capability, non
+        // l'identità del backend — sopra la HAL nessuno sa che radio sia.
+        const bool deviceModulates = !m_capabilities.clientModulation();
+        const double rate = deviceModulates ? kInternalAudioRate : m_sampleRate;
+        const auto domain = deviceModulates ? TxEngine::Domain::Audio
+                                            : TxEngine::Domain::Baseband;
+        QMetaObject::invokeMethod(m_tx, [this, txRing, rate, domain] {
+            m_tx->attach(txRing, rate, domain);
         });
         pushTxConfig();
     }

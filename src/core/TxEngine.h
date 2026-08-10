@@ -40,6 +40,21 @@ class TxEngine : public QObject
     Q_OBJECT
 
 public:
+    /// Che cosa si consegna alla radio.
+    ///
+    /// Non tutte le radio vogliono la stessa cosa, e la differenza non è un
+    /// dettaglio del backend ma una capability: chi demodula a bordo
+    /// (`DspLocation::Device`) modula anche a bordo, e da noi vuole **audio**.
+    /// Chi consegna IQ grezzo vuole la banda base complessa. La catena si
+    /// accorcia da sé nel primo caso — niente modulatore, niente
+    /// interpolazione, niente traslazione — perché quei tre stadi li ha già la
+    /// radio, e rifarli qui vorrebbe dire modulare due volte.
+    enum class Domain {
+        Baseband,   ///< IQ interleaved alla frequenza del device
+        Audio,      ///< audio mono a 48 kHz verso il codec della radio
+    };
+    Q_ENUM(Domain)
+
     explicit TxEngine(QObject *parent = nullptr);
     ~TxEngine() override;
 
@@ -60,7 +75,8 @@ public slots:
     /// Aggancia la radio. `deviceRate` è la frequenza del ring TX del backend;
     /// deve essere un multiplo intero di quella dell'audio, altrimenti la
     /// trasmissione viene rifiutata con `refused()` invece di uscire storta.
-    void attach(dsdr::dsp::SpscRing<float> *txRing, double deviceRate);
+    void attach(dsdr::dsp::SpscRing<float> *txRing, double deviceRate,
+                Domain domain = Domain::Baseband);
     void detach();
 
     /// Aggancia il microfono. Può arrivare dopo: senza, si trasmette silenzio
@@ -119,6 +135,8 @@ private:
     std::vector<float> m_interleaved;
 
     dsp::TxSettings m_settings;
+    Domain m_domain = Domain::Baseband;
+    double m_cwPhase = 0.0;
     double m_deviceRate = 0.0;
     double m_audioRate = 48000.0;
     double m_offsetHz = 0.0;

@@ -41,6 +41,11 @@ struct TxSettings
     /// Deviazione di picco della FM. 5 kHz è lo standard NBFM dei ripetitori,
     /// 75 kHz quello della radiodiffusione.
     double fmDeviationHz = 5000.0;
+
+    /// Tono della manipolazione CW. In banda base non serve — la portante sta
+    /// a frequenza zero — ma serve eccome quando è la radio a modulare e noi
+    /// le passiamo audio: lì il punto dev'essere un suono, non un livello.
+    double cwPitchHz = 700.0;
 };
 
 class Modulator

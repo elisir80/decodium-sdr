@@ -59,10 +59,11 @@ void TxEngine::stop()
     }
 }
 
-void TxEngine::attach(dsp::SpscRing<float> *txRing, double deviceRate)
+void TxEngine::attach(dsp::SpscRing<float> *txRing, double deviceRate, Domain domain)
 {
     m_txRing = txRing;
     m_deviceRate = deviceRate;
+    m_domain = domain;
     m_chainReady = rebuildChain();
 }
 
@@ -92,6 +93,20 @@ bool TxEngine::rebuildChain()
 {
     if (!m_txRing || m_deviceRate <= 0.0)
         return false;
+
+    if (m_domain == Domain::Audio) {
+        // Verso una radio che modula da sé non c'è nulla da costruire: si
+        // consegna audio, e l'audio è già alla frequenza giusta. Se non lo
+        // fosse servirebbe un ricampionatore, e vale il rifiuto di sotto.
+        if (std::abs(m_deviceRate - m_audioRate) > 1.0) {
+            emit refused(tr("Il codec della radio lavora a %1 Hz invece di %2: "
+                            "servirebbe un ricampionatore.")
+                             .arg(m_deviceRate, 0, 'f', 0).arg(m_audioRate));
+            return false;
+        }
+        m_interleaved.assign(kAudioBlockFrames, 0.0f);
+        return true;
+    }
 
     const double ratio = m_deviceRate / m_audioRate;
     const int factor = static_cast<int>(std::lround(ratio));
@@ -174,6 +189,7 @@ void TxEngine::setTransmitting(bool transmitting)
         m_modulator.reset();
         m_interpolator.reset();
         m_nco.reset();
+        m_cwPhase = 0.0;
         m_framesSent = 0;
         m_starved.store(0, std::memory_order_relaxed);
         m_clock.restart();
@@ -234,6 +250,22 @@ void TxEngine::produce(std::size_t audioFrames)
         // In CW il microfono non c'entra: la sorgente è il tasto, e l'audio
         // che entra nel modulatore è l'inviluppo.
         m_keyer.process(m_audio.data(), audioFrames);
+
+        if (m_domain == Domain::Audio) {
+            // Verso il codec di una radio, il punto dev'essere un **suono**:
+            // l'inviluppo da solo è una tensione continua, e una radio in SSB
+            // non trasmetterebbe nulla. Il tono è quello del monitor, così
+            // quello che la radio manda in aria e quello che l'operatore
+            // sente sono la stessa cosa.
+            const double step = dsp::kTwoPi * m_settings.cwPitchHz / m_audioRate;
+            for (std::size_t i = 0; i < audioFrames; ++i) {
+                m_cwPhase += step;
+                if (m_cwPhase > dsp::kTwoPi)
+                    m_cwPhase -= dsp::kTwoPi;
+                m_audio[i] *= static_cast<float>(std::sin(m_cwPhase));
+            }
+        }
+
         m_micPeak.store(m_keyDown ? 1.0f : 0.0f, std::memory_order_relaxed);
         m_compressionDb.store(0.0f, std::memory_order_relaxed);
     } else {
@@ -247,6 +279,22 @@ void TxEngine::produce(std::size_t audioFrames)
         m_speech.process(m_audio.data(), audioFrames);
         m_micPeak.store(m_speech.lastInputPeak(), std::memory_order_relaxed);
         m_compressionDb.store(m_speech.lastCompressionDb(), std::memory_order_relaxed);
+    }
+
+    if (m_domain == Domain::Audio) {
+        // La radio ha già il suo modulatore, il suo filtro di banda e il suo
+        // oscillatore: qui finisce la catena. Restano il processore di voce e
+        // il livello, che sono nostri e servono comunque.
+        float peak = 0.0f;
+        for (std::size_t i = 0; i < audioFrames; ++i) {
+            const float sample = m_audio[i] * m_drive;
+            m_interleaved[i] = sample;
+            peak = std::max(peak, std::abs(sample));
+        }
+        m_outputPeak.store(peak, std::memory_order_relaxed);
+        if (m_txRing)
+            m_txRing->write(m_interleaved.data(), audioFrames);
+        return;
     }
 
     m_modulator.process(m_audio.data(), audioFrames, m_baseband.data());

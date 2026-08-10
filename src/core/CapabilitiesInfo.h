@@ -22,6 +22,7 @@ class CapabilitiesInfo : public QObject
     Q_PROPERTY(bool canTransmit READ canTransmit NOTIFY changed)
     Q_PROPERTY(bool fullDuplex READ fullDuplex NOTIFY changed)
     Q_PROPERTY(bool clientDemod READ clientDemod NOTIFY changed)
+    Q_PROPERTY(bool clientModulation READ clientModulation NOTIFY changed)
     Q_PROPERTY(bool clientSpectrum READ clientSpectrum NOTIFY changed)
     Q_PROPERTY(bool clientAgc READ clientAgc NOTIFY changed)
     Q_PROPERTY(QVariantList sampleRates READ sampleRates NOTIFY changed)
@@ -51,6 +52,7 @@ public:
     bool canTransmit() const { return m_capabilities.canTransmit(); }
     bool fullDuplex() const { return m_capabilities.tx == TxSupport::FullDuplex; }
     bool clientDemod() const { return m_capabilities.demod == DspLocation::Client; }
+    bool clientModulation() const { return m_capabilities.modulation == DspLocation::Client; }
     bool clientSpectrum() const { return m_capabilities.spectrum == DspLocation::Client; }
     bool clientAgc() const { return m_capabilities.agc == DspLocation::Client; }
     qint64 minFrequency() const { return m_capabilities.minFrequencyHz; }
