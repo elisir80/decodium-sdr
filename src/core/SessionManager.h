@@ -125,6 +125,21 @@ class SessionManager : public QObject
     /// un automatismo che non scatterà mai (CONSTITUTION §7).
     Q_PROPERTY(bool canCorrectGain READ canCorrectGain NOTIFY connectionChanged)
 
+    // ── Misure di trasmissione ──────────────────────────────────────────
+    //
+    // Arrivano dal seam con `meterUpdate`, e finora non le raccoglieva
+    // nessuno: i campi c'erano in `MeterFrame` e si fermavano lì. Uno
+    // strumento di potenza senza queste è un disegno.
+    //
+    // `txMetersAvailable` distingue «zero watt» da «non lo so», che su un
+    // wattmetro sono cose opposte: il primo si mostra, il secondo si dichiara
+    // (CONSTITUTION §7). Diventa vero quando un backend manda una misura di
+    // potenza, e torna falso quando la sessione si chiude.
+    Q_PROPERTY(bool txMetersAvailable READ txMetersAvailable NOTIFY txMetersChanged)
+    Q_PROPERTY(double txForwardWatt READ txForwardWatt NOTIFY txMetersChanged)
+    Q_PROPERTY(double txReflectedWatt READ txReflectedWatt NOTIFY txMetersChanged)
+    Q_PROPERTY(double txSwr READ txSwr NOTIFY txMetersChanged)
+
     // ── Stadio neurale (SPEC-003 §8) ────────────────────────────────────
     //
     // `neuralAvailable` è una proprietà della compilazione: senza il motore la
@@ -271,6 +286,11 @@ public:
     void setOverloadMode(int mode);
     bool canCorrectGain() const;
     double gainReductionDb() const { return m_gainReductionDb; }
+
+    bool txMetersAvailable() const { return m_txMetersAvailable; }
+    double txForwardWatt() const { return m_txForwardWatt; }
+    double txReflectedWatt() const { return m_txReflectedWatt; }
+    double txSwr() const { return m_txSwr; }
 
     bool neuralAvailable() const;
     bool neuralEnabled() const { return m_neuralEnabled; }
@@ -534,6 +554,11 @@ private:
     bool m_nbEnabled = false;
     bool m_neuralEnabled = false;
     bool m_overloaded = false;
+
+    bool m_txMetersAvailable = false;
+    double m_txForwardWatt = 0.0;
+    double m_txReflectedWatt = 0.0;
+    double m_txSwr = 1.0;
     bool m_connected = false;
     bool m_discovering = false;
     bool m_transmitting = false;

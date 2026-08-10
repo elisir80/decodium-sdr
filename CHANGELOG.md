@@ -11,6 +11,18 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
   la tacca del picco che scende piano, e sotto il livello assoluto e il
   rapporto segnale/rumore del canale. Segue il canale corrente e si sposta
   nella colonna come gli altri pannelli.
+- **DECØMETER**, secondo strumento dello stesso pannello: potenza diretta,
+  riflessa e rapporto di onde stazionarie su tre archi a segmenti, con quattro
+  portate — 5, 50, 500 watt e 5 kW — che si scelgono a mano o da sole. La
+  risposta è quella di un wattmetro a termocoppia: attacco immediato, rilascio
+  lento, picco che tiene tre secondi, perché la potenza in SSB è tutta picchi.
+- **Si sceglie quale strumento mostrare**, con due tasti in testa al pannello,
+  e la scelta si ricorda. Il titolo dice quale dei due è attivo: a pannello
+  chiuso è tutto quello che resta.
+- **Le misure di trasmissione arrivano fino all'interfaccia.** Il seam le
+  portava da sempre con `meterUpdate` e nel core non le raccoglieva nessuno.
+  Finché nessun backend le consegna, lo strumento resta spento e lo dichiara —
+  «nessun sensore» — invece di mostrare uno zero che sembra una misura.
 
 ### Corretto — Strumenti
 

@@ -629,6 +629,44 @@ void SessionManager::selectBackend(const QString &backendId)
         emit centerFrequencyChanged();
     });
 
+    // Le misure di trasmissione. Il seam le porta da sempre; fin qui non le
+    // raccoglieva nessuno, e i campi di `MeterFrame` finivano nel vuoto.
+    //
+    // La potenza riflessa non si misura: si ricava dal ROS, perché è lo stesso
+    // numero detto in due modi. Un backend che misurasse davvero le due
+    // potenze separate darebbe un ROS coerente con esse, quindi il conto
+    // torna lo stesso; ricavarla evita di dover aggiungere un campo che
+    // nessuno riempirebbe.
+    connect(m_backend, &hal::IRadioBackend::meterUpdate, this,
+            [this](const hal::MeterFrame &meters) {
+                const double swr = meters.swr >= 1.0 ? meters.swr : 1.0;
+                const double forward = meters.powerWatt >= 0.0 ? meters.powerWatt : 0.0;
+                const double rho = (swr - 1.0) / (swr + 1.0);
+                const double reflected = forward * rho * rho;
+
+                // Una radio che tace sulla potenza manda `powerWatt` a zero, e
+                // zero watt e «non lo so» su un wattmetro sono cose opposte:
+                // il primo si mostra, il secondo si dichiara. Basta una misura
+                // sopra lo zero perché lo strumento si accenda per la sessione
+                // — dopo, uno zero è una misura come le altre.
+                const bool available = m_txMetersAvailable || forward > 0.0;
+
+                // Un decimo di watt e un centesimo di ROS: sotto quella soglia
+                // nessuno strumento mostrerebbe una differenza, e ogni frame
+                // audio porta qui una misura — sarebbero decine di risvegli al
+                // secondo del motore QML per ridisegnare lo stesso quadro.
+                if (available == m_txMetersAvailable
+                    && std::abs(forward - m_txForwardWatt) < 0.1
+                    && std::abs(swr - m_txSwr) < 0.01)
+                    return;
+
+                m_txMetersAvailable = available;
+                m_txForwardWatt = forward;
+                m_txReflectedWatt = reflected;
+                m_txSwr = swr;
+                emit txMetersChanged();
+            });
+
     // I frame attraversano i thread: connessione queued verso il DSP, che
     // legge poi i campioni dal ring (§4.1). Si collegano entrambi i versi —
     // IQ e audio — perché quale dei due arrivi dipende dal backend, e un
@@ -818,6 +856,17 @@ void SessionManager::disconnectDevice()
     // senza dimensioni valide nell'intestazione.
     stopRecording();
     stopAudioRecording();
+
+    // Le misure di potenza appartengono alla radio che se ne va. Lasciarle
+    // ferme sull'ultimo valore letto darebbe uno strumento che indica watt
+    // che nessuno sta più trasmettendo.
+    if (m_txMetersAvailable || m_txForwardWatt != 0.0) {
+        m_txMetersAvailable = false;
+        m_txForwardWatt = 0.0;
+        m_txReflectedWatt = 0.0;
+        m_txSwr = 1.0;
+        emit txMetersChanged();
+    }
 
     m_audio->stop();
     m_mic->stop();

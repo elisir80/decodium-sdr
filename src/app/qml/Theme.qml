@@ -64,6 +64,23 @@ QtObject {
     readonly property color lcdSheenSoft: "#08FFFFFF"
     readonly property color lcdRim: "#1AFFFFFF"
 
+    // ── Strumento di potenza ─────────────────────────────────────────────
+    //
+    // Le tre tinte di un wattmetro non sono decorazione: verde, ambra e rosso
+    // dicono «va bene», «guarda» e «fermati» senza che si debba leggere un
+    // numero, e chi trasmette guarda lo strumento con la coda dell'occhio.
+    readonly property color meterSafe: "#46D67C"
+    readonly property color meterCaution: "#FFB454"
+    readonly property color meterDanger: "#FF4A4A"
+
+    /// I segmenti spenti dell'arco: si devono vedere — sono la scala — senza
+    /// competere con quelli accesi.
+    readonly property color meterUnlit: "#14FFFFFF"
+    readonly property color meterScale: "#3A424A"
+    readonly property color meterScaleText: "#6A737C"
+    readonly property color meterReadout: "#27C4D4"
+    readonly property color meterDisplayBackground: "#000000"
+
     // ── Segmenti del piano bande ─────────────────────────────────────────
     //
     // Tinte tenute basse di proposito: la striscia sta sotto lo spettro e deve

@@ -5,6 +5,7 @@
 #include "core/SessionManager.h"
 
 #include <QCoreApplication>
+#include <QSettings>
 #include <QtQuickTest>
 
 class Setup : public QObject
@@ -24,6 +25,14 @@ public slots:
         QCoreApplication::setOrganizationName(QStringLiteral("DECODIUM-test"));
         QCoreApplication::setOrganizationDomain(QStringLiteral("test.decodium.invalid"));
         QCoreApplication::setApplicationName(QStringLiteral("qml-components"));
+
+        // E si parte da una lavagna pulita. Le preferenze sopravvivono a
+        // un'esecuzione, e quello che un test lascia scritto lo rilegge il
+        // prossimo: un pannello chiuso da una prova nasceva chiuso in tutte
+        // quelle dopo, che poi misuravano l'altezza di un'intestazione e
+        // fallivano parlando d'altro. Vale solo per l'organizzazione di test,
+        // che è quella impostata due righe più su.
+        QSettings().clear();
     }
 
     void qmlEngineAvailable(QQmlEngine *)

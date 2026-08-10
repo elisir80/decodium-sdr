@@ -26,7 +26,7 @@ TestCase {
     /// stava scritto a mano in tre prove diverse, e aggiungerne uno le faceva
     /// fallire tutte e tre parlando di un «7» che non spiegava niente.
     readonly property var expectedKeys: [
-        "sintonia", "smeter", "tempo", "catena",
+        "sintonia", "strumento", "tempo", "catena",
         "trasmissione", "device", "waterfall", "canali"
     ]
 
