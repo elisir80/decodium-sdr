@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QLoggingCategory>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
@@ -42,6 +43,12 @@ int main(int argc, char *argv[])
     QGuiApplication::setApplicationVersion(QStringLiteral(DSDR_VERSION));
     QGuiApplication::setOrganizationName(QStringLiteral("DECODIUM"));
     QGuiApplication::setOrganizationDomain(QStringLiteral("decodium.it"));
+
+    // La finestra e la barra delle applicazioni. Su Windows e macOS l'icona
+    // del *file* arriva invece dalla risorsa dell'eseguibile e dal bundle: le
+    // due strade sono indipendenti, e servono entrambe.
+    QGuiApplication::setWindowIcon(
+        QIcon(QStringLiteral(":/icons/it.decodium.sdr.png")));
 
     // Lo stile Basic è l'unico che non impone una propria palette: il tema
     // DECODIUM viene interamente dal singleton Theme (CONSTITUTION §6).

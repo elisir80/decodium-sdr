@@ -127,6 +127,43 @@ if(APPLE)
     )
 endif()
 
+# ── Icona (packaging/icons/) ─────────────────────────────────────────────────
+#
+# I file dell'icona sono versionati e si rigenerano dall'SVG con
+# `python packaging/icons/render.py`. Qui si limitano a entrare nei tre posti
+# in cui ciascun sistema li cerca, che sono posti diversi:
+#
+#   Windows   una risorsa dentro l'eseguibile (l'esplora risorse legge quella)
+#   macOS     un .icns dentro Contents/Resources, dichiarato nell'Info.plist
+#   ovunque   `setWindowIcon`, che copre la finestra e la barra delle
+#             applicazioni ma non il file su disco
+#
+# Nessuno dei tre sostituisce gli altri: senza il primo l'eseguibile Windows
+# resta con l'icona generica per quanto bella sia quella della finestra.
+
+set(DSDR_ICON_DIR "${CMAKE_SOURCE_DIR}/packaging/icons")
+
+if(WIN32)
+    set(DSDR_ICON_ICO "${CMAKE_SOURCE_DIR}/packaging/windows/decodium-sdr.ico")
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/packaging/windows/decodium-sdr.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/decodium-sdr.rc"
+        @ONLY)
+    target_sources(dsdr_app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/decodium-sdr.rc")
+elseif(APPLE)
+    set(DSDR_ICON_ICNS "${CMAKE_SOURCE_DIR}/packaging/macos/decodium-sdr.icns")
+    target_sources(dsdr_app PRIVATE "${DSDR_ICON_ICNS}")
+    set_source_files_properties("${DSDR_ICON_ICNS}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
+    set_target_properties(dsdr_app PROPERTIES
+        MACOSX_BUNDLE_ICON_FILE "decodium-sdr.icns")
+endif()
+
+qt_add_resources(dsdr_app "dsdr_appicon"
+    PREFIX "/icons"
+    BASE "${DSDR_ICON_DIR}"
+    FILES "${DSDR_ICON_DIR}/it.decodium.sdr.png")
+
 target_link_libraries(dsdr_app PRIVATE dsdr_qml dsdr_qmlplugin)
 
 dsdr_apply_target_defaults(dsdr_app)
