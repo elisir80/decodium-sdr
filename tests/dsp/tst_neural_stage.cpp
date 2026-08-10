@@ -9,6 +9,7 @@
 // audio a singhiozzo di cui si incolpa la propagazione.
 
 #include "dsp/neural/NeuralNrStage.h"
+#include "dsp/neural/DfnEngine.h"
 #include "dsp/neural/RnnoiseEngine.h"
 
 #include <QSignalSpy>
@@ -136,6 +137,8 @@ private slots:
     void aStageThatCannotKeepUpSaysSo();
     void theIntensityMapsToTheDryMix();
     void withoutAnEngineNothingIsProcessed();
+    void aMissingLibrarySaysWhereItLooked();
+    void theDeepFilterEngineWorksIfItIsThere();
 };
 
 void TestNeuralStage::bypassIsIdenticalNotAlmost()
@@ -268,6 +271,69 @@ void TestNeuralStage::withoutAnEngineNothingIsProcessed()
     QCOMPARE(got, input.size());
     for (std::size_t i = 0; i < got; ++i)
         QCOMPARE(output[i], input[i]);
+}
+
+void TestNeuralStage::aMissingLibrarySaysWhereItLooked()
+{
+    // Senza la libreria il motore non deve fingere: deve fallire e dire
+    // **dove** ha cercato. «Non trovata» senza l'elenco dei posti è un vicolo
+    // cieco, e chi ha appena compilato la libreria non saprebbe dove metterla.
+    DfnEngine engine;
+    QString error;
+
+    if (engine.prepare(QStringLiteral("/percorso/che/non/esiste.tar.gz"), &error)) {
+        // Se la libreria c'è davvero, il fallimento arriva dal modello — ed è
+        // giusto così: sono due cose diverse e il messaggio le distingue.
+        QVERIFY(engine.isLoaded());
+        return;
+    }
+
+    QVERIFY2(!error.isEmpty(), "un fallimento senza spiegazione non aiuta nessuno");
+    QVERIFY(!engine.isLoaded());
+    QVERIFY2(!DfnEngine::searchPaths().isEmpty(),
+             "l'elenco dei posti dove cercare non può essere vuoto");
+}
+
+void TestNeuralStage::theDeepFilterEngineWorksIfItIsThere()
+{
+    // La prova di efficacia della specifica (§7.3 punto 4) ha bisogno della
+    // libreria **e** del modello. Senza, si salta: un test che passasse
+    // perché non ha trovato niente sarebbe verde-falso, ed è la cosa che la
+    // specifica vieta esplicitamente.
+    const QString model = qEnvironmentVariable("DSDR_DFN_MODEL");
+    if (model.isEmpty())
+        QSKIP("nessun modello indicato in DSDR_DFN_MODEL");
+
+    DfnEngine engine;
+    QString error;
+    if (!engine.prepare(model, &error))
+        QSKIP(qPrintable(QStringLiteral("DeepFilterNet non disponibile: %1").arg(error)));
+
+    const NrEngineInfo engineInfo = engine.info();
+    QVERIFY2(engineInfo.frameSamples > 0, "il fotogramma dev'essere dichiarato");
+    QCOMPARE(engineInfo.id, QStringLiteral("dfn3"));
+
+    // Rumore bianco dentro: quello che esce dev'essere più piccolo. Non è la
+    // misura SI-SNR completa della specifica — quella vuole un segnale utile
+    // sotto — ma dice che la rete sta facendo qualcosa invece di copiare.
+    std::vector<float> frame(static_cast<std::size_t>(engineInfo.frameSamples));
+    double before = 0.0;
+    for (std::size_t i = 0; i < frame.size(); ++i) {
+        frame[i] = static_cast<float>((std::rand() % 2000 - 1000)) / 10000.0f;
+        before += static_cast<double>(frame[i]) * frame[i];
+    }
+
+    // Qualche fotogramma per far assestare gli stati ricorrenti: giudicare la
+    // rete sul primo sarebbe giudicarla mentre si sta ancora orientando.
+    for (int i = 0; i < 20; ++i)
+        engine.processFrame(frame.data());
+
+    double after = 0.0;
+    for (float sample : frame)
+        after += static_cast<double>(sample) * sample;
+
+    QVERIFY2(after < before,
+             qPrintable(QStringLiteral("energia da %1 a %2").arg(before).arg(after)));
 }
 
 QTEST_MAIN(TestNeuralStage)

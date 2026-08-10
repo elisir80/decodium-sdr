@@ -26,6 +26,27 @@ RNNoise
               distribuiti da Xiph con la stessa licenza del codice.
 
 
+DeepFilterNet
+    Licenza : MIT / Apache-2.0
+    Sito    : https://github.com/Rikorose/DeepFilterNet
+    Autori  : Hendrik Schröter et al.
+    Uso     : secondo motore dello stadio di riduzione neurale
+              (DSDR-IMPL-001 §1). Caricata a **runtime** con QLibrary, non
+              linkata e non redistribuita: senza, il motore dice che non c'è
+              e RNNoise resta al suo posto.
+    Come    : il progetto non pubblica una libreria C-API fra i suoi rilasci —
+              pubblica un eseguibile e un plugin LADSPA — e la costruisce in
+              CI con `cargo-c`. Chi la vuole se la costruisce:
+                git clone --depth 1 https://github.com/Rikorose/DeepFilterNet
+                cd DeepFilterNet && cargo cinstall --release                     --prefix=<dove> --package deep_filter --features capi
+              e mette la libreria risultante accanto all'eseguibile o in
+              `third_party/deepfilter/`.
+    Note    : MIT e Apache-2.0 sono entrambe compatibili con GPL-3.0. I
+              binari **non** stanno nel repository: pesano fra i venticinque e
+              i cinquanta megabyte per piattaforma, e la storia di git non è
+              il posto dove metterli.
+
+
 DIPENDENZE COLLEGATE
 --------------------
 

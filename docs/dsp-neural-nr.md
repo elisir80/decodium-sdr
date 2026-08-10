@@ -70,6 +70,43 @@ la condizione perché quel codice possa girare su un thread con una scadenza —
 e c'è un test che **conta le allocazioni** sostituendo `operator new`, perché
 alla domanda «questo codice alloca?» non si risponde leggendo.
 
+### DeepFilterNet3
+
+La C-API ufficiale, caricata a **runtime** con `QLibrary` — non linkata, e non
+nel repository. È una deviazione dalla specifica, che al §2 chiedeva binari
+prebuilt versionati, e ha due motivi verificati:
+
+1. **Il progetto non pubblica una libreria C-API fra i suoi rilasci.** Pubblica
+   un eseguibile e un plugin LADSPA; la C-API la costruisce in CI con
+   `cargo-c`. «Vendorizzare i prebuilt» non era possibile perché i prebuilt non
+   esistono.
+2. **Qualunque binario di DeepFilterNet pesa fra i 25 e i 50 MB.** Cinque
+   piattaforme sono duecento megabyte dentro la storia di git, per sempre.
+
+Caricarla a runtime risolve entrambe le cose e ne risolve una terza: chi non ha
+la libreria non deve installare niente — il motore dice che non c'è, e RNNoise
+resta al suo posto. È lo stesso schema del ColibriNANO, già collaudato qui.
+
+La C-API è piccola e stabile:
+
+```
+df_create(path, atten_lim, log_level)   crea lo stato dal modello .tar.gz
+df_get_frame_length(state)              quanti campioni per fotogramma
+df_process_frame(state, in, out)        elabora, e restituisce il SNR locale
+df_set_atten_lim(state, db)             l'attenuazione, a caldo
+df_free(state)
+```
+
+**La questione aperta №1 della specifica è risolta**: `df_set_atten_lim` esiste
+a runtime, quindi il cursore d'intensità non richiede di ricreare il motore. La
+dissolvenza serve comunque, ma per l'accensione e per il degrado.
+
+`df_process_frame` restituisce il **rapporto segnale/rumore locale** stimato
+dalla rete: è la misura che dice se lo stadio sta lavorando su un segnale o su
+rumore, e si può mostrare invece di farla indovinare.
+
+Per procurarsi la libreria, vedi `THIRD_PARTY_LICENSES`.
+
 ### RNNoise
 
 Due dettagli che non si indovinano.
@@ -88,7 +125,7 @@ metà effetto, e una scala logaritmica renderebbe il comando tutto-o-niente.
 
 | Fase | Contenuto |
 |---|---|
-| **E2** | `DfnEngine` sulla C-API `libdf`, binari prebuilt vendored, modello base nel pacchetto, prova di efficacia (SI-SNR) |
+| **E2** | fatto il motore; restano il modello base nel pacchetto e la prova SI-SNR completa, che hanno bisogno della libreria costruita |
 | **E3** | `ModelStore`, pannello QML, persistenza, interlock digitale a costruzione del grafo |
 | **E4** | manifest remoto delle stagioni |
 
