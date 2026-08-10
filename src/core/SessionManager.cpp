@@ -10,6 +10,8 @@
 #endif
 #include "audio/MicSource.h"
 #include "core/SpectrumFeed.h"
+#include "dsp/neural/NeuralNrStage.h"
+#include "dsp/neural/RnnoiseEngine.h"
 #include "hal/BackendRegistry.h"
 #include "hal/IRadioBackend.h"
 
@@ -35,6 +37,10 @@ namespace {
 /// qualunque accordatore automatico e a leggere un rosmetro; oltre, si sta
 /// solo scaldando il finale e occupando la frequenza.
 constexpr double kTuneSeconds = 10.0;
+
+/// L'audio verso l'AudioRouter è stereo interlacciato. Lo stadio neurale ne
+/// tratta i canali separatamente, uno per motore.
+constexpr int kAudioChannelCount = 2;
 } // namespace
 
 namespace {
@@ -186,17 +192,39 @@ SessionManager::SessionManager(QObject *parent)
     // non deve mai contendere la CPU al DSP, che ha una scadenza vera.
     // Il worker sta in mezzo anche da spento, e allora si limita a copiare —
     // così accenderlo non richiede di cambiare ring sotto l'audio che suona.
-    m_neural = new NeuralNrWorker;
+    m_neural = new dsp::neural::NeuralNrStage;
+
+    // Un motore per canale: la rete non deve mai vedere due canali correlati
+    // (DSDR-IMPL-001 §9.3). Darle uno stereo binaurale le farebbe scambiare
+    // per rumore la differenza fra i due orecchi, che è proprio il segnale.
+    std::vector<std::unique_ptr<dsp::neural::INrEngine>> engines;
+    for (int channel = 0; channel < kAudioChannelCount; ++channel) {
+        auto engine = std::make_unique<dsp::neural::RnnoiseEngine>();
+        QString error;
+        if (!engine->prepare(QString(), &error)) {
+            qCInfo(dsdrCore) << "riduzione neurale non disponibile:" << error;
+            engines.clear();
+            break;
+        }
+        engines.push_back(std::move(engine));
+    }
+    if (!engines.empty())
+        m_neural->setEngines(std::move(engines));
+
     m_neuralThread = new QThread(this);
     m_neuralThread->setObjectName(QStringLiteral("dsdr-neural"));
     m_neural->moveToThread(m_neuralThread);
-    connect(m_neuralThread, &QThread::started, m_neural, &NeuralNrWorker::start);
+    connect(m_neuralThread, &QThread::started, m_neural, &dsp::neural::NeuralNrStage::start);
     connect(m_neuralThread, &QThread::finished, m_neural, &QObject::deleteLater);
-    connect(m_neural, &NeuralNrWorker::enabledChanged, this, [this](bool enabled) {
-        m_neuralEnabled = enabled;
-        emit neuralChanged();
-    });
-    connect(m_neural, &NeuralNrWorker::overrun, this, [this](double load) {
+    connect(m_neural, &dsp::neural::NeuralNrStage::stateChanged, this,
+            [this](dsp::neural::NeuralNrStage::State state) {
+                m_neuralEnabled = state != dsp::neural::NeuralNrStage::State::Bypass
+                               && state != dsp::neural::NeuralNrStage::State::Degraded;
+                emit neuralChanged();
+            });
+    connect(m_neural, &dsp::neural::NeuralNrStage::degraded, this, [this](double load) {
+        // Lo stadio si è arreso da solo. Dirlo è il punto: un difetto che si
+        // sente ma non si spiega è il peggiore da diagnosticare.
         setStatus(tr("Riduzione neurale spenta: costa il %1 % del tempo reale.")
                       .arg(load * 100.0, 0, 'f', 0));
     });
@@ -739,7 +767,7 @@ void SessionManager::connectToDevice(int deviceRow)
     }
     // L'audio esce dal ring del worker neurale, non da quello del DSP: il
     // worker sta sempre in mezzo, e da spento copia soltanto.
-    m_neural->setSource(m_engine->audioRing(), kInternalAudioRate, 2);
+    m_neural->setSource(m_engine->audioRing(), kAudioChannelCount);
     const bool audioStarted = m_audio->start(m_neural->outputRing());
     qCInfo(dsdrCore) << "device pronto:" << m_deviceName
                      << "center:" << m_centerFrequency
@@ -1932,7 +1960,7 @@ void SessionManager::setNoiseBlanker(bool enabled, double threshold)
 
 bool SessionManager::neuralAvailable() const
 {
-    return dsp::NeuralDenoiser::isAvailable();
+    return dsp::neural::RnnoiseEngine::isAvailable();
 }
 
 double SessionManager::neuralLoad() const
@@ -1945,9 +1973,9 @@ void SessionManager::setNeuralNr(bool enabled)
     if (!m_neural)
         return;
 
-    // La chiamata attraversa i thread: il worker la recepisce al giro
-    // successivo, e conferma con `enabledChanged` — che è anche il modo in cui
-    // dice di essersi spento da solo.
+    // La chiamata attraversa i thread: lo stadio la recepisce al giro
+    // successivo e conferma con `stateChanged` — che è anche il modo in cui
+    // dice di essersi arreso da solo.
     QMetaObject::invokeMethod(m_neural, "setEnabled", Qt::QueuedConnection,
                               Q_ARG(bool, enabled));
 }

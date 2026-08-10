@@ -92,12 +92,24 @@ metà effetto, e una scala logaritmica renderebbe il comando tutto-o-niente.
 | **E3** | `ModelStore`, pannello QML, persistenza, interlock digitale a costruzione del grafo |
 | **E4** | manifest remoto delle stagioni |
 
-E c'è un debito da saldare: nel repository **convivono due implementazioni**
-della riduzione neurale. Quella vecchia — `NeuralDenoiser` più
-`core::NeuralNrWorker` — è quella che l'applicazione usa adesso; questa è il
-telaio nuovo, provato ma non ancora innestato. Lo scambio è il primo passo di
-E3, e va fatto in un commit suo: sostituire uno stadio sotto l'audio che suona
-non è una cosa da mescolare ad altro.
+Lo scambio con l'implementazione precedente è fatto: `core::NeuralNrWorker` non
+esiste più, e l'applicazione usa questo stadio. `dsp::NeuralDenoiser` resta
+soltanto perché lo usa `ChannelProcessor` per il proprio stadio per-canale — è
+un'altra cosa, e non va confusa con questa.
+
+**Un canale, un motore.** L'audio verso l'AudioRouter è stereo interlacciato, e
+lo stadio ne tratta i canali separatamente: la rete non deve mai vedere due
+canali correlati (IMPL-001 §9.3), e darle uno stereo binaurale le farebbe
+scambiare per rumore la differenza fra i due orecchi — che è proprio il segnale.
+
+La dissolvenza avanza **una volta per fotogramma, non una per canale**:
+altrimenti con lo stereo durerebbe la metà, e la metà di venti millisecondi si
+sente di nuovo come uno scatto.
+
+Resta aperta la questione dell'ordine (IMPL-001 §9.3): la spec propone la
+riduzione **prima** dello stadio binaurale, mentre qui sta dopo, sul mix. Farla
+prima vuol dire spostarla dentro `ChannelProcessor`, che è un lavoro suo e non
+una variante di questo.
 
 ## Dove guardare nel codice
 

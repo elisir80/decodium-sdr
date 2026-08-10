@@ -55,6 +55,9 @@ NeuralNrStage::NeuralNrStage(QObject *parent)
     m_crossfadeSamples = static_cast<int>(kSampleRate * kCrossfadeMs / 1000.0);
     m_frame.assign(static_cast<std::size_t>(m_frameSamples), 0.0f);
     m_dry.assign(static_cast<std::size_t>(m_frameSamples), 0.0f);
+    // Anche questo qui, e non solo quando arriva un motore: uno stadio senza
+    // motore deve poter passare l'audio, e ci passa da questo buffer.
+    m_interleaved.assign(static_cast<std::size_t>(m_frameSamples), 0.0f);
     m_clock.start();
 }
 
@@ -62,17 +65,32 @@ NeuralNrStage::~NeuralNrStage() = default;
 
 void NeuralNrStage::setEngine(std::unique_ptr<INrEngine> engine)
 {
-    m_engine = std::move(engine);
-    if (!m_engine)
+    std::vector<std::unique_ptr<INrEngine>> engines;
+    engines.push_back(std::move(engine));
+    setEngines(std::move(engines));
+}
+
+void NeuralNrStage::setSource(SpscRing<float> *ring, int channels)
+{
+    m_source = ring;
+    m_channels = std::max(1, channels);
+    m_interleaved.assign(static_cast<std::size_t>(m_frameSamples) * m_channels, 0.0f);
+}
+
+void NeuralNrStage::setEngines(std::vector<std::unique_ptr<INrEngine>> engines)
+{
+    m_engines = std::move(engines);
+    if (m_engines.empty() || !m_engines.front())
         return;
 
-    const NrEngineInfo engineInfo = m_engine->info();
+    const NrEngineInfo engineInfo = m_engines.front()->info();
     if (engineInfo.frameSamples > 0)
         m_frameSamples = engineInfo.frameSamples;
 
     // Tutte le allocazioni stanno qui, fuori dal percorso caldo.
     m_frame.assign(static_cast<std::size_t>(m_frameSamples), 0.0f);
     m_dry.assign(static_cast<std::size_t>(m_frameSamples), 0.0f);
+    m_interleaved.assign(static_cast<std::size_t>(m_frameSamples) * m_channels, 0.0f);
 
     // Il ritardo dichiarato: quello del motore più mezzo ring, che è la
     // profondità a cui il ring si assesta quando produttore e consumatore
@@ -120,14 +138,18 @@ void NeuralNrStage::setEnabled(bool enabled)
 
 void NeuralNrStage::setIntensityDb(double db)
 {
-    if (m_engine)
-        m_engine->setAttenuationLimitDb(static_cast<float>(db));
+    for (auto &engine : m_engines) {
+        if (engine)
+            engine->setAttenuationLimitDb(static_cast<float>(db));
+    }
 }
 
 void NeuralNrStage::resetEngine()
 {
-    if (m_engine)
-        m_engine->reset();
+    for (auto &engine : m_engines) {
+        if (engine)
+            engine->reset();
+    }
     // La dissolvenza riparte: dopo un azzeramento la rete ha di nuovo bisogno
     // di qualche fotogramma per capire dove si trova.
     m_crossfade = 0;
@@ -154,69 +176,78 @@ void NeuralNrStage::pump()
     if (frameSamples == 0)
         return;
 
+    SpscRing<float> *input = inputRing();
+    const auto blockSamples = frameSamples * static_cast<std::size_t>(m_channels);
+
     const qint64 startNs = m_clock.nsecsElapsed();
     std::size_t processed = 0;
 
     // L'arretrato si guarda **all'arrivo**, non alla fine: alla fine il ring è
     // vuoto per costruzione, ed è il motivo per cui la prima stesura non si
     // accorgeva mai di essere in ritardo.
-    const double occupancyOnEntry = static_cast<double>(m_input->available())
+    const double occupancyOnEntry = static_cast<double>(input->available())
                                   / static_cast<double>(kRingSamples);
 
     int frames = 0;
-    while (m_input->available() >= frameSamples && frames < kMaxFramesPerPump) {
+    while (input->available() >= blockSamples && frames < kMaxFramesPerPump) {
         ++frames;
-        if (m_input->read(m_frame.data(), frameSamples) != frameSamples)
+        if (input->read(m_interleaved.data(), blockSamples) != blockSamples)
             break;
 
         const State current = state();
         const bool wants = m_enabled.load(std::memory_order_acquire)
-                        && m_engine != nullptr
+                        && !m_engines.empty()
                         && current != State::Degraded;
 
-        if (!wants) {
+        if (!wants && m_crossfade == 0) {
             // Passaggio pulito: in bypass l'uscita è l'ingresso, campione per
             // campione. Non «quasi uguale» — uguale, ed è ciò che il test
             // dell'identità verifica.
-            if (m_crossfade > 0) {
-                // Si stava suonando il bagnato: si scende, non si stacca.
-                for (std::size_t i = 0; i < frameSamples; ++i)
-                    m_dry[i] = m_frame[i];
-                m_engine->processFrame(m_frame.data());
-                for (std::size_t i = 0; i < frameSamples; ++i) {
-                    const float mix = static_cast<float>(m_crossfade)
-                                    / static_cast<float>(m_crossfadeSamples);
-                    m_frame[i] = m_dry[i] * (1.0f - mix) + m_frame[i] * mix;
-                    if (m_crossfade > 0)
-                        --m_crossfade;
-                }
-            }
-            writeFrame(m_frame.data(), frameSamples);
+            writeFrame(m_interleaved.data(), blockSamples);
             processed += frameSamples;
             continue;
         }
 
-        for (std::size_t i = 0; i < frameSamples; ++i)
-            m_dry[i] = m_frame[i];
+        // La dissolvenza avanza una volta sola per fotogramma, non una per
+        // canale: altrimenti con lo stereo durerebbe la metà, e la metà di
+        // venti millisecondi si sente di nuovo come uno scatto.
+        const int crossfadeAtStart = m_crossfade;
+        int crossfadeAfter = crossfadeAtStart;
 
-        m_engine->processFrame(m_frame.data());
+        for (int channel = 0; channel < m_channels; ++channel) {
+            INrEngine *engine = channel < static_cast<int>(m_engines.size())
+                ? m_engines[static_cast<std::size_t>(channel)].get()
+                : nullptr;
+            if (!engine)
+                continue;
 
-        if (m_crossfade < m_crossfadeSamples) {
-            // Salita: il bagnato entra gradualmente. Uno scatto si sente, e
-            // per giunta si sente proprio nel momento in cui si sta
-            // giudicando se lo stadio serva.
             for (std::size_t i = 0; i < frameSamples; ++i) {
-                const float mix = static_cast<float>(m_crossfade)
-                                / static_cast<float>(m_crossfadeSamples);
-                m_frame[i] = m_dry[i] * (1.0f - mix) + m_frame[i] * mix;
-                if (m_crossfade < m_crossfadeSamples)
-                    ++m_crossfade;
+                m_frame[i] = m_interleaved[i * m_channels + channel];
+                m_dry[i] = m_frame[i];
             }
-        } else if (current == State::Warmup) {
-            setState(State::Engaged);
+
+            engine->processFrame(m_frame.data());
+
+            int fade = crossfadeAtStart;
+            for (std::size_t i = 0; i < frameSamples; ++i) {
+                const float mix = static_cast<float>(fade)
+                                / static_cast<float>(m_crossfadeSamples);
+                m_interleaved[i * m_channels + channel] =
+                    m_dry[i] * (1.0f - mix) + m_frame[i] * mix;
+
+                if (wants && fade < m_crossfadeSamples)
+                    ++fade;
+                else if (!wants && fade > 0)
+                    --fade;
+            }
+            crossfadeAfter = fade;
         }
 
-        writeFrame(m_frame.data(), frameSamples);
+        m_crossfade = crossfadeAfter;
+        if (wants && m_crossfade >= m_crossfadeSamples && current == State::Warmup)
+            setState(State::Engaged);
+
+        writeFrame(m_interleaved.data(), blockSamples);
         processed += frameSamples;
     }
 

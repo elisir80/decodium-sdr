@@ -60,7 +60,20 @@ public:
     ~NeuralNrStage() override;
 
     /// Il ring in cui il DSP scrive l'audio post-AGC. Esiste da subito.
-    SpscRing<float> *inputRing() const noexcept { return m_input.get(); }
+    SpscRing<float> *inputRing() const noexcept
+    {
+        return m_source ? m_source : m_input.get();
+    }
+
+    /// Aggancia un ring che appartiene a qualcun altro — quello del DSP —
+    /// invece del proprio. Serve a innestare lo stadio in una catena che
+    /// esiste già senza costringere chi produce a scrivere altrove.
+    ///
+    /// `channels` è il numero di canali **interlacciati** nel ring. Ogni
+    /// canale ha un motore suo: la rete non deve mai vedere due canali
+    /// correlati (IMPL-001 §9.3), e darle uno stereo binaurale le farebbe
+    /// scambiare per rumore la differenza fra i due orecchi.
+    void setSource(SpscRing<float> *ring, int channels);
 
     /// Il ring da cui l'AudioRouter legge. Esiste da subito e non cambia mai.
     SpscRing<float> *outputRing() const noexcept { return m_output.get(); }
@@ -107,6 +120,9 @@ public:
     /// lento e verificare che il degrado avvenga davvero.
     void setEngine(std::unique_ptr<INrEngine> engine);
 
+    /// Un motore per canale. L'ordine è quello dell'interlacciamento.
+    void setEngines(std::vector<std::unique_ptr<INrEngine>> engines);
+
     /// Elabora tutto ciò che è disponibile. La chiama il timer del thread, e
     /// la chiamano i test per non dipendere da un orologio.
     void pump();
@@ -117,13 +133,16 @@ private:
 
     std::unique_ptr<SpscRing<float>> m_input;
     std::unique_ptr<SpscRing<float>> m_output;
-    std::unique_ptr<INrEngine> m_engine;
+    std::vector<std::unique_ptr<INrEngine>> m_engines;
+    SpscRing<float> *m_source = nullptr;
+    int m_channels = 1;
 
     QTimer *m_timer = nullptr;
     QElapsedTimer m_clock;
 
-    std::vector<float> m_frame;   ///< il fotogramma in lavorazione
-    std::vector<float> m_dry;     ///< la sua copia, per la dissolvenza
+    std::vector<float> m_interleaved;   ///< come arriva dal ring
+    std::vector<float> m_frame;         ///< un canale alla volta
+    std::vector<float> m_dry;           ///< la sua copia, per la dissolvenza
 
     int m_frameSamples = 480;
     /// Posizione dentro la dissolvenza, in campioni: zero è tutto asciutto,

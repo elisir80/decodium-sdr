@@ -15,7 +15,6 @@
 #include "core/IqRecorder.h"
 #include "core/LanguageManager.h"
 #include "core/SpectrumFeed.h"
-#include "core/NeuralNrWorker.h"
 #include "dsp/ChannelProcessor.h"
 #include "hal/Frames.h"
 
@@ -36,6 +35,10 @@ class QTcpSocket;
 
 namespace dsdr::audio {
 class MicSource;
+}
+
+namespace dsdr::dsp::neural {
+class NeuralNrStage;
 }
 
 namespace dsdr::core {
@@ -485,7 +488,7 @@ private:
     audio::MicSource *m_mic = nullptr;
     hal::RadioScout *m_scout = nullptr;
     QVariantList m_networkRadios;
-    NeuralNrWorker *m_neural = nullptr;
+    dsp::neural::NeuralNrStage *m_neural = nullptr;
     QThread *m_neuralThread = nullptr;
     audio::AudioRouter *m_audio = nullptr;
 
