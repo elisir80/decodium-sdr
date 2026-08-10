@@ -43,6 +43,7 @@ set(DSDR_QML_FILES
     qml/SoapyDevicePanel.qml
     qml/NetTcpDevicePanel.qml
     qml/ColibriDevicePanel.qml
+    qml/AudiorigPanel.qml
     qml/IqFileDevicePanel.qml
 )
 

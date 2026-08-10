@@ -24,6 +24,7 @@ private slots:
     void everyModeSurvivesTheRoundTrip();
     void theDataModesLandOnTheDigitalOnes();
     void whatARadioCannotDoFallsBackInsteadOfFailing();
+    void aRadioOnTheBenchAnswers();
 };
 
 void TestNewcat::theIdentityReplyNamesTheRadio()
@@ -98,6 +99,42 @@ void TestNewcat::whatARadioCannotDoFallsBackInsteadOfFailing()
 
     // Un codice che non conosciamo non deve produrre un modo a caso.
     QCOMPARE(NewcatDriver::modeFromCode('Z'), DemodMode::Usb);
+}
+
+void TestNewcat::aRadioOnTheBenchAnswers()
+{
+    // Con una radio attaccata questo test parla con lei davvero. Senza, si
+    // salta: la CI non ha un FT-991A, e un test che fallisse per assenza di
+    // hardware insegnerebbe a ignorare i fallimenti.
+    //
+    //   DSDR_NEWCAT_PORT=COM5 ./build/bin/tst_newcat
+    const QString port = qEnvironmentVariable("DSDR_NEWCAT_PORT");
+    if (port.isEmpty())
+        QSKIP("nessuna porta indicata in DSDR_NEWCAT_PORT");
+
+    NewcatDriver driver;
+    QString found;
+    for (int baud : driver.candidateBaudRates()) {
+        if (driver.open(port, baud)) {
+            found = QStringLiteral("%1 a %2 baud").arg(driver.radioModel()).arg(baud);
+            break;
+        }
+        qInfo() << baud << "baud:" << driver.errorString();
+    }
+
+    QVERIFY2(!found.isEmpty(),
+             qPrintable(QStringLiteral("nessuna risposta su %1").arg(port)));
+    qInfo() << "radio trovata:" << found;
+
+    CatState state;
+    QVERIFY2(driver.poll(state), "la radio non risponde alla lettura di stato");
+    qInfo() << "frequenza" << state.frequencyHz
+            << "modo" << static_cast<int>(state.mode)
+            << "TX" << state.transmitting
+            << "S-meter" << state.sMeterRaw;
+
+    QVERIFY2(state.frequencyHz > 0, "frequenza non letta");
+    driver.close();
 }
 
 QTEST_MAIN(TestNewcat)

@@ -74,6 +74,12 @@ AudiorigBackend::AudiorigBackend(QObject *parent)
 
 AudiorigBackend::~AudiorigBackend()
 {
+    // Prima la sonda, poi il resto: finché quel thread gira tiene `this`, e
+    // distruggere sotto di lui è il genere di errore che non si manifesta
+    // dove è stato commesso.
+    stopDiscovery();
+    if (m_prober)
+        m_prober->wait();
     close();
 }
 
@@ -138,9 +144,10 @@ void AudiorigBackend::reportError(BackendError::Code code, const QString &messag
 
 void AudiorigBackend::startDiscovery()
 {
-    if (m_discovering)
+    if (m_discovering || (m_prober && m_prober->isRunning()))
         return;
     m_discovering = true;
+    m_abortDiscovery.store(false, std::memory_order_release);
     setState(BackendState::Discovering);
 
     // Le porte si sondano su un thread a parte: sei velocità per porta, ognuna
@@ -150,12 +157,16 @@ void AudiorigBackend::startDiscovery()
     QThread *prober = QThread::create([this] {
         const QList<QSerialPortInfo> ports = QSerialPortInfo::availablePorts();
         for (const QSerialPortInfo &info : ports) {
+            if (m_abortDiscovery.load(std::memory_order_acquire))
+                break;
             if (info.isNull())
                 continue;
 
             NewcatDriver driver;
             bool found = false;
             for (int rate : driver.candidateBaudRates()) {
+                if (m_abortDiscovery.load(std::memory_order_acquire))
+                    break;
                 if (!driver.open(info.portName(), rate))
                     continue;
 
@@ -203,13 +214,16 @@ void AudiorigBackend::startDiscovery()
 
     connect(prober, &QThread::finished, prober, &QObject::deleteLater);
     prober->setObjectName(QStringLiteral("dsdr-audiorig-probe"));
+    m_prober = prober;
     prober->start();
 }
 
 void AudiorigBackend::stopDiscovery()
 {
-    // La sonda finisce da sé in pochi secondi e interromperla a metà lascerebbe
-    // una porta seriale aperta: si lascia terminare.
+    // Il flag si legge fra una porta e l'altra: la sonda si ferma al prossimo
+    // confine invece che a metà di un'apertura, così nessuna porta seriale
+    // resta aperta dietro di lei.
+    m_abortDiscovery.store(true, std::memory_order_release);
     m_discovering = false;
 }
 

@@ -2,7 +2,9 @@
 #include "hal/backends/audiorig/NewcatDriver.h"
 #include "hal/HalLog.h"
 
+#include <QElapsedTimer>
 #include <QSerialPort>
+#include <QThread>
 
 namespace dsdr::hal::audiorig {
 
@@ -128,14 +130,30 @@ bool NewcatDriver::open(const QString &portName, int baudRate)
     m_port->setRequestToSend(false);
     m_port->setDataTerminalReady(false);
 
-    // Un comando incompleto rimasto nel buffer della radio da un programma
-    // chiuso male farebbe fallire il primo dialogo: il punto e virgola lo
-    // chiude, qualunque cosa fosse.
-    m_port->write(";");
-    m_port->waitForBytesWritten(100);
     m_port->clear();
 
-    const QByteArray id = ask("ID;");
+    // Centocinquanta millisecondi e non trecento: una radio che c'è risponde
+    // in venti, e questa attesa la si paga per ogni velocità di ogni porta
+    // che radio non è. Con sei velocità e due tentativi sono secondi di
+    // discovery risparmiati a ogni avvio.
+    constexpr int kProbeTimeoutMs = 150;
+    QByteArray id = ask("ID;", kProbeTimeoutMs);
+    if (id.isEmpty()) {
+        // Un comando lasciato a metà da un programma chiuso male tiene la
+        // radio in attesa del resto, e la nostra domanda finisce dentro
+        // quello. Il punto e virgola lo chiude.
+        //
+        // Si fa **solo dopo** un tentativo fallito, e non prima come faceva la
+        // prima stesura: mandato a una radio che sta bene, il terminatore da
+        // solo la fa ammutolire, e il difetto si presentava come «il CAT non
+        // risponde alla velocità giusta e risponde a caso a quelle sbagliate».
+        m_port->write(";");
+        m_port->waitForBytesWritten(100);
+        QThread::msleep(60);
+        m_port->clear(QSerialPort::Input);
+        id = ask("ID;", kProbeTimeoutMs);
+    }
+
     m_model = modelFromId(id);
     if (m_model.isEmpty()) {
         m_error = QStringLiteral("nessuna radio newcat su %1 a %2 baud")
@@ -170,16 +188,18 @@ QByteArray NewcatDriver::ask(const QByteArray &command, int timeoutMs)
     m_port->clear(QSerialPort::Input);
     if (m_port->write(command) != command.size())
         return {};
-    if (!m_port->waitForBytesWritten(timeoutMs))
-        return {};
+    m_port->waitForBytesWritten(timeoutMs);
 
     QByteArray reply;
+    QElapsedTimer clock;
+    clock.start();
     while (!reply.endsWith(';')) {
-        if (!m_port->waitForReadyRead(timeoutMs))
+        if (clock.elapsed() > timeoutMs) {
+            qCDebug(dsdrHal) << "newcat: timeout su" << command << "ricevuto" << reply;
             return {};
-        reply += m_port->readAll();
-        // Una risposta che non arriva mai al punto e virgola è rumore sulla
-        // linea: meglio arrendersi che restare qui a leggere per sempre.
+        }
+        if (m_port->waitForReadyRead(20))
+            reply += m_port->readAll();
         if (reply.size() > 64)
             return {};
     }
@@ -200,8 +220,12 @@ bool NewcatDriver::poll(CatState &state)
     if (!isOpen())
         return false;
 
+    // `FA` + nove cifre + `;` sono dodici caratteri, non tredici. Con la
+    // soglia sbagliata la risposta veniva scartata sempre, la frequenza
+    // restava a zero e il panadattatore non aveva dove ancorarsi — senza che
+    // niente segnalasse un errore.
     const QByteArray fa = ask("FA;");
-    if (fa.size() >= 13 && fa.startsWith("FA"))
+    if (fa.size() >= 12 && fa.startsWith("FA"))
         state.frequencyHz = fa.mid(2, 9).toLongLong();
     else if (fa.isEmpty())
         return false;   // la radio ha smesso di rispondere: CAT perso

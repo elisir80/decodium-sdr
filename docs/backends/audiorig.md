@@ -50,6 +50,18 @@ L'S-meter si legge **solo in ricezione**: in trasmissione lo stesso comando
 risponde con la potenza, e prenderlo per segnale farebbe schizzare il misuratore
 a ogni PTT.
 
+Due dettagli costati un pomeriggio, ed entrambi silenziosi:
+
+- **Non si manda un `;` di cortesia all'apertura.** Serviva a chiudere un
+  comando lasciato a metà da un programma uscito male, ma a una radio che sta
+  bene fa l'effetto opposto: ammutolisce. Il difetto si presentava come «alla
+  velocità giusta non risponde niente, a quelle sbagliate risponde spazzatura»
+  — cioè esattamente al contrario di quel che si va a cercare. Adesso il
+  terminatore si manda **solo dopo** un primo tentativo fallito.
+- **`FA014250000;` sono dodici caratteri, non tredici.** Con la soglia
+  sbagliata la risposta veniva scartata sempre: la frequenza restava a zero, il
+  panadattatore non aveva dove ancorarsi, e niente segnalava un errore.
+
 Aprendo la porta, RTS e DTR vengono messi bassi prima di ogni altra cosa: su
 molte interfacce quelle linee *sono* il PTT, e aprire la porta manderebbe la
 radio in trasmissione prima di aver detto una parola.
@@ -77,7 +89,13 @@ Le porte seriali si aprono una per una e si chiede `ID;` a sei velocità diverse
 dalla più probabile. Chi risponde è una radio; tutto il resto — un mouse, un
 modem, un lettore di codici a barre — resta fuori. La sonda gira su un thread a
 parte perché sei velocità per porta, ognuna con la sua attesa, sono secondi
-interi.
+interi. Quel thread è **posseduto** dal backend e viene aspettato prima che
+muoia: lasciarlo andare per conto suo faceva sopravvivere una sonda al backend
+che l'aveva creata, e il segfault arrivava dentro il test di un backend
+diverso.
+
+Il tempo d'attesa della sonda è 150 ms e non 300: una radio che c'è risponde in
+venti, e quell'attesa si paga per ogni velocità di ogni porta che radio non è.
 
 L'ingresso audio si indovina dalla descrizione: `USB Audio CODEC` è il codec
 integrato delle Yaesu e delle Icom recenti. Non è una certezza, e per questo
@@ -196,6 +214,10 @@ funzionano le Yaesu newcat.
 **Il layer newcat è scritto qui**, non ripreso da `yaesu-tci-bridge`. La
 proposta di estrarre una `libnewcat` condivisa fra i due progetti (SPEC-004
 §8.1) resta aperta: quando succederà, questo file sarà il primo a cambiare.
+
+**Una porta CAT, un programma solo.** Se un altro software tiene aperta la porta
+— DECODIUM 4, WSJT-X, un rigctld — questo backend non la trova, e viceversa: chi
+la prende per primo la tiene. Non è un limite nostro ma della porta seriale.
 
 **Modalità Survey** (SPEC-004 §5): non implementata.
 

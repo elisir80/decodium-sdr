@@ -25,6 +25,7 @@
 #include <QHash>
 #include <QPointer>
 
+#include <atomic>
 #include <memory>
 
 class QThread;
@@ -116,6 +117,14 @@ private:
     QThread *m_catThread = nullptr;
     QPointer<CatController> m_cat;
     QTimer *m_publishTimer = nullptr;
+
+    /// La sonda delle porte seriali vive su un thread suo e può durare
+    /// secondi. Va aspettata prima che il backend muoia: un thread che tiene
+    /// un puntatore a un oggetto distrutto non sbaglia subito — sbaglia
+    /// quando gli capita, e nella conformance suite capitava dentro il test
+    /// di un altro backend.
+    QPointer<QThread> m_prober;
+    std::atomic<bool> m_abortDiscovery{false};
     quint64 m_sequence = 0;
     quint64 m_publishedFrames = 0;
 };
