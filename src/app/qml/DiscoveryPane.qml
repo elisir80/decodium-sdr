@@ -122,12 +122,30 @@ Rectangle {
                             elide: Text.ElideRight
                         }
 
-                        Text {
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: qsTr("Riconosciuta, non ancora apribile da questa versione.")
-                            font.pixelSize: Theme.fontSmall
-                            color: Theme.textDisabled
-                            wrapMode: Text.WordWrap
+                            spacing: Theme.spacingTight
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: qsTr("Riconosciuta, non ancora apribile da questa versione.")
+                                font.pixelSize: Theme.fontSmall
+                                color: Theme.textDisabled
+                                wrapMode: Text.WordWrap
+                            }
+
+                            // Per il Flex si può fare un passo in più: aprire
+                            // il canale di comando e farsi dire chi è. Non
+                            // riceve campioni, ma distingue un problema di
+                            // rete da un problema di programma.
+                            DsdrButton {
+                                visible: modelData.family === "FlexRadio"
+                                implicitWidth: 96
+                                implicitHeight: 24
+                                fontSize: Theme.fontSmall
+                                text: qsTr("Interroga")
+                                onClicked: Session.probeFlex(modelData.address)
+                            }
                         }
                     }
                 }

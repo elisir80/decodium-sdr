@@ -58,3 +58,12 @@ if(DSDR_BACKEND_HERMES)
         SOURCES tst_hermes_protocol.cpp
         LIBRARIES dsdr::hal)
 endif()
+
+if(DSDR_BACKEND_FLEX_PROBE)
+    # Le righe di SmartSDR: il codice d'errore e' esadecimale e i campi
+    # arrivano in ordine libero. Sono le due trappole di un protocollo di
+    # testo che sembra impossibile da sbagliare.
+    dsdr_add_test(tst_flex_protocol
+        SOURCES tst_flex_protocol.cpp
+        LIBRARIES dsdr::hal)
+endif()

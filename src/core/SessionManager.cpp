@@ -5,6 +5,9 @@
 #include "core/DspEngine.h"
 #include "core/TxEngine.h"
 #include "hal/RadioScout.h"
+#ifdef DSDR_BACKEND_FLEX_PROBE
+#include "hal/backends/flex/FlexClient.h"
+#endif
 #include "audio/MicSource.h"
 #include "core/SpectrumFeed.h"
 #include "hal/BackendRegistry.h"
@@ -608,6 +611,49 @@ void SessionManager::scoutNetwork(int seconds)
     setStatus(tr("Cerco radio in rete…"));
     m_scout->start(seconds);
     emit networkRadiosChanged();
+}
+
+void SessionManager::probeFlex(const QString &address)
+{
+#ifdef DSDR_BACKEND_FLEX_PROBE
+    // Il client vive quanto la prova: qualche secondo, il tempo che la radio
+    // si presenti e mandi i suoi stati. Tenerlo aperto occuperebbe uno dei
+    // posti che il Flex concede ai programmi collegati.
+    auto *client = new hal::flex::FlexClient(this);
+
+    connect(client, &hal::flex::FlexClient::described, this,
+            [this, address, client](const QString &summary) {
+                for (int i = 0; i < m_networkRadios.size(); ++i) {
+                    QVariantMap entry = m_networkRadios.at(i).toMap();
+                    if (entry.value(QStringLiteral("address")).toString() != address)
+                        continue;
+                    entry.insert(QStringLiteral("detail"),
+                                 QStringLiteral("%1 · SmartSDR %2")
+                                     .arg(summary, client->version()));
+                    entry.insert(QStringLiteral("reachable"), true);
+                    m_networkRadios[i] = entry;
+                    emit networkRadiosChanged();
+                    break;
+                }
+                setStatus(tr("FlexRadio raggiunta: %1").arg(summary));
+            });
+
+    connect(client, &hal::flex::FlexClient::failed, this,
+            [this, client](const QString &reason) {
+                setStatus(tr("FlexRadio non raggiungibile: %1").arg(reason));
+                client->deleteLater();
+            });
+
+    setStatus(tr("Provo il collegamento con %1…").arg(address));
+    client->connectTo(address);
+
+    // Cinque secondi bastano: la radio si presenta subito, e restare
+    // collegati senza saper ricevere non serve a niente.
+    QTimer::singleShot(5000, client, &QObject::deleteLater);
+#else
+    Q_UNUSED(address)
+    setStatus(tr("Questa compilazione non ha il collegamento SmartSDR."));
+#endif
 }
 
 bool SessionManager::scoutingNetwork() const

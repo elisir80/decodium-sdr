@@ -71,6 +71,19 @@ if(DSDR_BACKEND_IQFILE)
     list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_IQFILE)
 endif()
 
+if(DSDR_BACKEND_FLEX_PROBE)
+    # Metà del protocollo SmartSDR: il canale di comando. Non è un backend —
+    # non riceve campioni — ma dice se la radio risponde e chi è.
+    list(APPEND DSDR_HAL_SOURCES
+        backends/flex/FlexProtocol.h
+        backends/flex/FlexProtocol.cpp
+        backends/flex/FlexClient.h
+        backends/flex/FlexClient.cpp
+    )
+    list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_FLEX_PROBE)
+    set(DSDR_HAL_NEEDS_NETWORK ON)
+endif()
+
 if(DSDR_BACKEND_HERMES)
     # Solo UDP: il protocollo è aperto e non serve nessuna libreria.
     list(APPEND DSDR_HAL_SOURCES
