@@ -15,6 +15,7 @@
 #include "core/IqRecorder.h"
 #include "core/LanguageManager.h"
 #include "core/SpectrumFeed.h"
+#include "dsp/ChannelProcessor.h"
 #include "hal/Frames.h"
 
 #include <QObject>
@@ -224,8 +225,11 @@ public:
     // catena, non nel canale (SPEC-003 §4) — vedi `setNoiseBlanker`.
     Q_INVOKABLE void setChannelNoiseReduction(int row, bool enabled, double strength);
     Q_INVOKABLE void setChannelAutoNotch(int row, bool enabled);
-    Q_INVOKABLE void setChannelNotch(int row, bool enabled, double frequencyHz,
-                                     double widthHz);
+    /// Mette un notch su una frequenza RF assoluta. Resta lì anche quando il
+    /// ricevitore si sposta: è un disturbo, non un tono audio (SPEC-003 §5).
+    Q_INVOKABLE void addChannelNotch(int row, qint64 frequencyHz, double widthHz = 120.0);
+    Q_INVOKABLE void removeChannelNotch(int row, int notchIndex);
+    Q_INVOKABLE void clearChannelNotches(int row);
 
     // ── Catena FM broadcast, RDS e CTCSS ────────────────────────────────
     Q_INVOKABLE void setChannelAudioHighPassEnabled(int row, bool enabled);

@@ -24,6 +24,7 @@
 #include "dsp/RdsDecoder.h"
 
 #include <cmath>
+#include <array>
 #include <vector>
 
 namespace dsdr::dsp {
@@ -87,9 +88,27 @@ struct ChannelSettings
 
     bool anfEnabled = false;       ///< notch automatico sulle righe fisse
 
-    bool notchEnabled = false;     ///< notch manuale, dove dice l'operatore
-    double notchFrequencyHz = 1000.0;
-    double notchWidthHz = 120.0;
+    /// Notch manuali, fino a otto (DSDR-SPEC-003 §5).
+    ///
+    /// La frequenza è uno **scostamento dalla portante del canale**, non un
+    /// tono audio: chi tiene la sessione la ricalcola quando ci si sintonizza
+    /// altrove, così il notch resta sul disturbo invece di seguire la
+    /// sintonia. È la differenza fra togliere un fischio e portarselo dietro.
+    struct Notch
+    {
+        double offsetHz = 0.0;    ///< rispetto alla portante del canale
+        double widthHz = 120.0;
+        bool enabled = false;
+
+        bool operator==(const Notch &o) const noexcept
+        {
+            return offsetHz == o.offsetHz && widthHz == o.widthHz
+                && enabled == o.enabled;
+        }
+    };
+
+    static constexpr int kMaxNotches = 8;
+    std::array<Notch, kMaxNotches> notches{};
 
     bool operator==(const ChannelSettings &o) const noexcept;
     bool operator!=(const ChannelSettings &o) const noexcept { return !(*this == o); }
@@ -198,6 +217,15 @@ private:
     /// audio: raccoglierle qui evita che uno dei due resti indietro.
     void applyAudioFilters(float *audio, std::size_t count) noexcept;
 
+    /// Da scostamento in RF a tono audio, secondo il modo.
+    ///
+    /// In USB il disturbo che sta 900 Hz sopra la portante si sente a 900 Hz;
+    /// in LSB sta sotto e si sente lo stesso a 900; in CW il BFO ha già
+    /// spostato tutto del pitch, quindi il conto parte da lì. Senza questa
+    /// conversione un notch «ancorato» cambierebbe bersaglio al cambio di
+    /// banda laterale.
+    double notchAudioHz(double offsetHz) const;
+
     void redesignFilter();
     void computeFilterEdges(double &loHz, double &hiHz) const;
     double tuningOffsetHz() const;
@@ -217,7 +245,7 @@ private:
     ComplexFir m_filter;
     Demodulator m_demod;
     Agc m_agc;
-    NotchFilter m_notch;
+    std::array<NotchFilter, ChannelSettings::kMaxNotches> m_notches;
     LmsFilter m_anf;
     SpectralDenoiser m_nr;
     AudioHighPass m_audioHighPassLeft;

@@ -117,6 +117,59 @@ Item {
         visible: Session.connected
     }
 
+    // ── Notch del canale attivo ──────────────────────────────────────────
+    //
+    // Una tacca dove il notch morde: senza, l'unico modo di sapere dove sono è
+    // leggerne l'elenco, e chi guarda lo spettro vede un buco senza causa.
+    //
+    // Un delegate per canale che disegna i propri, invece di chiedere al
+    // modello la riga corrente: è il modo di restare reattivi ai cambiamenti
+    // senza tenerne una copia da riallineare a mano.
+    Repeater {
+        model: Session.channels
+
+        delegate: Item {
+            required property int index
+            required property var notches
+
+            anchors.fill: parent
+            visible: Session.channels.currentIndex === index
+            z: 4
+
+            Repeater {
+                model: parent.notches
+
+                delegate: Item {
+                    required property var modelData
+
+                    readonly property real centreX: root.xForFrequency(modelData.frequencyHz)
+                    readonly property real halfWidth:
+                        Math.max(2, modelData.widthHz / 2 / root.visibleSpanHz * root.width)
+
+                    visible: centreX + halfWidth > 0 && centreX - halfWidth < root.width
+
+                    Rectangle {
+                        x: parent.centreX - parent.halfWidth
+                        width: parent.halfWidth * 2
+                        y: 0
+                        height: root.height * root.spectrumRatio
+                        color: Theme.danger
+                        opacity: 0.18
+                    }
+
+                    Rectangle {
+                        x: parent.centreX - 0.5
+                        width: 1
+                        y: 0
+                        height: root.height * root.spectrumRatio
+                        color: Theme.danger
+                        opacity: 0.7
+                    }
+                }
+            }
+        }
+    }
+
     // ── Flag VFO, uno per canale ─────────────────────────────────────────
     Repeater {
         model: Session.channels
@@ -207,12 +260,23 @@ Item {
                 Session.addChannel(Math.round(root.frequencyAt(mouse.x)))
         }
 
+        // Tasto destro: un notch dove si vede il disturbo (SPEC-003 §5). È il
+        // gesto naturale — si punta il fischio sullo spettro invece di
+        // leggerne la frequenza e riscriverla altrove.
         // Trascinamento = scorrimento della banda visibile. Ha senso solo
         // sotto zoom: a piena banda non c'è nulla oltre i bordi.
         property real dragAnchorX: 0
         property real dragAnchorStart: 0
 
         onPressed: (mouse) => {
+            if (mouse.button === Qt.RightButton) {
+                if (Session.connected && Session.channels.currentIndex >= 0) {
+                    Session.addChannelNotch(Session.channels.currentIndex,
+                                            Math.round(root.frequencyAt(mouse.x)), 150)
+                }
+                return
+            }
+
             dragAnchorX = mouse.x
             dragAnchorStart = root.viewStart
         }

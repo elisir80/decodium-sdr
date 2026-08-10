@@ -39,9 +39,7 @@ bool ChannelSettings::operator==(const ChannelSettings &o) const noexcept
         && cwPitchHz == o.cwPitchHz && passbandShiftHz == o.passbandShiftHz
         && nrEnabled == o.nrEnabled && nrStrength == o.nrStrength
         && anfEnabled == o.anfEnabled
-        && notchEnabled == o.notchEnabled
-        && notchFrequencyHz == o.notchFrequencyHz
-        && notchWidthHz == o.notchWidthHz
+        && notches == o.notches
         && agcAttackMs == o.agcAttackMs && agcDecayMs == o.agcDecayMs
         && amCarrierAgc == o.amCarrierAgc
         && cwPitchHz == o.cwPitchHz && volume == o.volume && muted == o.muted
@@ -135,7 +133,8 @@ bool ChannelProcessor::configureForMode()
     // diverse di proposito — il notch automatico deve agganciare una riga in
     // fretta, la riduzione di rumore deve restare stabile sulla voce, e con lo
     // stesso ritardo di decorrelazione farebbero lo stesso mestiere due volte.
-    m_notch.configure(m_channelRate);
+    for (auto &notch : m_notches)
+        notch.configure(m_channelRate);
     m_anf.configure(64, 8);
 
     // Il NR spettrale lavora sull'audio demodulato: finestra da 512 per la
@@ -277,6 +276,23 @@ void ChannelProcessor::computeFilterEdges(double &loHz, double &hiHz) const
         hiHz = loHz + 50.0;
 }
 
+double ChannelProcessor::notchAudioHz(double offsetHz) const
+{
+    switch (m_settings.mode) {
+    case DemodMode::Lsb:
+    case DemodMode::DigL:
+        // La banda laterale inferiore ribalta lo spettro: ciò che in RF sta
+        // sopra la portante, in audio scende.
+        return std::abs(-offsetHz);
+    case DemodMode::Cw:
+        return std::abs(offsetHz + m_settings.cwPitchHz);
+    case DemodMode::Cwr:
+        return std::abs(-offsetHz + m_settings.cwPitchHz);
+    default:
+        return std::abs(offsetHz);
+    }
+}
+
 void ChannelProcessor::redesignFilter()
 {
     if (!m_configured)
@@ -327,8 +343,8 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
 
     // Chi era acceso prima, per accorgersi delle accensioni.
     const struct {
-        bool nr, anf, notch;
-    } wasEnabled{m_settings.nrEnabled, m_settings.anfEnabled, m_settings.notchEnabled};
+        bool nr, anf;
+    } wasEnabled{m_settings.nrEnabled, m_settings.anfEnabled};
 
     m_settings = settings;
 
@@ -399,7 +415,16 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     m_agc.setAttackMs(m_settings.agcAttackMs);
     m_agc.setDecayMs(m_settings.agcDecayMs);
 
-    m_notch.setNotch(m_settings.notchFrequencyHz, m_settings.notchWidthHz);
+    // Ogni notch riceve la sua frequenza audio, che dipende dal modo: lo
+    // scostamento dalla portante diventa un tono diverso in USB, in LSB e in
+    // CW, dove il BFO ha già spostato tutto del pitch.
+    for (int i = 0; i < ChannelSettings::kMaxNotches; ++i) {
+        const auto &spec = m_settings.notches[static_cast<std::size_t>(i)];
+        if (!spec.enabled)
+            continue;
+        m_notches[static_cast<std::size_t>(i)].setNotch(notchAudioHz(spec.offsetHz),
+                                                        spec.widthHz);
+    }
     m_nr.setStrength(m_settings.nrStrength);
 
     // Un filtro adattivo che riparte da spento porta con sé i coefficienti di
@@ -409,8 +434,7 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
         m_nr.reset();
     if (!wasEnabled.anf && m_settings.anfEnabled)
         m_anf.reset();
-    if (!wasEnabled.notch && m_settings.notchEnabled)
-        m_notch.reset();
+
 }
 
 void ChannelProcessor::reset() noexcept
@@ -420,7 +444,8 @@ void ChannelProcessor::reset() noexcept
     m_filter.reset();
     m_demod.reset();
     m_agc.reset();
-    m_notch.reset();
+    for (auto &notch : m_notches)
+        notch.reset();
     m_anf.reset();
     m_nr.reset();
     m_audioHighPassLeft.reset();
@@ -830,8 +855,10 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
 
 void ChannelProcessor::applyAudioFilters(float *audio, std::size_t count) noexcept
 {
-    if (m_settings.notchEnabled)
-        m_notch.process(audio, count);
+    for (int i = 0; i < ChannelSettings::kMaxNotches; ++i) {
+        if (m_settings.notches[static_cast<std::size_t>(i)].enabled)
+            m_notches[static_cast<std::size_t>(i)].process(audio, count);
+    }
     if (autoNotchActive())
         m_anf.process(audio, count, LmsFilter::Output::Error);
     if (m_settings.nrEnabled)

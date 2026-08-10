@@ -933,13 +933,31 @@ void SessionManager::setChannelFrequency(int row, qint64 hz)
         }
     }
 
+    // I notch sono ancorati a una frequenza RF: quando il ricevitore si
+    // sposta, il loro scostamento dalla portante cambia della stessa quantità
+    // — altrimenti si porterebbero dietro il buco e lascerebbero passare il
+    // disturbo che dovevano togliere (SPEC-003 §5).
+    const double moved = static_cast<double>(hz - entry->frequencyHz);
+    for (auto &notch : entry->settings.notches) {
+        if (!notch.enabled)
+            continue;
+        notch.offsetHz -= moved;
+
+        // Uscito dalla banda che si sta ascoltando, il notch non ha più nulla
+        // da togliere: si spegne invece di restare in elenco a non fare
+        // niente, o peggio a mordere un bordo del passa-banda.
+        if (std::abs(notch.offsetHz) > 20000.0)
+            notch = dsp::ChannelSettings::Notch{};
+    }
+
     entry->frequencyHz = hz;
     entry->settings.offsetHz = static_cast<double>(hz - m_centerFrequency);
 
     if (m_backend)
         m_backend->setFrequency(entry->id, hz);
 
-    m_channels.entryChanged(row, {ChannelModel::FrequencyRole, ChannelModel::OffsetRole});
+    m_channels.entryChanged(row, {ChannelModel::FrequencyRole, ChannelModel::OffsetRole,
+                                  ChannelModel::NotchesRole});
     m_channels.updateRds(entry->id, false, QString(), -1, -1, -1, QString(),
                          QString(), QString(), QString(), QString());
     pushChannelToEngine(row);
@@ -1681,18 +1699,65 @@ void SessionManager::setChannelAutoNotch(int row, bool enabled)
     pushChannelToEngine(row);
 }
 
-void SessionManager::setChannelNotch(int row, bool enabled, double frequencyHz,
-                                     double widthHz)
+void SessionManager::addChannelNotch(int row, qint64 frequencyHz, double widthHz)
 {
     ChannelEntry *entry = m_channels.mutableAt(row);
     if (!entry)
         return;
-    entry->settings.notchEnabled = enabled;
-    entry->settings.notchFrequencyHz = std::clamp(frequencyHz, 100.0, 5000.0);
-    entry->settings.notchWidthHz = std::clamp(widthHz, 20.0, 800.0);
-    m_channels.entryChanged(row, {ChannelModel::NotchEnabledRole,
-                                  ChannelModel::NotchFrequencyRole,
-                                  ChannelModel::NotchWidthRole});
+
+    // Si conserva lo scostamento dalla portante, non la frequenza assoluta:
+    // è quello che permette al notch di restare sul disturbo quando il
+    // ricevitore si sposta (SPEC-003 §5). La frequenza vera si ricava sempre
+    // sommando, e nessuno deve ricordarsi di aggiornarla.
+    const double offset = static_cast<double>(frequencyHz - entry->frequencyHz);
+    if (std::abs(offset) > 20000.0) {
+        setStatus(tr("Il notch è troppo lontano dal ricevitore per essere udibile."));
+        return;
+    }
+
+    for (auto &notch : entry->settings.notches) {
+        if (notch.enabled)
+            continue;
+        notch.offsetHz = offset;
+        notch.widthHz = std::clamp(widthHz, 25.0, 1000.0);
+        notch.enabled = true;
+        m_channels.entryChanged(row, {ChannelModel::NotchesRole});
+        pushChannelToEngine(row);
+        return;
+    }
+
+    setStatus(tr("Questo canale ha già %1 notch: toglierne uno per aggiungerne un altro.")
+                  .arg(dsp::ChannelSettings::kMaxNotches));
+}
+
+void SessionManager::removeChannelNotch(int row, int notchIndex)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry || notchIndex < 0)
+        return;
+
+    // L'indice è quello dell'elenco mostrato — i soli notch accesi — non
+    // quello dell'array: la UI non deve conoscere i buchi.
+    int seen = 0;
+    for (auto &notch : entry->settings.notches) {
+        if (!notch.enabled)
+            continue;
+        if (seen++ != notchIndex)
+            continue;
+        notch = dsp::ChannelSettings::Notch{};
+        m_channels.entryChanged(row, {ChannelModel::NotchesRole});
+        pushChannelToEngine(row);
+        return;
+    }
+}
+
+void SessionManager::clearChannelNotches(int row)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+    entry->settings.notches = {};
+    m_channels.entryChanged(row, {ChannelModel::NotchesRole});
     pushChannelToEngine(row);
 }
 

@@ -55,9 +55,22 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case NrEnabledRole:        return entry.settings.nrEnabled;
     case NrStrengthRole:       return entry.settings.nrStrength;
     case AnfEnabledRole:       return entry.settings.anfEnabled;
-    case NotchEnabledRole:     return entry.settings.notchEnabled;
-    case NotchFrequencyRole:   return entry.settings.notchFrequencyHz;
-    case NotchWidthRole:       return entry.settings.notchWidthHz;
+    case NotchesRole: {
+        // Ogni notch come mappa: la UI ne disegna una riga e una tacca sullo
+        // spettro senza sapere nulla di come sono conservati.
+        QVariantList list;
+        for (const auto &notch : entry.settings.notches) {
+            if (!notch.enabled)
+                continue;
+            list.append(QVariantMap{
+                {QStringLiteral("offsetHz"), notch.offsetHz},
+                {QStringLiteral("widthHz"), notch.widthHz},
+                {QStringLiteral("frequencyHz"),
+                 static_cast<double>(entry.frequencyHz) + notch.offsetHz},
+            });
+        }
+        return list;
+    }
     case AudioHighPassEnabledRole: return entry.settings.audioHighPassEnabled;
     case AudioHighPassHzRole: return entry.settings.audioHighPassHz;
     case FmStereoRole:     return entry.settings.fmStereo;
@@ -115,9 +128,7 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {NrEnabledRole, "nrEnabled"},
         {NrStrengthRole, "nrStrength"},
         {AnfEnabledRole, "anfEnabled"},
-        {NotchEnabledRole, "notchEnabled"},
-        {NotchFrequencyRole, "notchFrequencyHz"},
-        {NotchWidthRole, "notchWidthHz"},
+        {NotchesRole, "notches"},
         {AudioHighPassEnabledRole, "audioHighPassEnabled"},
         {AudioHighPassHzRole, "audioHighPassHz"},
         {FmStereoRole, "fmStereo"},

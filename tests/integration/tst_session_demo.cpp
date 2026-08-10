@@ -42,6 +42,7 @@ private slots:
     void theChannelMeasuresItsOwnNoiseFloor();
     void theOverloadGuardStaysQuietOnAWellBehavedBand();
     void thePassbandCanSlideWithoutChangingWidth();
+    void notchesStayOnTheInterferenceWhenTuningAway();
 
 private:
     /// Attende che `predicate` diventi vera, facendo girare l'event loop.
@@ -420,7 +421,7 @@ void TestSessionDemo::noiseFiltersReachTheDspWithoutKillingTheAudio()
     QVERIFY2(!session.noiseBlanker(), "il blanker parte acceso");
     QVERIFY(!entry->settings.nrEnabled);
     QVERIFY(!entry->settings.anfEnabled);
-    QVERIFY(!entry->settings.notchEnabled);
+    QVERIFY(!entry->settings.notches[0].enabled);
 
     // E devono risultare spenti anche **dal modello**, che è ciò che la UI
     // legge: i pulsanti del pannello si accendono su questi ruoli, e un ruolo
@@ -432,7 +433,8 @@ void TestSessionDemo::noiseFiltersReachTheDspWithoutKillingTheAudio()
     };
     QVERIFY2(!roleBool(ChannelModel::NrEnabledRole), "il modello dichiara NR acceso");
     QVERIFY2(!roleBool(ChannelModel::AnfEnabledRole), "il modello dichiara ANF acceso");
-    QVERIFY2(!roleBool(ChannelModel::NotchEnabledRole), "il modello dichiara NOTCH acceso");
+    QVERIFY2(session.channels()->data(index, ChannelModel::NotchesRole).toList().isEmpty(),
+             "il modello dichiara dei notch già messi");
 
     // I nomi che QML usa devono corrispondere ai ruoli che li servono: è il
     // punto in cui un'aggiunta in mezzo all'enum sposta tutto di una casella
@@ -440,7 +442,7 @@ void TestSessionDemo::noiseFiltersReachTheDspWithoutKillingTheAudio()
     const auto names = session.channels()->roleNames();
     QCOMPARE(names.value(ChannelModel::NrEnabledRole), QByteArray("nrEnabled"));
     QCOMPARE(names.value(ChannelModel::AnfEnabledRole), QByteArray("anfEnabled"));
-    QCOMPARE(names.value(ChannelModel::NotchEnabledRole), QByteArray("notchEnabled"));
+    QCOMPARE(names.value(ChannelModel::NotchesRole), QByteArray("notches"));
     QCOMPARE(names.value(ChannelModel::SignalDbRole), QByteArray("signalDb"));
 
     // Il blanker è di catena, non di canale (SPEC-003 §4): un impulso arriva
@@ -449,14 +451,14 @@ void TestSessionDemo::noiseFiltersReachTheDspWithoutKillingTheAudio()
     session.setNoiseBlanker(true, 4.0);
     session.setChannelNoiseReduction(0, true, 0.05);
     session.setChannelAutoNotch(0, true);
-    session.setChannelNotch(0, true, 1200.0, 150.0);
+    session.addChannelNotch(0, session.channels()->at(0)->frequencyHz + 1200, 150.0);
 
     entry = session.channels()->at(0);
     QVERIFY(session.noiseBlanker());
     QVERIFY(entry->settings.nrEnabled);
     QVERIFY(entry->settings.anfEnabled);
-    QVERIFY(entry->settings.notchEnabled);
-    QCOMPARE(entry->settings.notchFrequencyHz, 1200.0);
+    QVERIFY(entry->settings.notches[0].enabled);
+    QCOMPARE(entry->settings.notches[0].offsetHz, 1200.0);
 
     // Con tutti e quattro accesi la catena deve continuare a produrre audio.
     // Quattro filtri in cascata sono anche quattro modi di azzerare il segnale
@@ -465,17 +467,18 @@ void TestSessionDemo::noiseFiltersReachTheDspWithoutKillingTheAudio()
     QVERIFY2(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 4000),
              "la catena si è azzittita con i filtri accesi");
 
-    // Valori assurdi vengono riportati dentro i limiti invece di essere
-    // presi alla lettera: un notch a 40 kHz farebbe suonare la biquad.
-    session.setChannelNotch(0, true, 999999.0, 0.0);
-    entry = session.channels()->at(0);
-    QVERIFY2(entry->settings.notchFrequencyHz <= 5000.0,
-             "frequenza del notch fuori dai limiti");
-    QVERIFY2(entry->settings.notchWidthHz >= 20.0, "larghezza del notch degenere");
+    // Un notch chiesto a mezzo megahertz dal ricevitore non si mette: non
+    // sarebbe udibile, e accettarlo vorrebbe dire mostrare in elenco una riga
+    // che non fa niente.
+    const int before = session.channels()->data(index, ChannelModel::NotchesRole)
+                           .toList().size();
+    session.addChannelNotch(0, session.channels()->at(0)->frequencyHz + 500000, 150.0);
+    QCOMPARE(session.channels()->data(index, ChannelModel::NotchesRole).toList().size(),
+             before);
 
     QTest::qWait(600);
     QVERIFY2(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 4000),
-             "la catena si è fermata dopo un notch fuori scala");
+             "la catena si è fermata dopo un notch rifiutato");
 }
 
 void TestSessionDemo::theChannelMeasuresItsOwnNoiseFloor()
@@ -566,6 +569,48 @@ void TestSessionDemo::thePassbandCanSlideWithoutChangingWidth()
 
     session.setChannelPassbandShift(0, 0.0);
     QCOMPARE(session.channels()->at(0)->settings.passbandShiftHz, 0.0);
+}
+
+void TestSessionDemo::notchesStayOnTheInterferenceWhenTuningAway()
+{
+    SessionManager session;
+    QVERIFY2(connectSession(session), "connessione al backend demo fallita");
+
+    const qint64 channel = session.channels()->at(0)->frequencyHz;
+    const qint64 whistle = channel + 1500;      // il fischio da togliere
+
+    session.addChannelNotch(0, whistle, 200.0);
+
+    const QModelIndex index = session.channels()->index(0, 0);
+    QVariantList notches = session.channels()->data(index, ChannelModel::NotchesRole).toList();
+    QCOMPARE(notches.size(), 1);
+    QCOMPARE(notches.first().toMap().value(QStringLiteral("frequencyHz")).toDouble(),
+             static_cast<double>(whistle));
+
+    // Ci si sposta di due chilohertz: il notch deve restare sul disturbo, che
+    // in audio si sente ora a una frequenza diversa. Un notch legato al tono
+    // audio, invece, si porterebbe dietro il buco e lascerebbe passare il
+    // fischio — è la differenza fra togliere un disturbo e inseguirlo.
+    session.setChannelFrequency(0, channel + 2000);
+
+    notches = session.channels()->data(index, ChannelModel::NotchesRole).toList();
+    QCOMPARE(notches.size(), 1);
+    QCOMPARE(notches.first().toMap().value(QStringLiteral("frequencyHz")).toDouble(),
+             static_cast<double>(whistle));
+
+    // E la catena continua a suonare con il notch attivo.
+    QVERIFY2(waitFor([&] { return session.channels()->at(0)->signalDb > -139.0f; }, 4000),
+             "audio perso con un notch attivo");
+
+    // Se ne possono mettere fino a otto, e non uno di più.
+    for (int i = 0; i < 12; ++i)
+        session.addChannelNotch(0, channel + 400 * (i + 2), 120.0);
+
+    notches = session.channels()->data(index, ChannelModel::NotchesRole).toList();
+    QCOMPARE(notches.size(), dsp::ChannelSettings::kMaxNotches);
+
+    session.clearChannelNotches(0);
+    QVERIFY(session.channels()->data(index, ChannelModel::NotchesRole).toList().isEmpty());
 }
 
 QTEST_MAIN(TestSessionDemo)
