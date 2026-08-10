@@ -41,6 +41,7 @@ public:
 
     QString errorString() const override { return m_error; }
     QList<int> candidateBaudRates() const override;
+    int probe(const QString &portName) override;
 
     /// Conversione fra il codice di modo newcat e il nostro vocabolario.
     /// Esposte perché sono la parte che si sbaglia, ed è giusto che un test
@@ -53,6 +54,14 @@ public:
     static QString modelFromId(const QByteArray &reply);
 
 private:
+    /// Apre la porta e mette subito giù RTS e DTR. Separata dal resto perché
+    /// la sonda la chiama una volta e poi cambia solo la velocità.
+    bool openPort(const QString &portName, int baudRate);
+
+    /// Chiede `ID;` e ne ricava il modello. Vero se dall'altra parte c'è una
+    /// radio che parla newcat.
+    bool identify();
+
     /// Manda un comando e aspetta la risposta terminata da `;`.
     /// Vuota se la radio non risponde entro il tempo: è il caso normale
     /// quando si sonda una porta che non è una radio.

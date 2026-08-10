@@ -106,10 +106,49 @@ QString NewcatDriver::modelFromId(const QByteArray &reply)
     return QStringLiteral("Yaesu %1").arg(QString::fromLatin1(code));
 }
 
+int NewcatDriver::probe(const QString &portName)
+{
+    // Una sola apertura per tutta la sonda. Ogni `open()` su Windows alza DTR
+    // e RTS per qualche millisecondo prima che si possano abbassare, e su una
+    // radio con «CAT RTS» attivo quelle linee sono il PTT: aprire sei volte
+    // per provare sei velocità vuol dire sei colpi di trasmissione.
+    if (!openPort(portName, candidateBaudRates().value(0, 38400)))
+        return -1;
+
+    for (int rate : candidateBaudRates()) {
+        m_port->setBaudRate(rate);
+        m_port->clear();
+
+        if (identify()) {
+            qCInfo(dsdrHal) << "newcat:" << m_model << "su" << portName
+                            << rate << "baud";
+            return rate;
+        }
+    }
+
+    m_error = QStringLiteral("nessuna radio newcat su %1").arg(portName);
+    close();
+    return -1;
+}
+
 bool NewcatDriver::open(const QString &portName, int baudRate)
 {
     close();
+    if (!openPort(portName, baudRate))
+        return false;
+    if (identify()) {
+        qCInfo(dsdrHal) << "newcat:" << m_model << "su" << portName
+                        << baudRate << "baud";
+        return true;
+    }
+    m_error = QStringLiteral("nessuna radio newcat su %1 a %2 baud")
+                  .arg(portName).arg(baudRate);
+    close();
+    return false;
+}
 
+bool NewcatDriver::openPort(const QString &portName, int baudRate)
+{
     m_port = std::make_unique<QSerialPort>();
     m_port->setPortName(portName);
     m_port->setBaudRate(baudRate);
@@ -129,14 +168,17 @@ bool NewcatDriver::open(const QString &portName, int baudRate)
     // trasmissione prima ancora di aver detto una parola.
     m_port->setRequestToSend(false);
     m_port->setDataTerminalReady(false);
-
     m_port->clear();
+    return true;
+}
 
+bool NewcatDriver::identify()
+{
     // Centocinquanta millisecondi e non trecento: una radio che c'è risponde
-    // in venti, e questa attesa la si paga per ogni velocità di ogni porta
-    // che radio non è. Con sei velocità e due tentativi sono secondi di
-    // discovery risparmiati a ogni avvio.
+    // in venti, e questa attesa la si paga per ogni velocità di ogni porta che
+    // radio non è.
     constexpr int kProbeTimeoutMs = 150;
+
     QByteArray id = ask("ID;", kProbeTimeoutMs);
     if (id.isEmpty()) {
         // Un comando lasciato a metà da un programma chiuso male tiene la
@@ -155,14 +197,9 @@ bool NewcatDriver::open(const QString &portName, int baudRate)
     }
 
     m_model = modelFromId(id);
-    if (m_model.isEmpty()) {
-        m_error = QStringLiteral("nessuna radio newcat su %1 a %2 baud")
-                      .arg(portName).arg(baudRate);
-        close();
+    if (m_model.isEmpty())
         return false;
-    }
 
-    qCInfo(dsdrHal) << "newcat:" << m_model << "su" << portName << baudRate << "baud";
     m_error.clear();
     return true;
 }

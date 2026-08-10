@@ -175,20 +175,27 @@ void AudiorigBackend::startDiscovery()
 
             // Due lingue, non una. Le Yaesu parlano newcat, le Icom CI-V, e
             // sulla stessa porta seriale non c'è modo di sapere quale sia
-            // senza provare: si prova la prima, poi la seconda.
+            // senza provare.
+            //
+            // Ciascun driver apre la porta **una volta sola** e prova le sue
+            // velocità cambiandole sulla porta aperta. Non è
+            // un'ottimizzazione: su Windows ogni apertura alza DTR e RTS per
+            // qualche millisecondo prima che si possano abbassare, e su una
+            // radio con «CAT RTS» attivo quelle linee sono il PTT. La prima
+            // stesura apriva undici volte per porta — undici colpi di
+            // trasmissione su una radio che nessuno stava usando.
             std::unique_ptr<ICatDriver> drivers[2];
             drivers[0] = std::make_unique<NewcatDriver>();
             drivers[1] = std::make_unique<CivDriver>();
 
             bool found = false;
             for (auto &candidate : drivers) {
-                if (found)
+                if (found || m_abortDiscovery.load(std::memory_order_acquire))
                     break;
+
                 ICatDriver &driver = *candidate;
-                for (int rate : driver.candidateBaudRates()) {
-                if (m_abortDiscovery.load(std::memory_order_acquire))
-                    break;
-                if (!driver.open(info.portName(), rate))
+                const int rate = driver.probe(info.portName());
+                if (rate < 0)
                     continue;
 
                 DeviceDescriptor device;
@@ -221,8 +228,6 @@ void AudiorigBackend::startDiscovery()
                 QMetaObject::invokeMethod(this, [this, device] {
                     emit deviceFound(device);
                 }, Qt::QueuedConnection);
-                break;
-                }
             }
             Q_UNUSED(found)
         }

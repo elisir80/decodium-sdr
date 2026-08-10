@@ -50,6 +50,7 @@ public:
 
     QString errorString() const override { return m_error; }
     QList<int> candidateBaudRates() const override;
+    int probe(const QString &portName) override;
 
     // ── Le parti pure ───────────────────────────────────────────────────
     //
@@ -76,6 +77,14 @@ public:
     static QByteArray buildFrame(quint8 radioAddress, const QByteArray &payload);
 
 private:
+    /// Apre la porta e mette subito giù RTS e DTR. Separata dal resto perché
+    /// la sonda la chiama una volta e poi cambia solo la velocità.
+    bool openPort(const QString &portName, int baudRate);
+
+    /// Cerca l'indirizzo del telaio sulla porta già aperta. Vero se dall'altra
+    /// parte c'è una Icom.
+    bool findAddress();
+
     /// Manda un comando e aspetta la risposta della radio, scartando l'eco.
     QByteArray ask(const QByteArray &payload, int timeoutMs = 300);
     bool tell(const QByteArray &payload);

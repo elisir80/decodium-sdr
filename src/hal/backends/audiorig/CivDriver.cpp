@@ -164,10 +164,50 @@ QByteArray CivDriver::buildFrame(quint8 radioAddress, const QByteArray &payload)
     return frame;
 }
 
+int CivDriver::probe(const QString &portName)
+{
+    // Una sola apertura per tutta la sonda: ogni `open()` su Windows alza DTR
+    // e RTS per qualche millisecondo, e su molte interfacce quelle linee sono
+    // il PTT. Cinque velocità aperte cinque volte sono cinque colpi di
+    // trasmissione su una radio che nessuno stava usando.
+    if (!openPort(portName, candidateBaudRates().value(0, 19200)))
+        return -1;
+
+    for (int rate : candidateBaudRates()) {
+        m_port->setBaudRate(rate);
+        m_port->clear();
+
+        if (findAddress()) {
+            qCInfo(dsdrHal) << "civ:" << m_model << "su" << portName
+                            << rate << "baud, indirizzo"
+                            << QString::number(m_address, 16);
+            return rate;
+        }
+    }
+
+    m_error = QStringLiteral("nessuna radio CI-V su %1").arg(portName);
+    close();
+    return -1;
+}
+
 bool CivDriver::open(const QString &portName, int baudRate)
 {
     close();
+    if (!openPort(portName, baudRate))
+        return false;
+    if (findAddress()) {
+        qCInfo(dsdrHal) << "civ:" << m_model << "su" << portName << baudRate
+                        << "baud, indirizzo" << QString::number(m_address, 16);
+        return true;
+    }
+    m_error = QStringLiteral("nessuna radio CI-V su %1 a %2 baud")
+                  .arg(portName).arg(baudRate);
+    close();
+    return false;
+}
 
+bool CivDriver::openPort(const QString &portName, int baudRate)
+{
     m_port = std::make_unique<QSerialPort>();
     m_port->setPortName(portName);
     m_port->setBaudRate(baudRate);
@@ -188,25 +228,22 @@ bool CivDriver::open(const QString &portName, int baudRate)
     m_port->setRequestToSend(false);
     m_port->setDataTerminalReady(false);
     m_port->clear();
+    return true;
+}
 
-    // Si sonda l'indirizzo: senza quello giusto la radio non risponde, e non
-    // c'è modo di distinguere «indirizzo sbagliato» da «non è una Icom».
+bool CivDriver::findAddress()
+{
+    // Senza l'indirizzo giusto la radio non risponde, e non c'è modo di
+    // distinguere «indirizzo sbagliato» da «non è una Icom»: si provano.
     for (quint8 address : candidateAddresses()) {
         m_address = address;
         const QByteArray reply = ask(QByteArray(1, char(0x03)), 150);
         if (reply.size() >= 6 && static_cast<quint8>(reply.at(4)) == 0x03) {
             m_model = modelFromAddress(address);
             m_error.clear();
-            qCInfo(dsdrHal) << "civ:" << m_model << "su" << portName
-                            << baudRate << "baud, indirizzo"
-                            << QString::number(address, 16);
             return true;
         }
     }
-
-    m_error = QStringLiteral("nessuna radio CI-V su %1 a %2 baud")
-                  .arg(portName).arg(baudRate);
-    close();
     return false;
 }
 

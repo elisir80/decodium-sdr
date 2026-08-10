@@ -65,6 +65,20 @@ public:
 
     /// Velocità da provare in fase di sonda, dalla più probabile alla meno.
     virtual QList<int> candidateBaudRates() const = 0;
+
+    /// Sonda una porta provando le velocità note, **aprendola una volta
+    /// sola**. Restituisce la velocità che ha funzionato, o −1.
+    ///
+    /// Che sia una volta sola non è un'ottimizzazione: è una questione di
+    /// sicurezza. Su Windows l'apertura di una porta seriale alza DTR e RTS
+    /// per qualche millisecondo prima che il programma possa abbassarli, e su
+    /// molte interfacce — e su una Yaesu con «CAT RTS» attivo — quelle linee
+    /// **sono il PTT**. Aprire e richiudere undici volte per provare undici
+    /// velocità vuol dire undici colpi di trasmissione su una radio che
+    /// nessuno stava usando.
+    ///
+    /// Trovandola, la porta resta aperta e pronta. Non trovandola, si chiude.
+    virtual int probe(const QString &portName) = 0;
 };
 
 } // namespace dsdr::hal::audiorig
