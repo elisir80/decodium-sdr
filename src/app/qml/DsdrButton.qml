@@ -21,7 +21,10 @@ Button {
 
     implicitHeight: Theme.controlHeight
     implicitWidth: Math.max(84, contentItem.implicitWidth + 2 * Theme.spacingLoose)
-    padding: Theme.spacing
+    // Un pulsante con il corpo piccolo sta in una pulsantiera fitta, e lì il
+    // margine costa quanto il testo: «Medium» non ci sta per due pixel di
+    // padding, e il troncamento fa sembrare l'interfaccia non finita.
+    padding: control.fontSize < Theme.fontNormal ? Theme.spacingTight : Theme.spacing
 
     contentItem: Text {
         text: control.text

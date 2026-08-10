@@ -50,6 +50,7 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case AgcAttackRole:    return entry.settings.agcAttackMs;
     case AgcDecayRole:     return entry.settings.agcDecayMs;
     case AmCarrierAgcRole: return entry.settings.amCarrierAgc;
+    case AgcAutoThresholdRole: return entry.settings.agcAutoThreshold;
     case VolumeRole:       return entry.settings.volume;
     case MutedRole:        return entry.settings.muted;
     case NrEnabledRole:        return entry.settings.nrEnabled;
@@ -127,6 +128,7 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {AgcAttackRole, "agcAttackMs"},
         {AgcDecayRole, "agcDecayMs"},
         {AmCarrierAgcRole, "amCarrierAgc"},
+        {AgcAutoThresholdRole, "agcAutoThreshold"},
         {VolumeRole, "volume"},
         {MutedRole, "muted"},
         {NrEnabledRole, "nrEnabled"},

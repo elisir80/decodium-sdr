@@ -1528,6 +1528,16 @@ void SessionManager::setChannelAgcThreshold(int row, double thresholdDb)
     pushChannelToEngine(row);
 }
 
+void SessionManager::setChannelAgcAutoThreshold(int row, bool enabled)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry || entry->settings.agcAutoThreshold == enabled)
+        return;
+    entry->settings.agcAutoThreshold = enabled;
+    m_channels.entryChanged(row, {ChannelModel::AgcAutoThresholdRole});
+    pushChannelToEngine(row);
+}
+
 void SessionManager::setChannelAgcAttack(int row, double milliseconds)
 {
     ChannelEntry *entry = m_channels.mutableAt(row);

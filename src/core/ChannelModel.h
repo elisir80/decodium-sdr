@@ -60,6 +60,7 @@ public:
         AgcAttackRole,
         AgcDecayRole,
         AmCarrierAgcRole,
+        AgcAutoThresholdRole,
         VolumeRole,
         MutedRole,
         NrEnabledRole,

@@ -358,6 +358,9 @@ public:
     Q_INVOKABLE void setChannelPassbandShift(int row, double hz);
     Q_INVOKABLE void setChannelAgcMode(int row, int mode);
     Q_INVOKABLE void setChannelAgcThreshold(int row, double thresholdDb);
+
+    /// La soglia AGC-T si regola da sé seguendo il fondo del rumore.
+    Q_INVOKABLE void setChannelAgcAutoThreshold(int row, bool enabled);
     Q_INVOKABLE void setChannelAgcAttack(int row, double milliseconds);
     Q_INVOKABLE void setChannelAgcDecay(int row, double milliseconds);
     Q_INVOKABLE void setChannelAmCarrierAgc(int row, bool enabled);

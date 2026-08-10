@@ -13,6 +13,33 @@ namespace dsdr::dsp {
 
 namespace {
 
+/// Quanto la soglia automatica sta sopra il fondo del rumore.
+///
+/// Sei decibel. Sotto, la soglia finisce dentro il respiro del fondo e l'AGC
+/// ricomincia a inseguire il rumore; sopra, i segnali appena emersi non
+/// muovono più il guadagno e si sentono deboli anche quando ci sono.
+constexpr float kAutoThresholdMarginDb = 6.0f;
+
+/// E di quanto può muoversi a ogni blocco. Un decimo di decibel per blocco a
+/// una manciata di blocchi al secondo fa qualche decibel al secondo: abbastanza
+/// da seguire un cambio di banda in pochi istanti, troppo poco da rincorrere
+/// una raffica di statica.
+constexpr float kAutoThresholdStepDb = 0.1f;
+
+} // namespace
+
+float ChannelProcessor::autoThresholdFor(float noiseFloorDb, float previousDb,
+                                         float maxStepDb)
+{
+    const float target = noiseFloorDb + kAutoThresholdMarginDb;
+    const float delta = std::clamp(target - previousDb, -maxStepDb, maxStepDb);
+    // I limiti sono quelli del cursore: fuori di lì la soglia o non fa niente
+    // o rende il ricevitore sordo, e in entrambi i casi sembra un guasto.
+    return std::clamp(previousDb + delta, -140.0f, -20.0f);
+}
+
+namespace {
+
 /// Quanto deve risalire il segnale sopra la soglia perché lo squelch riapra.
 /// Senza, un segnale che respira attorno alla soglia — il caso normale in HF —
 /// farebbe sbattere l'audio più volte al secondo.
@@ -128,6 +155,7 @@ bool ChannelProcessor::configureForMode()
     m_fmIfNoiseReducer.setPreset(m_settings.fmIfNoiseReductionPreset);
     m_agc.configure(m_channelRate);
     m_agc.setMode(m_settings.agcMode);
+    m_effectiveThresholdDb = static_cast<float>(m_settings.agcThresholdDb);
     m_agc.setThresholdDb(m_settings.agcThresholdDb);
     m_agc.setMaxGainDb(m_settings.agcMaxGainDb);
     m_agc.setAttackMs(m_settings.agcAttackMs);
@@ -440,6 +468,7 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     }
 
     m_agc.setMode(m_settings.agcMode);
+    m_effectiveThresholdDb = static_cast<float>(m_settings.agcThresholdDb);
     m_agc.setThresholdDb(m_settings.agcThresholdDb);
     m_agc.setMaxGainDb(m_settings.agcMaxGainDb);
     m_agc.setAttackMs(m_settings.agcAttackMs);
@@ -706,6 +735,19 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
             m_noiseFloorDb += (instantDb - m_noiseFloorDb) * alpha;
         }
         m_snrDb = std::clamp(m_signalLevelDb - m_noiseFloorDb, 0.0f, 99.0f);
+
+        // ── AGC-T automatico ────────────────────────────────────────────
+        //
+        // La soglia insegue il fondo del rumore da sopra, e si muove piano.
+        // Piano è la parte che conta: una soglia che seguisse il fondo
+        // istante per istante scenderebbe dentro il respiro del rumore e
+        // farebbe pompare il guadagno — il difetto che si attribuisce all'AGC
+        // e che invece nasce qui.
+        if (m_settings.agcAutoThreshold) {
+            m_effectiveThresholdDb =
+                autoThresholdFor(m_noiseFloorDb, m_effectiveThresholdDb, kAutoThresholdStepDb);
+            m_agc.setThresholdDb(m_effectiveThresholdDb);
+        }
 
         const bool ctcssMode = m_settings.ctcssEnabled && m_settings.mode == DemodMode::Nfm;
         const bool ctcssMute = ctcssMode && !m_settings.ctcssDecodeOnly;

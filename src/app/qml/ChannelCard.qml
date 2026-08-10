@@ -30,6 +30,7 @@ Rectangle {
     required property real agcAttackMs
     required property real agcDecayMs
     required property bool amCarrierAgc
+    required property bool agcAutoThreshold
     required property real volume
     required property bool muted
     required property bool audioHighPassEnabled
@@ -151,6 +152,40 @@ Rectangle {
             filterHighHz: entry.filterHighHz
         }
 
+        // ── Spostamento del passa-banda (IF shift, SPEC-003 §7) ──
+        //
+        // Lo esegue la nostra catena, quindi vale con qualunque sorgente:
+        // anche l'audio di una radio tradizionale passa di lì.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+
+            Text {
+                text: qsTr("Shift")
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+            }
+
+            DsdrSlider {
+                id: shiftSlider
+                Layout.fillWidth: true
+                from: -2000; to: 2000
+                stepSize: 10
+                value: entry.passbandShiftHz
+                onMoved: Session.setChannelPassbandShift(entry.index, value)
+            }
+
+            // Riportare a zero con un cursore è un esercizio di mira: il
+            // valore centrale è largo un pixel.
+            DsdrButton {
+                implicitWidth: 64
+                implicitHeight: 22
+                text: Math.round(entry.passbandShiftHz) + " Hz"
+                enabled: Math.abs(entry.passbandShiftHz) > 1
+                onClicked: Session.setChannelPassbandShift(entry.index, 0)
+            }
+        }
+
         Text {
             text: qsTr("AGC")
             font.pixelSize: Theme.fontSmall
@@ -179,6 +214,67 @@ Rectangle {
                     onClicked: Session.setChannelAgcMode(entry.index, index)
                 }
             }
+        }
+
+
+        // ── AGC-T ────────────────────────────────────────────
+        //
+        // La soglia sotto la quale il guadagno smette di salire: è il comando
+        // che «abbassa il rumore di banda» senza toccare il volume. È anche il
+        // più trascurato, e per un motivo pratico — va rimesso a mano a ogni
+        // cambio di banda, di antenna, di ora del giorno.
+        //
+        // Per questo c'è AUTO. Con l'automatico acceso il cursore mostra dove
+        // la soglia è arrivata e non si tocca: un cursore che non corrisponde a
+        // ciò che accade è peggio di nessun cursore.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+
+            Text {
+                text: qsTr("AGC-T")
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+                Layout.preferredWidth: 44
+            }
+
+            DsdrButton {
+                implicitWidth: 54
+                implicitHeight: 22
+                fontSize: Theme.fontSmall
+                boldWhenChecked: false
+                text: qsTr("AUTO")
+                checkable: true
+                checked: entry.agcAutoThreshold
+                onToggled: Session.setChannelAgcAutoThreshold(entry.index, checked)
+            }
+
+            DsdrSlider {
+                Layout.fillWidth: true
+                from: -140; to: -20
+                stepSize: 1
+                enabled: !entry.agcAutoThreshold
+                value: entry.agcThresholdDb
+                onMoved: Session.setChannelAgcThreshold(entry.index, value)
+            }
+
+            Text {
+                text: Math.round(entry.agcThresholdDb) + " dB"
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: entry.agcAutoThreshold ? Theme.accent : Theme.textPrimary
+                Layout.preferredWidth: 52
+                horizontalAlignment: Text.AlignRight
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: entry.agcAutoThreshold
+            text: qsTr("Segue il fondo del rumore, sei dB sopra: adesso %1 dBFS")
+                  .arg(entry.noiseFloorDb.toFixed(0))
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textDisabled
         }
 
         // Un solo comando per il NR, come vuole la specifica: alza e abbassa
@@ -347,40 +443,6 @@ Rectangle {
                         onClicked: Session.removeChannelNotch(entry.index, index)
                     }
                 }
-            }
-        }
-
-        // ── Spostamento del passa-banda (IF shift, SPEC-003 §7) ──
-        //
-        // Lo esegue la nostra catena, quindi vale con qualunque sorgente:
-        // anche l'audio di una radio tradizionale passa di lì.
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.spacingTight
-
-            Text {
-                text: qsTr("Shift")
-                font.pixelSize: Theme.fontSmall
-                color: Theme.textSecondary
-            }
-
-            DsdrSlider {
-                id: shiftSlider
-                Layout.fillWidth: true
-                from: -2000; to: 2000
-                stepSize: 10
-                value: entry.passbandShiftHz
-                onMoved: Session.setChannelPassbandShift(entry.index, value)
-            }
-
-            // Riportare a zero con un cursore è un esercizio di mira: il
-            // valore centrale è largo un pixel.
-            DsdrButton {
-                implicitWidth: 64
-                implicitHeight: 22
-                text: Math.round(entry.passbandShiftHz) + " Hz"
-                enabled: Math.abs(entry.passbandShiftHz) > 1
-                onClicked: Session.setChannelPassbandShift(entry.index, 0)
             }
         }
 

@@ -41,3 +41,9 @@ dsdr_add_test(tst_neural_stage
 dsdr_add_test(tst_audio_graph
     SOURCES tst_audio_graph.cpp
     LIBRARIES dsdr::audio)
+
+# La soglia AGC-T automatica: due righe di aritmetica che si sbagliano in
+# silenzio, e il difetto si attribuisce all'AGC.
+dsdr_add_test(tst_agc_threshold
+    SOURCES tst_agc_threshold.cpp
+    LIBRARIES dsdr::dsp)

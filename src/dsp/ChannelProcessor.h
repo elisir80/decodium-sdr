@@ -46,6 +46,15 @@ struct ChannelSettings
 
     AgcMode agcMode = AgcMode::Medium;
     double agcThresholdDb = -100.0;
+
+    /// La soglia AGC-T si regola da sé, seguendo il fondo del rumore.
+    ///
+    /// È il comando più utile e il meno usato di una radio, e il motivo è che
+    /// va rimesso a mano a ogni cambio di banda, di antenna, di ora del
+    /// giorno. Lasciato dov'era, o non fa niente o assorda: troppo basso e
+    /// l'AGC insegue il rumore alzandolo fino al volume del segnale, troppo
+    /// alto e i segnali deboli non muovono più il guadagno.
+    bool agcAutoThreshold = false;
     double agcMaxGainDb = 90.0;
     double agcAttackMs = 2.0;
     double agcDecayMs = 0.0;
@@ -190,6 +199,11 @@ public:
 
     /// Stima adattiva del fondo rumore del canale, in dBFS (SPEC-003 §9).
     float noiseFloorDb() const noexcept { return m_noiseFloorDb; }
+
+    /// La soglia AGC-T davvero in uso: quella scelta a mano, o quella che la
+    /// soglia automatica ha calcolato. La UI mostra questa — un cursore che
+    /// non corrisponde a ciò che sta accadendo è peggio di nessun cursore.
+    float agcThresholdDb() const noexcept { return m_effectiveThresholdDb; }
     /// Differenza fra livello RF e fondo rumore, in dB. È il numero che
     /// trasforma le impressioni in confronti: «si sente meglio» non si può
     /// discutere, «dodici dB invece di sei» sì.
@@ -334,10 +348,20 @@ private:
     bool m_resampleAudio = false;
     bool m_configured = false;
     float m_noiseFloorDb = -160.0f;
+    float m_effectiveThresholdDb = -100.0f;
     float m_snrDb = 0.0f;
     float m_audioPower = 0.0f;
     float m_audioLevelDb = -160.0f;
     bool m_noiseFloorInitialized = false;
+
+    /// Calcola la soglia AGC-T dal fondo del rumore. Pura e statica: è la
+    /// regola che decide quanto un ricevitore è sordo, e va potuta verificare
+    /// senza far girare una catena intera.
+public:
+    static float autoThresholdFor(float noiseFloorDb, float previousDb,
+                                  float maxStepDb);
+
+private:
 
     void updateAudioMeter(float sample) noexcept;
 };
