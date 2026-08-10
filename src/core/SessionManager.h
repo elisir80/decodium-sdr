@@ -225,6 +225,10 @@ public:
     // catena, non nel canale (SPEC-003 §4) — vedi `setNoiseBlanker`.
     Q_INVOKABLE void setChannelNoiseReduction(int row, bool enabled, double strength);
     Q_INVOKABLE void setChannelAutoNotch(int row, bool enabled);
+
+    /// Filtro di picco sulla nota CW: esalta il tono di battimento e
+    /// allontana il resto (SPEC-003 §7).
+    Q_INVOKABLE void setChannelPeakFilter(int row, bool enabled, double q);
     /// Mette un notch su una frequenza RF assoluta. Resta lì anche quando il
     /// ricevitore si sposta: è un disturbo, non un tono audio (SPEC-003 §5).
     Q_INVOKABLE void addChannelNotch(int row, qint64 frequencyHz, double widthHz = 120.0);

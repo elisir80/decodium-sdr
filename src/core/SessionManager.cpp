@@ -1699,6 +1699,20 @@ void SessionManager::setChannelAutoNotch(int row, bool enabled)
     pushChannelToEngine(row);
 }
 
+void SessionManager::setChannelPeakFilter(int row, bool enabled, double q)
+{
+    ChannelEntry *entry = m_channels.mutableAt(row);
+    if (!entry)
+        return;
+
+    entry->settings.apfEnabled = enabled;
+    // Sotto 5 la campana è troppo larga per servire a qualcosa, sopra 50 il
+    // filtro comincia a suonare da sé sul rumore.
+    entry->settings.apfQ = std::clamp(q, 5.0, 50.0);
+    m_channels.entryChanged(row, {ChannelModel::ApfEnabledRole, ChannelModel::ApfQRole});
+    pushChannelToEngine(row);
+}
+
 void SessionManager::addChannelNotch(int row, qint64 frequencyHz, double widthHz)
 {
     ChannelEntry *entry = m_channels.mutableAt(row);

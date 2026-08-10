@@ -66,6 +66,8 @@ public:
         NrStrengthRole,
         AnfEnabledRole,
         NotchesRole,
+        ApfEnabledRole,
+        ApfQRole,
         AudioHighPassEnabledRole,
         AudioHighPassHzRole,
         FmStereoRole,

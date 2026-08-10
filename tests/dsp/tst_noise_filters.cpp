@@ -6,6 +6,7 @@
 #include "dsp/LmsFilter.h"
 #include "dsp/NoiseBlanker.h"
 #include "dsp/NotchFilter.h"
+#include "dsp/PeakFilter.h"
 
 #include <QTest>
 
@@ -84,6 +85,7 @@ private slots:
     void autoNotchRemovesAHeterodyne();
     void autoNotchKeepsWhatIsNotALine();
     void manualNotchCutsTheLineAndSparesTheRest();
+    void peakFilterLiftsTheNoteAndLowersTheRest();
     void unconfiguredFiltersDoNothing();
 };
 
@@ -387,6 +389,55 @@ void TestNoiseFilters::manualNotchCutsTheLineAndSparesTheRest()
     QVERIFY2(kept > 0.35,
              qPrintable(QStringLiteral("la nota da tenere è stata intaccata: %1")
                             .arg(kept)));
+}
+
+void TestNoiseFilters::peakFilterLiftsTheNoteAndLowersTheRest()
+{
+    // L'APF della CW: una campana stretta sul tono di battimento. Quello che
+    // conta non è il guadagno assoluto ma il *rapporto* — la nota deve uscire
+    // dal fondo, che è la ragione per cui si accende.
+    constexpr std::size_t kFrames = 48000;
+    constexpr double kPitch = 600.0;
+
+    std::vector<float> audio(kFrames, 0.0f);
+    const auto note = tone(kPitch, kAudioRate, kFrames, 0.2f);
+    std::vector<float> background = audio;
+    addNoise(background, 0.2f, 21);
+    for (std::size_t i = 0; i < kFrames; ++i)
+        audio[i] = note[i] + background[i];
+
+    // Rapporto nota/fondo: il fondo si stima per differenza, togliendo dalla
+    // potenza totale quella della riga. Confrontare l'RMS grezzo prima e dopo
+    // non direbbe nulla — l'RMS dopo contiene la nota amplificata.
+    const double beforeNote = amplitudeAt(audio, kPitch, kAudioRate, 4800);
+    const double beforeTotal = rms(audio, 4800);
+    const double beforeFloor = std::sqrt(std::max(1e-12,
+        beforeTotal * beforeTotal - beforeNote * beforeNote / 2.0));
+
+    PeakFilter apf;
+    apf.configure(kAudioRate);
+    apf.setPeak(kPitch, 20.0);
+    apf.process(audio.data(), kFrames);
+
+    const double afterNote = amplitudeAt(audio, kPitch, kAudioRate, 4800);
+    const double afterTotal = rms(audio, 4800);
+    const double afterFloor = std::sqrt(std::max(1e-12,
+        afterTotal * afterTotal - afterNote * afterNote / 2.0));
+
+    const double gain = toDb(afterNote / afterFloor) - toDb(beforeNote / beforeFloor);
+    QVERIFY2(gain > 6.0,
+             qPrintable(QStringLiteral("la nota emerge di soli %1 dB").arg(gain)));
+
+    // E fuori dalla campana il filtro non deve inventare niente: un tono a
+    // due volte il pitch resta dov'era, entro qualche decibel.
+    std::vector<float> other = tone(2 * kPitch, kAudioRate, kFrames, 0.2f);
+    const double otherBefore = amplitudeAt(other, 2 * kPitch, kAudioRate, 4800);
+    apf.reset();
+    apf.process(other.data(), kFrames);
+    const double otherAfter = amplitudeAt(other, 2 * kPitch, kAudioRate, 4800);
+    QVERIFY2(std::abs(toDb(otherAfter / otherBefore)) < 3.0,
+             qPrintable(QStringLiteral("un tono fuori campana è stato alterato di %1 dB")
+                            .arg(toDb(otherAfter / otherBefore))));
 }
 
 void TestNoiseFilters::unconfiguredFiltersDoNothing()

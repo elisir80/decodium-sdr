@@ -35,6 +35,8 @@ add_library(dsdr_dsp STATIC
     LmsFilter.cpp
     NotchFilter.h
     NotchFilter.cpp
+    PeakFilter.h
+    PeakFilter.cpp
     SpectralDenoiser.h
     SpectralDenoiser.cpp
     Demodulator.h

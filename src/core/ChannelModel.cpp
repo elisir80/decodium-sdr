@@ -55,6 +55,8 @@ QVariant ChannelModel::data(const QModelIndex &index, int role) const
     case NrEnabledRole:        return entry.settings.nrEnabled;
     case NrStrengthRole:       return entry.settings.nrStrength;
     case AnfEnabledRole:       return entry.settings.anfEnabled;
+    case ApfEnabledRole:       return entry.settings.apfEnabled;
+    case ApfQRole:             return entry.settings.apfQ;
     case NotchesRole: {
         // Ogni notch come mappa: la UI ne disegna una riga e una tacca sullo
         // spettro senza sapere nulla di come sono conservati.
@@ -129,6 +131,8 @@ QHash<int, QByteArray> ChannelModel::roleNames() const
         {NrStrengthRole, "nrStrength"},
         {AnfEnabledRole, "anfEnabled"},
         {NotchesRole, "notches"},
+        {ApfEnabledRole, "apfEnabled"},
+        {ApfQRole, "apfQ"},
         {AudioHighPassEnabledRole, "audioHighPassEnabled"},
         {AudioHighPassHzRole, "audioHighPassHz"},
         {FmStereoRole, "fmStereo"},

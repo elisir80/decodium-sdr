@@ -40,6 +40,7 @@ bool ChannelSettings::operator==(const ChannelSettings &o) const noexcept
         && nrEnabled == o.nrEnabled && nrStrength == o.nrStrength
         && anfEnabled == o.anfEnabled
         && notches == o.notches
+        && apfEnabled == o.apfEnabled && apfQ == o.apfQ
         && agcAttackMs == o.agcAttackMs && agcDecayMs == o.agcDecayMs
         && amCarrierAgc == o.amCarrierAgc
         && cwPitchHz == o.cwPitchHz && volume == o.volume && muted == o.muted
@@ -135,6 +136,7 @@ bool ChannelProcessor::configureForMode()
     // stesso ritardo di decorrelazione farebbero lo stesso mestiere due volte.
     for (auto &notch : m_notches)
         notch.configure(m_channelRate);
+    m_apf.configure(m_channelRate);
     m_anf.configure(64, 8);
 
     // Il NR spettrale lavora sull'audio demodulato: finestra da 512 per la
@@ -418,6 +420,11 @@ void ChannelProcessor::applySettings(const ChannelSettings &settings)
     // Ogni notch riceve la sua frequenza audio, che dipende dal modo: lo
     // scostamento dalla portante diventa un tono diverso in USB, in LSB e in
     // CW, dove il BFO ha già spostato tutto del pitch.
+    // La campana sta sul tono di battimento: è la nota che l'operatore ha
+    // scelto di sentire, e spostarla altrove vorrebbe dire esaltare il rumore
+    // accanto al segnale.
+    m_apf.setPeak(m_settings.cwPitchHz, m_settings.apfQ);
+
     for (int i = 0; i < ChannelSettings::kMaxNotches; ++i) {
         const auto &spec = m_settings.notches[static_cast<std::size_t>(i)];
         if (!spec.enabled)
@@ -446,6 +453,7 @@ void ChannelProcessor::reset() noexcept
     m_agc.reset();
     for (auto &notch : m_notches)
         notch.reset();
+    m_apf.reset();
     m_anf.reset();
     m_nr.reset();
     m_audioHighPassLeft.reset();
@@ -859,6 +867,11 @@ void ChannelProcessor::applyAudioFilters(float *audio, std::size_t count) noexce
         if (m_settings.notches[static_cast<std::size_t>(i)].enabled)
             m_notches[static_cast<std::size_t>(i)].process(audio, count);
     }
+
+    // Il picco viene dopo i notch e prima del resto: toglie ciò che disturba,
+    // poi esalta ciò che resta.
+    if (peakFilterActive())
+        m_apf.process(audio, count);
     if (autoNotchActive())
         m_anf.process(audio, count, LmsFilter::Output::Error);
     if (m_settings.nrEnabled)

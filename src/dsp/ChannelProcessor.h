@@ -19,6 +19,7 @@
 #include "dsp/LmsFilter.h"
 #include "dsp/Nco.h"
 #include "dsp/NotchFilter.h"
+#include "dsp/PeakFilter.h"
 #include "dsp/SpectralDenoiser.h"
 #include "dsp/FmIfNoiseReducer.h"
 #include "dsp/RdsDecoder.h"
@@ -106,6 +107,12 @@ struct ChannelSettings
                 && enabled == o.enabled;
         }
     };
+
+    /// Filtro di picco sulla nota CW (SPEC-003 §7): esalta il tono che si sta
+    /// copiando e allontana tutto il resto. Solo in CW — su una voce una
+    /// campana così stretta suona come un telefono.
+    bool apfEnabled = false;
+    double apfQ = 12.0;
 
     static constexpr int kMaxNotches = 8;
     std::array<Notch, kMaxNotches> notches{};
@@ -197,6 +204,13 @@ public:
     /// una riga fissa, ed è esattamente ciò che l'ANF toglie. Non è una
     /// raccomandazione all'operatore ma un interlock (SPEC-003 §5) — il modo
     /// in cui il segnale sparisce è troppo somigliante a una radio guasta.
+    /// Il filtro di picco sta lavorando: acceso, e in un modo dove ha senso.
+    bool peakFilterActive() const noexcept
+    {
+        return m_settings.apfEnabled
+            && (m_settings.mode == DemodMode::Cw || m_settings.mode == DemodMode::Cwr);
+    }
+
     bool autoNotchActive() const noexcept
     {
         return m_settings.anfEnabled
@@ -246,6 +260,7 @@ private:
     Demodulator m_demod;
     Agc m_agc;
     std::array<NotchFilter, ChannelSettings::kMaxNotches> m_notches;
+    PeakFilter m_apf;
     LmsFilter m_anf;
     SpectralDenoiser m_nr;
     AudioHighPass m_audioHighPassLeft;

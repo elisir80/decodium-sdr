@@ -26,6 +26,8 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | **Overload Guard**: riconosce la saturazione dell'ADC e lo dice, invece di lasciarla scambiare per propagazione scarsa | ✅ |
 | Fondo di rumore e **S/N reale** per canale | ✅ |
 | Passband tuning (IF shift) su ogni canale | ✅ |
+| Fino a otto **notch ancorati alla frequenza RF** per canale, col tasto destro sullo spettro | ✅ |
+| **APF**: campana stretta sulla nota CW, Q regolabile | ✅ |
 | **EMNR**: riduzione di rumore spettrale MMSE-STSA con stima del fondo a minima statistica, un solo cursore 0–10 | ✅ +8 dB di SNR misurati in CI |
 | Filtri di disturbo: **NB** a banda piena nel motore, **ANF** (un predittore adattivo, due prese), **notch** manuale | ✅ spenti di fabbrica — [DSDR-SPEC-003](docs/DSDR-SPEC-003-RX-Excellence.md) §4–5 |
 | Modi RX: USB, LSB, DSB, CW/CW-R, AM/SAM con carrier-AGC, Wide-FM stereo con low-pass, NFM con low-pass, DIGU/DIGL e IQ/RAW monitor | ✅ |

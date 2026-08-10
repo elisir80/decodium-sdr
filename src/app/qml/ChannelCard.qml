@@ -67,6 +67,8 @@ Rectangle {
     required property real nrStrength
     required property bool anfEnabled
     required property var notches
+    required property bool apfEnabled
+    required property real apfQ
 
     readonly property bool current: Session.channels.currentIndex === index
 
@@ -171,6 +173,42 @@ Rectangle {
             font.pixelSize: Theme.fontSmall
             color: Theme.warning
             wrapMode: Text.WordWrap
+        }
+
+        // ── Filtro di picco, solo in CW ──────────────────────
+        //
+        // Una campana stretta sulla nota che si sta copiando: il segnale
+        // emerge e tutto ciò che non è alla frequenza giusta si allontana. Su
+        // una voce suonerebbe come un telefono, e infatti compare solo in CW.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+            visible: entry.modeName.indexOf("CW") === 0
+
+            DsdrButton {
+                text: qsTr("APF")
+                implicitWidth: 56
+                implicitHeight: 24
+                checkable: true
+                checked: entry.apfEnabled
+                onToggled: Session.setChannelPeakFilter(entry.index, checked, entry.apfQ)
+            }
+
+            DsdrSlider {
+                Layout.fillWidth: true
+                from: 5; to: 50
+                enabled: entry.apfEnabled
+                value: entry.apfQ
+                onMoved: Session.setChannelPeakFilter(entry.index, true, value)
+            }
+
+            Text {
+                text: qsTr("Q %1").arg(Math.round(entry.apfQ))
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: entry.apfEnabled ? Theme.textPrimary : Theme.textDisabled
+                Layout.preferredWidth: 42
+            }
         }
 
         // ── Notch messi a mano ───────────────────────────────
