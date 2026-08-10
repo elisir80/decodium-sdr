@@ -114,6 +114,20 @@ std::vector<float> ramp(std::size_t count)
 
 } // namespace
 
+// Il contatore delle allocazioni: `operator new` globale, per vedere se il
+// percorso caldo ne fa. Non c'è un altro modo di verificarlo dall'esterno.
+//
+// GCC guarda queste due funzioni una alla volta e vede una `free()` su un
+// puntatore che, per quanto ne sa, viene da `new`: è la stessa diagnosi che
+// salverebbe un programma vero, e qui è un falso positivo — la `malloc` che
+// lo produce sta tre righe sopra. Si zittisce qui, sulle sole due righe che
+// la riguardano, e non nelle opzioni di build: un avviso spento per tutto il
+// progetto smette di proteggere il progetto.
+#if defined(__GNUC__) && !defined(__clang__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 void *operator new(std::size_t size)
 {
     if (g_counting.load(std::memory_order_acquire))
@@ -125,6 +139,10 @@ void *operator new(std::size_t size)
 
 void operator delete(void *p) noexcept { std::free(p); }
 void operator delete(void *p, std::size_t) noexcept { std::free(p); }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#    pragma GCC diagnostic pop
+#endif
 
 class TestNeuralStage : public QObject
 {
