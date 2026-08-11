@@ -12,7 +12,7 @@
 ; `cmake --install`: l'installatore non sa costruire nulla e non deve saperlo.
 ;
 ;   cmake --install build --prefix staging
-;   ISCC /DStagingDir=<percorso assoluto> /DAppVersion=1.1.8 decodium-sdr.iss
+;   ISCC /DStagingDir=<percorso assoluto> /DAppVersion=1.1.9 decodium-sdr.iss
 
 #ifndef StagingDir
   #error Manca StagingDir: indicare la cartella prodotta da cmake --install

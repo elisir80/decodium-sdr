@@ -4,6 +4,60 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.9] — 2026-08-12
+
+### Aggiunto
+
+- **I filtri di disturbo sulla targa del ricevitore**: NR, NB, ANF e il
+  contatore dei notch manuali, che li toglie tutti insieme. Si accendono
+  guardando lo spettro — si alza il rumore, si preme, si sente se è servito —
+  e finora stavano solo in fondo alla colonna, cioè lontano dal punto in cui si
+  guarda mentre si ascolta.
+- **Banda e memorie sulla targa.** Il bandstack è quello del pannello di
+  sintonia: la banda ricorda dove la si era lasciata comunque la si scelga.
+  Le memorie salvate dalla targa portano anche modo e filtro — una memoria di
+  sola frequenza richiamata su una banda in SSB riporta il numero giusto e il
+  suono sbagliato.
+- **Appiattimento del fondo** sul waterfall. Il rumore non è piatto lungo la
+  banda: un disturbo locale o la risposta del preselettore lo alzano su una
+  porzione di spettro, e lì il colore si accende ovunque mentre altrove resta
+  tutto nero. Si stima il fondo bin per bin e se ne toglie lo scarto dalla
+  media, quanto si vuole. Vale solo per il waterfall: la traccia resta la
+  misura.
+- **Due palette nuove.** *Viridis* ha la luminanza monotona, che è quello che
+  serve per decidere se sotto il rumore c'è una traccia o no; *Iride* ha più
+  stop distinti di tutte le altre, per separare livelli vicini su una banda
+  affollata.
+- **Un mirino che legge lo spettro** sotto il puntatore: frequenza, livello e
+  scarto dal ricevitore scelto. Con **Shift** si trascina un righello e si
+  legge quanto è larga una emissione; con il **tasto centrale** si mette o si
+  toglie un marcatore, che resta disegnato sullo spettro fra un avvio e
+  l'altro.
+- **Il 3D si legge davvero.** Un reticolo prospettico con le righe larghe un
+  pixel a qualunque profondità — senza, si vede *che* c'è un segnale, non
+  *dove* — e tre inquadrature pronte: dall'alto, in prospettiva, di taglio.
+  Inclinazione, rotazione e rilievo sono tre numeri che si azzeccano solo
+  insieme.
+- **Zoom dell'asse dei tempi e fermo immagine.** A piena storia una sillaba è
+  alta due pixel; il fermo ferma lo schermo e non la radio — le righe
+  continuano a essere consumate, altrimenti il ring si riempie e il DSP
+  comincia a scartare.
+- **Radio via `rigctld`**, il demone di rete di hamlib: qualunque modello che
+  hamlib conosca diventa comandabile, senza linkare hamlib e senza copiarne una
+  riga. Si cerca da solo su `127.0.0.1:4532` e `:4533`; per un demone su
+  un'altra macchina si passa `DSDR_RIGCTLD=host:porta`. Il livello arriva già
+  in decibel rispetto a S9 e resta tale, invece di passare per la scala grezza
+  che si ferma a S9+13.
+
+### Corretto
+
+- **La riduzione di rumore neurale era sparita dai pacchetti** dalla 1.1.3:
+  RNNoise non veniva compilato in CI e il filtro non c'era, senza che nulla lo
+  dicesse a chi installava.
+- **Le radio Icom non rispondevano a nessun comando.** La ricerca le trovava
+  con il driver CI-V, ma l'apertura costruiva sempre quello Yaesu: comparivano
+  nell'elenco e poi restavano mute.
+
 ## [1.1.8] — 2026-08-11
 
 ### Aggiunto
