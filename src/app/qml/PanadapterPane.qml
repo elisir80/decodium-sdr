@@ -72,6 +72,41 @@ Item {
         function onSampleRateChanged() { root.fitToDeliveredBand() }
     }
 
+    /// Porta una frequenza dentro la finestra visibile, se non c'è già.
+    ///
+    /// Serve quando il ricevitore lo si sceglie dalla colonna invece che dallo
+    /// spettro: con lo zoom stretto su un'altra porzione di banda, il canale
+    /// scelto resta fuori campo e sembra che il clic non abbia fatto niente —
+    /// la scheda si illumina e il waterfall non cambia.
+    ///
+    /// Se il canale è già comodamente dentro non si tocca nulla: spostare la
+    /// vista quando non serve fa perdere il segno a chi stava guardando, e il
+    /// margine del quindici per cento è quello che distingue «dentro» da
+    /// «appiccicato al bordo».
+    function bringIntoView(hz) {
+        viewStart = viewStartToShow(hz, startHz, spanHz, viewStart, viewSpan)
+    }
+
+    /// Il conto che sta dietro, separato perché si possa verificare senza una
+    /// radio connessa: banda campionata e centro vengono dalla sessione e sono
+    /// in sola lettura — giustamente, li decide il device — quindi una prova
+    /// che volesse metterli non potrebbe.
+    function viewStartToShow(hz, bandStartHz, bandSpanHz, currentStart, currentSpan) {
+        if (!(bandSpanHz > 0) || !isFinite(hz) || !isFinite(bandStartHz))
+            return currentStart
+
+        const fraction = (hz - bandStartHz) / bandSpanHz
+        if (fraction < 0 || fraction > 1)
+            return currentStart // fuori dalla banda: non c'è vista che lo mostri
+
+        const margin = currentSpan * 0.15
+        if (fraction >= currentStart + margin
+            && fraction <= currentStart + currentSpan - margin)
+            return currentStart
+
+        return Math.max(0, Math.min(1 - currentSpan, fraction - currentSpan / 2))
+    }
+
     /// Porta la vista a una larghezza data, in hertz, tenendo fermo il centro.
     ///
     /// Il centro resta quello che si sta guardando, non quello della banda:
@@ -235,6 +270,16 @@ Item {
             bandHighHz: filterHighHz
             levelDb: signalDb
             vfoSelected: Session.channels.currentIndex === index
+
+            // Il canale appena scelto si fa vedere. L'aggancio sta qui e non
+            // su `Session.channels.currentIndex` perché è il delegate a sapere
+            // su che frequenza sta il suo canale: chiederla al modello da fuori
+            // vorrebbe dire tenerne una copia.
+            onVfoSelectedChanged: if (vfoSelected) root.bringIntoView(frequencyHz)
+
+            // E lo fa anche se, mentre è scelto, lo si sposta da altrove — dal
+            // riquadro della frequenza, o da un comando CAT della radio.
+            onVfoFrequencyChanged: if (vfoSelected) root.bringIntoView(frequencyHz)
 
             xForFrequency: root.xForFrequency
             frequencyAt: root.frequencyAt

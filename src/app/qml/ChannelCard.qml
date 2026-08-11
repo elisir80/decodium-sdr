@@ -134,6 +134,47 @@ Rectangle {
 
             Item { Layout.fillWidth: true }
 
+            // Chiudere il ricevitore da qui, che è dove si guarda l'elenco.
+            // Si poteva già fare dal flag sul waterfall, ma solo se il flag
+            // era in vista: con lo zoom stretto su un'altra porzione di banda
+            // il canale restava aperto e irraggiungibile.
+            //
+            // L'ultimo non si chiude: una sessione senza ricevitori non
+            // demodula niente e non c'è modo di riaprirne uno se non dallo
+            // spettro. Il tasto sparisce invece di rifiutare il clic — un
+            // comando che non fa niente si preme due volte.
+            Rectangle {
+                id: closeButton
+
+                visible: Session.channels.count > 1
+                implicitWidth: 18
+                implicitHeight: 18
+                radius: Theme.radiusSmall
+                color: closeHover.hovered ? Theme.danger : "transparent"
+                border.width: 1
+                border.color: closeHover.hovered ? Theme.danger : Theme.border
+
+                Behavior on color {
+                    ColorAnimation { duration: Theme.animationFast }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "×"
+                    font.pixelSize: Theme.fontNormal
+                    font.bold: true
+                    color: closeHover.hovered ? Theme.background : Theme.textSecondary
+                }
+
+                HoverHandler {
+                    id: closeHover
+                    cursorShape: Qt.PointingHandCursor
+                }
+
+                TapHandler {
+                    onTapped: Session.removeChannel(entry.index)
+                }
+            }
         }
 
         // ── Modo, filtro, AGC ────────────────────────────────
