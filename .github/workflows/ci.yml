@@ -110,7 +110,7 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.*'
-          modules: 'qtmultimedia qtshadertools'
+          modules: 'qtmultimedia qtserialport qtshadertools'
           cache: true
 
       - name: Dipendenze (macOS)
@@ -134,6 +134,7 @@ jobs:
             mingw-w64-x86_64-qt6-base
             mingw-w64-x86_64-qt6-declarative
             mingw-w64-x86_64-qt6-multimedia
+            mingw-w64-x86_64-qt6-serialport
             mingw-w64-x86_64-qt6-shadertools
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw

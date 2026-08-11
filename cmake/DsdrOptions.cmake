@@ -71,6 +71,12 @@ endif()
 # potrebbe fare nulla.
 option(DSDR_NEURAL_NR "Stadio di riduzione di rumore neurale (RNNoise)" ON)
 
+# Chi costruisce un pacchetto per altri lo accende: un backend che si spegne
+# perché una dipendenza manca diventa un errore invece di una riga di log. Chi
+# compila per sé lo lascia spento e resta libero di non installare mezzo Qt per
+# un backend che non userà mai.
+option(DSDR_STRICT_BACKENDS    "Un backend richiesto che non si compila è un errore" OFF)
+
 option(DSDR_BUILD_TESTS        "Compila la suite di test (RNF-07)"              ON)
 option(DSDR_WARNINGS_AS_ERRORS "Tratta i warning del compilatore come errori"   OFF)
 

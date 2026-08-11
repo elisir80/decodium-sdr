@@ -129,11 +129,22 @@ if(DSDR_BACKEND_AUDIORIG)
         set(DSDR_HAL_NEEDS_SERIAL ON)
         set(DSDR_BUILT_AUDIORIG ON CACHE INTERNAL "audiorig compilato davvero")
     else()
-        message(STATUS "audiorig disattivato: mancano Qt6::SerialPort o Qt6::Multimedia
-"
-                       "  MSYS2 : pacman -S mingw-w64-x86_64-qt6-serialport
-"
-                       "  Debian: apt install qt6-serialport-dev")
+        # Chi compila per sé può farne a meno, e lo si dice e basta. Chi
+        # costruisce un pacchetto per altri no: un backend che sparisce in
+        # silenzio produce un programma che non vede una radio che c'è, e chi
+        # lo scopre è l'operatore, davanti a un elenco di device vuoto. È già
+        # successo — la 1.1.3 è uscita senza audiorig perché questo messaggio
+        # stava in mezzo a trecento righe di log e non l'ha letto nessuno.
+        set(dsdr_audiorig_why
+            "audiorig disattivato: mancano Qt6::SerialPort o Qt6::Multimedia\n"
+            "  MSYS2 : pacman -S mingw-w64-x86_64-qt6-serialport\n"
+            "  Debian: apt install qt6-serialport-dev")
+        if(DSDR_STRICT_BACKENDS)
+            message(FATAL_ERROR ${dsdr_audiorig_why}
+                    "\nDSDR_STRICT_BACKENDS è attivo: un pacchetto senza questo "
+                    "backend non parlerebbe con nessuna radio via CAT.")
+        endif()
+        message(STATUS ${dsdr_audiorig_why})
         set(DSDR_BACKEND_AUDIORIG OFF)
     endif()
 endif()
