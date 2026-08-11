@@ -11,6 +11,12 @@ Item {
     property real ceilingDb: -20
     property bool showSUnits: true
 
+    /// Il fondo di rumore del canale: da lì nasce il riferimento della scala
+    /// S, perché su un ricevitore non tarato non esiste un livello assoluto
+    /// che valga S9 — dipende dal guadagno della catena.
+    property real noiseFloorDb: -140
+    readonly property real s9ReferenceDb: SMeterScale.s9From(noiseFloorDb)
+
     implicitHeight: 26
 
     readonly property real fraction:
@@ -20,7 +26,7 @@ Item {
     /// strumenti che si calcolano i punti S per conto proprio prima o poi
     /// dicono numeri diversi guardando lo stesso segnale.
     readonly property string readout:
-        showSUnits ? SMeterScale.readout(levelDb, ceilingDb) : qsTr("AF")
+        showSUnits ? SMeterScale.readout(levelDb, s9ReferenceDb) : qsTr("AF")
 
     Rectangle {
         anchors.fill: parent
@@ -76,7 +82,7 @@ Item {
 
                 readonly property real span: root.ceilingDb - root.floorDb
                 readonly property real position: span === 0 ? 0
-                    : (SMeterScale.levelFor(modelData, root.ceilingDb) - root.floorDb) / span
+                    : (SMeterScale.levelFor(modelData, root.s9ReferenceDb) - root.floorDb) / span
 
                 x: parent.width * Math.max(0, Math.min(1, position))
                 width: 1

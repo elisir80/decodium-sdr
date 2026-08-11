@@ -24,6 +24,11 @@ Item {
     property real floorDb: -140
     property real ceilingDb: -20
 
+    /// Il fondo di rumore del canale: il riferimento della scala S nasce da
+    /// lì, non dal tetto della dinamica.
+    property real noiseFloorDb: -140
+    readonly property real s9ReferenceDb: SMeterScale.s9From(noiseFloorDb)
+
     implicitHeight: 96
 
     readonly property real fraction:
@@ -36,9 +41,9 @@ Item {
     /// pagava il prezzo due volte: la lancetta a fondo scala puntava sulla
     /// tacca «+60» mentre la lettura sotto diceva «S9+18 dB». Uno dei due
     /// mentiva, e non c'era modo di sapere quale.
-    readonly property real sUnits: SMeterScale.units(levelDb, ceilingDb)
+    readonly property real sUnits: SMeterScale.units(levelDb, s9ReferenceDb)
 
-    readonly property string readout: SMeterScale.readout(levelDb, ceilingDb)
+    readonly property string readout: SMeterScale.readout(levelDb, s9ReferenceDb)
 
     /// Apertura del quadrante, in gradi da una parte e dall'altra della
     /// verticale.

@@ -63,6 +63,27 @@ third_party/colibrinano/libcolibrinano_lib.so      # Linux
 
 Chi preferisce indicarla altrove usa `-DDSDR_COLIBRI_LIB=/percorso/della/lib`.
 
+### Con i pacchetti ufficiali
+
+I pacchetti pubblicati sono costruiti da una macchina che la libreria non ce
+l'ha, quindi **dentro non c'è**: il backend viene registrato ma non trova
+alcun device, e l'elenco delle sorgenti resta vuoto senza dire perché — il
+motivo finisce nel log, che su Windows un'applicazione con interfaccia non
+mostra a nessuno.
+
+Chi installa un pacchetto e ha la radio copia la libreria accanto
+all'eseguibile:
+
+```
+C:\Program Files\DECODIUM SDR\bin\colibrinano_lib.dll
+```
+
+Resta aperta la domanda se possa entrare nei pacchetti: `THIRD_PARTY_LICENSES`
+la registra come Unlicense — pubblico dominio, quindi ridistribuibile — mentre
+questa pagina diceva il contrario. Finché le due righe non concordano non
+entra: una libreria di terzi in un pacchetto GPL si aggiunge dopo aver
+verificato, non prima.
+
 Questa disposizione nasce da un difetto vero: prima la libreria viveva
 accanto all'eseguibile di *una* cartella di build, copiata a mano una volta.
 Ogni nuova cartella di build nasceva senza, e il ColibriNANO «spariva» —

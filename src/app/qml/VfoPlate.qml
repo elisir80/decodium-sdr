@@ -23,6 +23,7 @@ Rectangle {
     required property int filterLowHz
     required property int filterHighHz
     required property real signalDb
+    required property real noiseFloorDb
     required property int agcMode
     required property bool muted
     required property real volume
@@ -91,6 +92,7 @@ Rectangle {
                 Layout.preferredWidth: 132
                 Layout.preferredHeight: 18
                 levelDb: root.signalDb
+                noiseFloorDb: root.noiseFloorDb
             }
         }
 

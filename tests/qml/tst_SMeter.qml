@@ -32,21 +32,45 @@ TestCase {
     // Sei decibel per punto S: è la convenzione IARU, ed è ciò che rende
     // confrontabile un rapporto passato da due stazioni diverse.
     function test_one_s_unit_is_six_decibels() {
-        const ceiling = -20
-        const s9 = SMeterScale.s9Level(ceiling)
-        compare(s9, -80, "S9 non cade dove dovrebbe")
-
-        fuzzyCompare(SMeterScale.units(s9, ceiling), 9, 0.001)
-        fuzzyCompare(SMeterScale.units(s9 - 6, ceiling), 8, 0.001)
-        fuzzyCompare(SMeterScale.units(s9 - 48, ceiling), 1, 0.001)
+        const s9 = -80
+        fuzzyCompare(SMeterScale.units(s9, s9), 9, 0.001)
+        fuzzyCompare(SMeterScale.units(s9 - 6, s9), 8, 0.001)
+        fuzzyCompare(SMeterScale.units(s9 - 48, s9), 1, 0.001)
     }
 
-    // Il fondo scala del quadrante è S9+60, e cade sul tetto della dinamica:
-    // se non ci cadesse, l'ultimo tratto dell'arco sarebbe irraggiungibile.
+    // Il riferimento nasce dal fondo di rumore, non da un livello assoluto:
+    // su un ricevitore non tarato i dBFS dipendono dal guadagno della catena,
+    // e una scala ancorata al tetto della dinamica manda ogni segnale oltre S9
+    // appena si alza il guadagno. È il difetto che rendeva lo strumento
+    // inservibile sulla 1.1.3.
+    function test_the_scale_follows_the_noise_floor_data() {
+        return [
+            { tag: "ricevitore quieto", floor: -120 },
+            { tag: "guadagno alto",     floor: -80 },
+            { tag: "banda rumorosa",    floor: -60 },
+        ]
+    }
+
+    function test_the_scale_follows_the_noise_floor(data) {
+        const s9 = SMeterScale.s9From(data.floor)
+
+        // Il rumore vale S1, qualunque sia il suo livello: è la definizione
+        // stessa del riferimento.
+        fuzzyCompare(SMeterScale.units(data.floor, s9), 1, 0.6)
+
+        // E un segnale quaranta decibel sopra il rumore vale sempre lo stesso
+        // rapporto, su ogni ricevitore.
+        const strong = SMeterScale.units(data.floor + 40, s9)
+        fuzzyCompare(strong, 1 + 40 / SMeterScale.dbPerUnit, 0.6)
+    }
+
+    // Il fondo scala del quadrante è S9+60: sessanta decibel oltre S9, non uno
+    // di più — la lancetta si ferma lì come contro un fermo.
     function test_full_scale_is_s9_plus_sixty() {
-        const ceiling = -20
-        fuzzyCompare(SMeterScale.plusDb(ceiling, ceiling), 60, 0.001)
-        compare(SMeterScale.readout(ceiling, ceiling), "S9+60")
+        const s9 = -80
+        fuzzyCompare(SMeterScale.plusDb(s9 + 60, s9), 60, 0.001)
+        fuzzyCompare(SMeterScale.plusDb(s9 + 200, s9), 60, 0.001)
+        compare(SMeterScale.readout(s9 + 60, s9), "S9+60")
     }
 
     function test_readout_data() {
@@ -69,16 +93,19 @@ TestCase {
     }
 
     function test_readout(data) {
-        compare(SMeterScale.readout(data.level, -20), data.expected)
+        // Riferimento a −80 dBFS: gli stessi numeri di prima, ma dichiarati
+        // invece che ricavati da un tetto che non significava niente.
+        compare(SMeterScale.readout(data.level, -80), data.expected)
     }
 
     // Un livello non finito arriva da un canale che non ha ancora misurato
     // niente. Deve dare zero, non NaN: un NaN si propaga nell'angolo della
     // lancetta, e una rotazione NaN fa sparire l'oggetto senza un errore.
     function test_a_level_that_is_not_a_number_reads_zero() {
-        compare(SMeterScale.units(NaN, -20), 0)
-        compare(SMeterScale.units(-Infinity, -20), 0)
+        compare(SMeterScale.units(NaN, -80), 0)
+        compare(SMeterScale.units(-Infinity, -80), 0)
         compare(SMeterScale.units(-90, NaN), 0)
+        compare(SMeterScale.s9From(NaN), -80, "un fondo non misurato deve dare un riferimento d'uso")
     }
 
     // ── Il quadrante ─────────────────────────────────────────────────────

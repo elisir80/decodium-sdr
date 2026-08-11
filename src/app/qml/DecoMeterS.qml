@@ -68,10 +68,18 @@ Item {
 
     readonly property bool showsSecond: hasSecondChannel && channelMode !== 0
 
+    /// Dove cade S9, ricavato dal fondo di rumore invece che dal tetto della
+    /// dinamica. Il fondo che conta è quello smorzato: quello istantaneo si
+    /// muove di qualche decibel da una misura all'altra, e una scala che
+    /// respira insieme al rumore è illeggibile — le tacche resterebbero ferme
+    /// mentre i numeri che rappresentano cambiano sotto.
+    property real smoothedFloorDb: noiseFloorDb
+    readonly property real s9ReferenceDb: SMeterScale.s9From(smoothedFloorDb)
+
     implicitHeight: width * 0.58
 
     // ── Il segnale ───────────────────────────────────────────────────────
-    readonly property real units: transmitting ? 0 : SMeterScale.units(levelDb, ceilingDb)
+    readonly property real units: transmitting ? 0 : SMeterScale.units(levelDb, s9ReferenceDb)
     readonly property bool overNine: units > 9
 
     /// Posizione sull'arco, da 0 a 1. I punti da S1 a S9 prendono il primo
@@ -88,7 +96,7 @@ Item {
     }
 
     function fractionForLevel(db) {
-        return arcFraction(SMeterScale.units(db, ceilingDb))
+        return arcFraction(SMeterScale.units(db, s9ReferenceDb))
     }
 
     readonly property real targetFraction: arcFraction(units)
@@ -118,7 +126,7 @@ Item {
         }
     }
 
-    readonly property string readout: SMeterScale.readout(readingDb, ceilingDb)
+    readonly property string readout: SMeterScale.readout(readingDb, s9ReferenceDb)
 
     // ── Ballistica ───────────────────────────────────────────────────────
     //
@@ -168,6 +176,11 @@ Item {
             // conti diversi e danno due numeri diversi.
             const power = Math.pow(10, level / 10)
             root.rmsPower += (power - root.rmsPower) * slow
+
+            // Il fondo si insegue in cinque secondi: cambia con la banda e con
+            // l'attenuatore, non da un istante all'altro.
+            root.smoothedFloorDb += (root.noiseFloorDb - root.smoothedFloorDb)
+                                    * (1 - Math.exp(-dt / 5))
         }
     }
 
@@ -312,10 +325,19 @@ Item {
                 for (const u of [1, 5, 9, 9 + 20 / SMeterScale.dbPerUnit,
                                  9 + 40 / SMeterScale.dbPerUnit,
                                  9 + 60 / SMeterScale.dbPerUnit]) {
+                    const level = SMeterScale.levelFor(u, root.s9ReferenceDb)
+
+                    // Sopra lo zero non si va: quello è il fondo scala del
+                    // convertitore. Quando il rumore è alto la scala S non ci
+                    // sta tutta nella dinamica che resta — è un fatto del
+                    // ricevitore, non un errore — e le tacche che cadrebbero
+                    // oltre restano senza numero invece di stamparne uno che
+                    // nessun segnale potrà mai raggiungere.
                     const f = root.arcFraction(u)
                     tick(inner, f, r * 0.05, Theme.meterScale, 1)
-                    label(inner - r * 0.08, f,
-                          String(Math.round(SMeterScale.levelFor(u, root.ceilingDb))),
+                    if (level > 0)
+                        continue
+                    label(inner - r * 0.08, f, String(Math.round(level)),
                           Theme.lcdEtchDim, smallFont)
                 }
                 // L'unità della scala interna, sull'asse verticale fra i
