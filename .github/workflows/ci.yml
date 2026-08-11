@@ -140,6 +140,50 @@ jobs:
             mingw-w64-x86_64-fftw
             mingw-w64-x86_64-soapysdr
 
+      # Il motore della riduzione di rumore neurale. Il sorgente non sta nel
+      # repository — è di Xiph, e un sorgente altrui versionato è un sorgente
+      # che nessuno riguarda più — ma la licenza è BSD-3, che consente la
+      # ridistribuzione anche in forma binaria: compilato dentro il nostro
+      # eseguibile, ci può stare.
+      #
+      # Senza questo passo il pacchetto esce senza lo stadio neurale, e chi lo
+      # installa non trova il filtro: è successo dalla 1.1.3 alla 1.1.8, e il
+      # programma lo diceva in una riga di log che su Windows non legge
+      # nessuno.
+      #
+      # Il commit è fissato: «l'ultimo disponibile» in un pacchetto pubblicato
+      # significa che due release con lo stesso numero possono contenere due
+      # motori diversi. I pesi del modello li verifica lo script del progetto
+      # con lo sha256 che si porta dietro.
+      - name: Motore neurale (RNNoise)
+        shell: bash
+        run: |
+          RNNOISE_COMMIT=70f1d256acd4b34a572f999a05c87bf00b67730d
+          git clone https://github.com/xiph/rnnoise third_party/rnnoise
+          cd third_party/rnnoise
+
+          # Il commit deve esserci: ripiegare sul ramo predefinito vorrebbe
+          # dire pubblicare un motore diverso da quello provato, e non
+          # accorgersene.
+          git checkout --quiet "$RNNOISE_COMMIT"
+
+          # Il download del modello con curl invece dello script del progetto,
+          # che vuole wget: su MSYS2 e su macOS non c'è di serie, e installarlo
+          # per un file solo è una dipendenza in più da mantenere.
+          MODEL_HASH=$(cat model_version)
+          MODEL="rnnoise_data-${MODEL_HASH}.tar.gz"
+          curl -fsSL "https://media.xiph.org/rnnoise/models/${MODEL}" -o "$MODEL"
+
+          GOT=$(sha256sum "$MODEL" | cut -d' ' -f1)
+          if [ "$GOT" != "$MODEL_HASH" ]; then
+            echo "::error::i pesi di RNNoise non sono quelli attesi"
+            echo "  atteso:    $MODEL_HASH"
+            echo "  scaricato: $GOT"
+            exit 1
+          fi
+          tar xzf "$MODEL"
+          echo "RNNoise pronto: $(git rev-parse --short HEAD), modello verificato"
+
       # ── Build ───────────────────────────────────────────────────────────
       - name: Configura
         run: |

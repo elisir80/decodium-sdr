@@ -41,6 +41,21 @@ enable_testing()
 # perché una funzione che a volte c'è e a volte no è peggio di una che non c'è.
 if(DSDR_NEURAL_NR)
     include(FindRnnoise)
+
+    # Chi costruisce per altri non può perdere lo stadio neurale per strada.
+    # Senza questo controllo il pacchetto esce con la riduzione di rumore
+    # spenta e nessuno se ne accorge: il programma lo dice in una riga di log,
+    # che su Windows un'applicazione con interfaccia non mostra a nessuno.
+    # È andata così dalla 1.1.3 alla 1.1.8.
+    if(DSDR_STRICT_BACKENDS AND NOT RNNOISE_FOUND)
+        message(FATAL_ERROR
+            "DSDR_NEURAL_NR è attivo ma RNNoise non c'è: il pacchetto uscirebbe "
+            "senza la riduzione di rumore neurale.\n"
+            "  git clone https://github.com/xiph/rnnoise third_party/rnnoise\n"
+            "  cd third_party/rnnoise && ./download_model.sh\n"
+            "Chi non la vuole compili con -DDSDR_NEURAL_NR=OFF, che è una "
+            "scelta dichiarata invece di una funzione che sparisce.")
+    endif()
 endif()
 
 add_subdirectory(src)
