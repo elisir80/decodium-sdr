@@ -4,6 +4,43 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.8] — 2026-08-11
+
+### Aggiunto
+
+- **Una targa per ogni ricevitore aperto** sopra lo spettro, e si spostano:
+  si prendono per la maniglia a sinistra e si mettono dove non coprono il
+  segnale che si sta guardando. Quella scelta sta sopra le altre.
+- **Modo, filtro e AGC si cambiano dalla targa.** Erano etichette da leggere:
+  per cambiare modo bisognava attraversare la finestra e ritrovare la scheda
+  giusta fra quelle aperte. Le larghezze proposte seguono il modo — 500 Hz in
+  CW, 2,4 kHz in SSB — e cambiando modo il filtro si adegua.
+- **Ogni scheda della colonna ha la sua croce** per chiudere il ricevitore.
+  Prima si poteva solo dal flag sullo spettro, che è raggiungibile soltanto se
+  è in vista: con lo zoom stretto altrove il canale restava aperto e
+  irraggiungibile. L'ultimo non si chiude, e il tasto sparisce invece di
+  rifiutare il clic.
+- **Scegliere un ricevitore dalla colonna lo porta in vista** sul waterfall,
+  ma solo se era fuori campo: spostare la vista quando non serve fa perdere il
+  segno a chi sta seguendo un segnale.
+- **Installatore Inno Setup**, lo stesso strumento con cui si confeziona
+  DECODIUM: chi installa i due programmi incontra la stessa procedura.
+
+### Corretto
+
+- **Le radio Yaesu con «CAT RTS» abilitato andavano in timeout.** Il driver
+  apre la porta con RTS basso — su molte interfacce quella linea è il PTT — ma
+  sulle Yaesu con porta USB integrata «CAT RTS» ne fa il controllo di flusso:
+  la radio non risponde finché non lo vede alto, e sul FTDX3000 quel menù è
+  abilitato di fabbrica. Ora, sulla porta scelta dall'operatore, si riprova con
+  l'handshake hardware quando la radio tace. Mai durante la scansione
+  automatica: lì si aprono porte di cui non si sa nulla.
+- **Il pan dello spettro non sintonizza più.** `onClicked` scatta anche dopo un
+  trascinamento: si spostava la vista per andare a vedere un segnale e il
+  ricevitore si piazzava dove capitava di lasciare il dito.
+- **I clic sulla targa non attraversano più verso lo spettro**: si premeva un
+  pezzo di targa per leggere meglio un numero e la radio cambiava frequenza.
+
 ## [1.1.7] — 2026-08-11
 
 ### Corretto

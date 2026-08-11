@@ -282,6 +282,37 @@ jobs:
           mv build/decodium-sdr-*-Windows-*.exe "${{ matrix.artifact }}"
           mv build/decodium-sdr-*-Windows-*.zip decodium-sdr-windows-x86_64.zip
 
+      # L'installatore Inno Setup, lo stesso strumento con cui si confeziona
+      # DECODIUM: chi installa i due programmi incontra la stessa procedura.
+      # Si costruisce qui e non sulla macchina di chi sviluppa perché il
+      # contenuto dev'essere quello di release — la build locale porta i
+      # simboli di debug e pesa il doppio — e perché un pacchetto pubblicato
+      # deve venire dallo stesso posto degli altri.
+      #
+      # ISCC è preinstallato sui runner Windows di GitHub. Il percorso è
+      # quello di sistema e non passa dal PATH di MSYS2, che non lo conosce.
+      - name: Installatore Inno Setup (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -f "$ISCC" ]; then
+            echo "::error::Inno Setup non trovato sul runner"
+            exit 1
+          fi
+
+          VERSION=$(grep -m1 'VERSION' CMakeLists.txt | tr -dc '0-9.')
+          "$ISCC" //DStagingDir="$(cygpath -w "$(pwd)/staging")"                   //DAppVersion="$VERSION"                   packaging/windows/decodium-sdr.iss
+
+          mv "packaging/windows/DECODIUM_SDR_${VERSION}_x64_Setup.exe"              decodium-sdr-windows-x86_64-innosetup.exe
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-latest'
+        with:
+          name: decodium-sdr-windows-x86_64-innosetup.exe
+          path: decodium-sdr-windows-x86_64-innosetup.exe
+          retention-days: 14
+
       - name: Carica anche lo ZIP portable (Windows)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
