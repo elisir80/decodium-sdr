@@ -171,8 +171,14 @@ function(dsdr_print_configuration)
     message(STATUS "  Build type      : ${CMAKE_BUILD_TYPE}")
     message(STATUS "  Spettro GPU     : ${DSDR_GPU_SPECTRUM}")
     message(STATUS "  Bundle RTL-SDR  : ${DSDR_BUNDLE_RTLSDR}")
+    # L'elenco è quello delle opzioni, non una lista scritta a mano: una lista
+    # scritta a mano si dimentica di aggiornare, e `audiorig` e `hermes` sono
+    # rimasti fuori per mesi. Chi guarda questa riga la guarda proprio per
+    # sapere se un backend c'è — è successo con audiorig sparito dalla 1.1.3, e
+    # questa riga diceva di sì tacendo.
     message(STATUS "  Backend attivi  :")
-    foreach(be DEMO SOAPY NETTCP COLIBRI IQFILE HPSDR DLINK FLEX TCI KIWI HAMLIB)
+    foreach(be DEMO SOAPY NETTCP HERMES COLIBRI IQFILE AUDIORIG FLEX_PROBE
+               HPSDR DLINK FLEX TCI KIWI HAMLIB)
         if(DSDR_BACKEND_${be})
             message(STATUS "      • ${be}")
         endif()

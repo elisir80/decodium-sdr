@@ -976,6 +976,21 @@ bool SessionManager::startRigctl(int port)
         emit rigctlChanged();
         return false;
     }
+    // La porta che ci siamo presi la dichiariamo al processo.
+    //
+    // È la stessa su cui ascolta `rigctld`, e il backend audiorig la sonda per
+    // trovare un demone hamlib: senza questa riga si connette a noi. La sonda
+    // se ne accorge — pretende una risposta a `dump_caps`, che qui non c'è —
+    // ma è lavoro sprecato e nel log compare un client che non esiste.
+    //
+    // Un canale laterale, sì. La HAL non può chiedere niente al core
+    // (CONSTITUTION §4) e questo non è un dato del seam: è «questa porta di
+    // questo processo è già presa», che è esattamente il genere di cosa che un
+    // ambiente comunica. È la stessa via di DSDR_RIGCTLD, che il backend legge
+    // per sapere dove cercare.
+    qputenv("DSDR_RIGCTL_SERVER_PORT",
+            QByteArray::number(m_rigctlServer.serverPort()));
+
     qCInfo(dsdrCore) << "rigctl: server locale in ascolto su 127.0.0.1:"
                      << m_rigctlServer.serverPort();
     emit rigctlChanged();
@@ -992,6 +1007,7 @@ void SessionManager::stopRigctl()
         socket->deleteLater();
     }
     m_rigctlServer.close();
+    qunsetenv("DSDR_RIGCTL_SERVER_PORT");
     qCInfo(dsdrCore) << "rigctl: server arrestato";
     emit rigctlChanged();
 }

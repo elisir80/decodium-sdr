@@ -9,6 +9,7 @@
 #include "hal/HalLog.h"
 
 #include <QAudioDevice>
+#include <QMap>
 #include <QSerialPortInfo>
 #include <QThread>
 #include <QTimer>
@@ -55,12 +56,36 @@ std::unique_ptr<ICatDriver> makeCatDriver(const QString &driverId)
 /// `DSDR_RIGCTLD` sostituisce l'elenco, separando gli indirizzi con la
 /// virgola: serve a chi tiene il demone su un'altra macchina, che è il caso
 /// per cui rigctld esiste.
+///
+/// La porta su cui ascolta il *nostro* server rigctl si salta: sondarla
+/// significa connettersi a sé stessi. La sonda se ne accorgerebbe comunque, ma
+/// è lavoro sprecato e nel log compare un client che non esiste — che è il modo
+/// più efficace di far cercare a qualcuno un programma che non c'è.
 QStringList rigctldEndpoints()
 {
+    QStringList wanted;
     const QString configured = qEnvironmentVariable("DSDR_RIGCTLD");
     if (!configured.trimmed().isEmpty())
-        return configured.split(QLatin1Char(','), Qt::SkipEmptyParts);
-    return {QStringLiteral("127.0.0.1:4532"), QStringLiteral("127.0.0.1:4533")};
+        wanted = configured.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    else
+        wanted = {QStringLiteral("127.0.0.1:4532"), QStringLiteral("127.0.0.1:4533")};
+
+    const QString ours = qEnvironmentVariable("DSDR_RIGCTL_SERVER_PORT");
+    if (ours.isEmpty())
+        return wanted;
+
+    QStringList kept;
+    for (const QString &endpoint : std::as_const(wanted)) {
+        QString host;
+        quint16 port = 0;
+        const bool valid = RigctldDriver::splitEndpoint(endpoint.trimmed(), host, port);
+        const bool isLocal = host == QLatin1String("127.0.0.1")
+            || host == QLatin1String("localhost") || host == QLatin1String("::1");
+        if (valid && isLocal && QString::number(port) == ours)
+            continue;
+        kept.append(endpoint);
+    }
+    return kept;
 }
 
 /// Il codec di una radio si riconosce dalla descrizione. Non è una certezza —
@@ -223,6 +248,10 @@ void AudiorigBackend::startDiscovery()
     // secondi di applicazione ferma, e nessuno collegherebbe la cosa alla
     // porta seriale.
     QThread *prober = QThread::create([this, probeSerial] {
+        /// Le porte che non si sono aperte, con il motivo. Si raccolgono e si
+        /// dicono in fondo: una per volta sarebbero sei righe uguali a porta.
+        QMap<QString, QString> busy;
+
         // ── rigctld, sulla rete ─────────────────────────────────────────
         //
         // Prima delle seriali: è la via con cui una radio che nessuno di noi
@@ -288,14 +317,27 @@ void AudiorigBackend::startDiscovery()
             drivers[1] = std::make_unique<CivDriver>();
 
             bool found = false;
+            bool opened = false;
             for (auto &candidate : drivers) {
                 if (found || m_abortDiscovery.load(std::memory_order_acquire))
                     break;
 
                 ICatDriver &driver = *candidate;
                 const int rate = driver.probe(info.portName());
-                if (rate < 0)
+                if (rate < 0) {
+                    // Distinguere «non risponde» da «non si apre» è la
+                    // differenza fra cercare il guasto nella radio e trovarlo
+                    // nel programma che tiene la porta. Sul banco di chi
+                    // scrive questo codice la porta CAT del FT-991A è contesa
+                    // con un altro programma dell'ecosistema, e per mesi la
+                    // ricerca non ha detto altro che «zero device».
+                    if (!driver.errorString().isEmpty()
+                        && !driver.errorString().startsWith(QLatin1String("nessuna radio"))) {
+                        busy.insert(info.portName(), driver.errorString());
+                    }
                     continue;
+                }
+                opened = true;
 
                 DeviceDescriptor device;
                 device.backendId = backendId();
@@ -329,6 +371,23 @@ void AudiorigBackend::startDiscovery()
                 }, Qt::QueuedConnection);
             }
             Q_UNUSED(found)
+            Q_UNUSED(opened)
+        }
+
+        // Le porte che non si sono nemmeno aperte: una riga per ciascuna, e un
+        // avviso all'operatore. Una porta occupata non è un guasto della radio,
+        // ma senza dirlo è indistinguibile da uno.
+        if (!busy.isEmpty()) {
+            for (auto it = busy.cbegin(); it != busy.cend(); ++it)
+                qCWarning(dsdrHal) << "audiorig: porta" << it.key() << "non apribile —" << it.value();
+
+            const QStringList names = busy.keys();
+            QMetaObject::invokeMethod(this, [this, names] {
+                reportError(BackendError::Code::PermissionDenied,
+                            tr("La porta %1 è occupata da un altro programma: "
+                               "chiudilo e riprova la ricerca.")
+                                .arg(names.join(QStringLiteral(", "))));
+            }, Qt::QueuedConnection);
         }
 
         QMetaObject::invokeMethod(this, [this] {
