@@ -8,7 +8,6 @@
 // Il bandstack è il comportamento che ogni operatore si aspetta: ogni banda
 // ricorda dove l'avevi lasciata, così tornarci non significa ripartire dal
 // bordo inferiore, che di solito è vuoto.
-import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -19,102 +18,17 @@ PanelFrame {
 
     title: qsTr("SINTONIA")
 
-    /// Dove si era rimasti su ogni banda, salvato fra un avvio e l'altro.
-    property var bandStack: ({})
-    property var favorites: []
+    /// Bandstack e memorie stanno nel singleton `Memories`: le stesse cose si
+    /// comandano dalla targa del ricevitore, e due archivi separati sono due
+    /// archivi che divergono al primo salvataggio.
+    readonly property var favorites: Memories.entries
+    readonly property var currentBand: Memories.currentBand
 
-    Settings {
-        id: frequencySettings
-        category: "frequency-manager"
-        property string bandStackJson: "{}"
-        property string favoritesJson: "[]"
-    }
-
-    readonly property var currentBand: BandPlan.bandAt(Session.centerFrequency)
-
-    function reachable(hz) {
-        const caps = Session.capabilities
-        if (caps.maxFrequency <= caps.minFrequency)
-            return true       // copertura non dichiarata: non si vincola nulla
-        return hz >= caps.minFrequency && hz <= caps.maxFrequency
-    }
-
-    function goTo(hz) {
-        if (!Session.connected)
-            return false
-        if (!reachable(hz))
-            return false
-
-        // Prima di andarsene si annota dove si era: è ciò che rende utile
-        // tornare indietro.
-        const leaving = BandPlan.bandAt(Session.centerFrequency)
-        if (leaving)
-            bandStack[leaving.name] = Session.centerFrequency
-
-        // Centro e ricevitore insieme: si premeva «20m», la finestra si
-        // spostava sui quattordici megahertz e RX 1 restava sui quaranta,
-        // fuori da tutto ciò che si vedeva. La regola sta nella sessione e non
-        // qui, perché questo non è l'unico posto da cui si sintonizza.
-        Session.tuneTo(Math.round(hz))
-        persist()
-        return true
-    }
-
-    function persist() {
-        frequencySettings.bandStackJson = JSON.stringify(bandStack)
-        frequencySettings.favoritesJson = JSON.stringify(favorites)
-    }
-
-    function favoriteKey(hz) {
-        return String(Math.round(hz))
-    }
-
-    function addFavorite() {
-        if (!Session.connected)
-            return
-        const hz = Math.round(Session.centerFrequency)
-        const key = favoriteKey(hz)
-        for (let i = 0; i < favorites.length; ++i) {
-            if (favorites[i].frequency === hz)
-                return
-        }
-        const next = favorites.slice()
-        next.push({ frequency: hz, label: (hz / 1e6).toFixed(6) + " MHz" })
-        favorites = next
-        persist()
-    }
-
-    function removeFavorite(hz) {
-        const next = favorites.filter(item => item.frequency !== hz)
-        favorites = next
-        persist()
-    }
-
-    function selectBand(band) {
-        // Premere la banda in cui si è già riporta al punto di partenza:
-        // è la via d'uscita quando ci si è persi in fondo alla banda.
-        const target = (currentBand && currentBand.name === band.name)
-            ? band.home
-            : (bandStack[band.name] !== undefined ? bandStack[band.name] : band.home)
-        goTo(target)
-    }
-
-    Component.onCompleted: {
-        try {
-            const savedBands = JSON.parse(frequencySettings.bandStackJson)
-            if (savedBands && typeof savedBands === "object")
-                bandStack = savedBands
-        } catch (error) {
-            bandStack = ({})
-        }
-        try {
-            const savedFavorites = JSON.parse(frequencySettings.favoritesJson)
-            if (Array.isArray(savedFavorites))
-                favorites = savedFavorites
-        } catch (error) {
-            favorites = []
-        }
-    }
+    function reachable(hz) { return Memories.reachable(hz) }
+    function goTo(hz) { return Memories.goTo(hz) }
+    function addFavorite() { Memories.storeCurrent() }
+    function removeFavorite(hz) { Memories.remove(hz) }
+    function selectBand(band) { Memories.selectBand(band) }
 
     // ── Bande ────────────────────────────────────────────────────────────
     GridLayout {

@@ -27,8 +27,10 @@ set(DSDR_QML_FILES
     qml/ModeSelector.qml
     qml/FilterPresets.qml
     qml/PlateChip.qml
+    qml/PlateToggle.qml
     qml/FrequencyDisplay.qml
     qml/BandPlan.qml
+    qml/Memories.qml
     qml/FrequencyPanel.qml
     qml/FrequencyGrid.qml
     qml/LevelScale.qml
@@ -62,6 +64,7 @@ endforeach()
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/BandPlan.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Memories.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/Tuning.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/SMeterScale.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/FilterPresets.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
