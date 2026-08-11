@@ -51,8 +51,11 @@ accumula e rende leggibile dal comando nativo `colibri.health`.
 
 ## Procurarsi la libreria
 
-`colibrinano_lib` è del costruttore e non è nostra da ridistribuire: non sta
-nel repository. Chi ha la radio la mette in `third_party/colibrinano/`, e
+`colibrinano_lib` è del costruttore, ma è rilasciata sotto **Unlicense** —
+«free to copy, modify, publish, use, compile, sell, or distribute this
+software, either in source code form or as a compiled binary» — quindi
+ridistribuirla è lecito. Nel repository non sta lo stesso: un binario di terzi
+versionato è un binario che nessuno riguarda più. Chi ha la radio la mette in `third_party/colibrinano/`, e
 CMake la trova da sé, la copia accanto all'eseguibile a ogni build e la
 include nel pacchetto.
 
@@ -63,26 +66,26 @@ third_party/colibrinano/libcolibrinano_lib.so      # Linux
 
 Chi preferisce indicarla altrove usa `-DDSDR_COLIBRI_LIB=/percorso/della/lib`.
 
-### Con i pacchetti ufficiali
+### Nei pacchetti pubblicati
 
-I pacchetti pubblicati sono costruiti da una macchina che la libreria non ce
-l'ha, quindi **dentro non c'è**: il backend viene registrato ma non trova
-alcun device, e l'elenco delle sorgenti resta vuoto senza dire perché — il
-motivo finisce nel log, che su Windows un'applicazione con interfaccia non
-mostra a nessuno.
+Windows e Linux la includono: il workflow di release la scarica dal
+repository del costruttore e **ne verifica l'impronta** prima di metterla nel
+pacchetto. Lo sha256 sta scritto nel workflow, e se il file all'origine cambia
+la costruzione si ferma — stiamo mettendo codice di qualcun altro dentro un
+pacchetto che firmiamo noi.
 
-Chi installa un pacchetto e ha la radio copia la libreria accanto
-all'eseguibile:
+Su macOS non c'è, perché il costruttore non pubblica una versione per quel
+sistema.
+
+Le versioni **dalla 1.1.3 alla 1.1.5** sono uscite senza la libreria, e su
+quelle il ColibriNANO non compare: il backend viene registrato, non trova
+device, e l'elenco delle sorgenti resta vuoto senza dire perché — il motivo
+finisce nel log, che su Windows un'applicazione con interfaccia non mostra a
+nessuno. Chi le ha installate può copiarla a mano accanto all'eseguibile:
 
 ```
 C:\Program Files\DECODIUM SDR\bin\colibrinano_lib.dll
 ```
-
-Resta aperta la domanda se possa entrare nei pacchetti: `THIRD_PARTY_LICENSES`
-la registra come Unlicense — pubblico dominio, quindi ridistribuibile — mentre
-questa pagina diceva il contrario. Finché le due righe non concordano non
-entra: una libreria di terzi in un pacchetto GPL si aggiunge dopo aver
-verificato, non prima.
 
 Questa disposizione nasce da un difetto vero: prima la libreria viveva
 accanto all'eseguibile di *una* cartella di build, copiata a mano una volta.

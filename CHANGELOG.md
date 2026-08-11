@@ -4,7 +4,7 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
-## [1.1.5] — 2026-08-11
+## [1.1.6] — 2026-08-11
 
 ### Corretto
 
@@ -19,9 +19,14 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
   è alto la scala S non ci sta tutta nella dinamica che resta, ed è un fatto
   del ricevitore: le tacche che cadrebbero sopra lo zero del convertitore
   restano senza numero.
-- **ColibriNANO nei pacchetti**: la libreria del costruttore non è inclusa, e
-  ora la documentazione dice dove metterla. Chi installa un pacchetto e ha la
-  radio copia `colibrinano_lib.dll` accanto all'eseguibile.
+- **Il ColibriNANO torna nei pacchetti Windows e Linux.** La libreria del
+  costruttore non c'era, e senza di lei il backend viene registrato ma non
+  trova device: l'elenco delle sorgenti resta vuoto senza dire perché. È
+  rilasciata sotto Unlicense — ridistribuibile anche in forma binaria — e ora
+  il workflow di release la scarica verificandone l'impronta prima di metterla
+  nel pacchetto. Su macOS il costruttore non pubblica una versione.
+  Le release dalla 1.1.3 alla 1.1.5 ne sono prive: chi le ha installate può
+  copiare `colibrinano_lib.dll` accanto all'eseguibile.
 
 ## [1.1.4] — 2026-08-11
 

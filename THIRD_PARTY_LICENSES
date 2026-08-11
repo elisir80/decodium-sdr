@@ -62,8 +62,12 @@ colibrinano_lib (Expert Electronics, tramite maksimus1210/ColibriNANO_lib)
     Sito    : https://github.com/maksimus1210/ColibriNANO_lib
     Note    : NON vendorizzata e NON collegata in fase di build. Il backend
               `colibri` la carica a runtime con QLibrary; se manca, il backend
-              semplicemente non trova device. Nel repository non entra alcun
-              header di terze parti: le firme sono ridichiarate in
+              semplicemente non trova device. I pacchetti Windows e Linux la
+              includono: il workflow di release la scarica dal repository del
+              costruttore verificandone lo sha256, che sta scritto lì. La
+              Unlicense consente la ridistribuzione anche in forma binaria.
+              Nel repository non entra alcun header di terze parti: le firme
+              sono ridichiarate in
               src/hal/backends/colibri/ColibriLibrary.h a partire dall'API
               pubblicata, che per il ColibriNANO è l'autorità del protocollo.
 

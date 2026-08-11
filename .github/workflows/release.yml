@@ -93,6 +93,48 @@ jobs:
             mingw-w64-x86_64-nsis
             zip
 
+      # La libreria del ColibriNANO. È del costruttore ma è rilasciata sotto
+      # Unlicense — «free to copy, publish, distribute... either in source code
+      # form or as a compiled binary» — quindi può stare nei nostri pacchetti,
+      # e senza di lei chi installa un pacchetto e collega la radio non vede
+      # niente: il backend c'è, non trova device, e l'elenco resta vuoto.
+      #
+      # Si scarica invece di vivere nel repository, perché un binario di terzi
+      # versionato è un binario che nessuno riguarda più. Ma non si prende alla
+      # cieca: l'impronta è fissata qui, e se il file all'origine cambia la
+      # costruzione si ferma. Stiamo mettendo codice di qualcun altro dentro
+      # un pacchetto che firmiamo noi.
+      #
+      # macOS non ha una versione della libreria: là il ColibriNANO non è
+      # supportato dal costruttore, e non c'è niente da includere.
+      - name: Libreria ColibriNANO
+        if: matrix.os != 'macos-14'
+        shell: bash
+        run: |
+          BASE=https://raw.githubusercontent.com/maksimus1210/ColibriNANO_lib/master/library
+          mkdir -p third_party/colibrinano
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            URL="$BASE/x64/colibrinano_lib.dll"
+            OUT=third_party/colibrinano/colibrinano_lib.dll
+            WANT=8caa01142accc37b48dbc0fa7a1cf4c87e8c73ca2a1711d731a6d3cdc751c1dd
+          else
+            # Nel repository d'origine `libcolibrinano_lib.so` è un puntatore
+            # di ventisette byte: il file vero è quello con la versione piena.
+            URL="$BASE/linux64/libcolibrinano_lib.so.1.0.0"
+            OUT=third_party/colibrinano/libcolibrinano_lib.so
+            WANT=77717b068164a1db10f623450aae8b3f216dda93d9856112fe7096918f20f585
+          fi
+
+          curl -fsSL "$URL" -o "$OUT"
+          GOT=$(sha256sum "$OUT" | cut -d' ' -f1)
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::colibrinano_lib non è quella attesa"
+            echo "  attesa:  $WANT"
+            echo "  scaricata: $GOT"
+            exit 1
+          fi
+          echo "colibrinano_lib verificata: $GOT"
+
       # ── Build e installazione ───────────────────────────────────────────
       - name: Compila
         run: |
