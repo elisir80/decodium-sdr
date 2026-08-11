@@ -4,6 +4,25 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.5] — 2026-08-11
+
+### Corretto
+
+- **L'S-meter diceva S9 su tutto.** La scala era ancorata al tetto della
+  dinamica — S9 sessanta decibel sotto il fondo scala — e su un ricevitore con
+  guadagno alto questo manda ogni segnale oltre S9, con l'ago appoggiato al
+  fermo. Il riferimento viene adesso dal fondo di rumore misurato: un segnale
+  che si distingue appena dal rumore vale S1, e da lì si contano i sei decibel
+  per punto. Non è una taratura assoluta — su dBFS non esiste — ma è una scala
+  che si muove insieme al ricevitore invece che contro.
+- **La scala in decibel non stampa più livelli impossibili.** Quando il rumore
+  è alto la scala S non ci sta tutta nella dinamica che resta, ed è un fatto
+  del ricevitore: le tacche che cadrebbero sopra lo zero del convertitore
+  restano senza numero.
+- **ColibriNANO nei pacchetti**: la libreria del costruttore non è inclusa, e
+  ora la documentazione dice dove metterla. Chi installa un pacchetto e ha la
+  radio copia `colibrinano_lib.dll` accanto all'eseguibile.
+
 ## [1.1.4] — 2026-08-11
 
 **La 1.1.3 non vede le radio via CAT: usare questa.** Nei pacchetti Windows e
