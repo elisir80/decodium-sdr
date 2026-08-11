@@ -34,51 +34,14 @@ ColumnLayout {
     /// l'indice del pulsante è già l'indice del modo.
     readonly property var modeNames: Session.modeNames()
 
-    /// Larghezze proposte, in hertz, per famiglia di modo.
-    ///
-    /// Gli indici seguono DemodMode: 0 USB, 1 LSB, 2 CW, 3 CWR, 4 AM, 5 SAM,
-    /// 6 FM, 7 NFM, 8 DIGU, 9 DIGL, 10 IQ.
-    readonly property var presetsFor: {
-        "cw":    [100, 250, 500, 1000],
-        "ssb":   [1800, 2400, 2800, 3600],
-        "am":    [4000, 6000, 9000, 12000],
-        "fm":    [7000, 12000, 16000, 25000],
-        "digi":  [500, 1000, 2400, 3000],
-    }
-
-    readonly property var presets: {
-        switch (mode) {
-        case 2: case 3:            return presetsFor["cw"]
-        case 4: case 5:            return presetsFor["am"]
-        case 6: case 7:            return presetsFor["fm"]
-        case 8: case 9:            return presetsFor["digi"]
-        default:                   return presetsFor["ssb"]
-        }
-    }
-
-    /// Da che parte della portante sta il passabanda.
-    ///
-    /// In LSB, CW reverse e DIGL il filtro sta sotto: applicare una larghezza
-    /// senza tenerne conto sposterebbe il passabanda dall'altra parte e farebbe
-    /// sparire il segnale che si stava ascoltando.
-    readonly property bool lowerSideband: mode === 1 || mode === 3 || mode === 9
-
-    /// I modi centrati sulla portante: il filtro è simmetrico.
-    readonly property bool symmetric: mode >= 4 && mode <= 7
+    /// Larghezze e regole di applicazione stanno in [FilterPresets]: le usa
+    /// anche la targa sopra lo spettro, e due copie della stessa tabella
+    /// divergono al primo ritocco.
+    readonly property var presets: FilterPresets.widthsFor(mode)
 
     function applyWidth(width) {
-        if (symmetric) {
-            Session.setChannelFilter(channelIndex, -width / 2, width / 2)
-        } else if (lowerSideband) {
-            // Si conserva lo scostamento dalla portante: in CW è il tono di
-            // battimento, e cambiarlo mentre si stringe il filtro vorrebbe
-            // dire perdere la nota su cui si stava copiando.
-            const edge = Math.min(-1, root.filterHighHz)
-            Session.setChannelFilter(channelIndex, edge - width, edge)
-        } else {
-            const edge = Math.max(1, root.filterLowHz)
-            Session.setChannelFilter(channelIndex, edge, edge + width)
-        }
+        FilterPresets.applyWidth(channelIndex, mode, width,
+                                 root.filterLowHz, root.filterHighHz)
     }
 
     // ── Modo ─────────────────────────────────────────────────────────────

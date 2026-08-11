@@ -19,6 +19,7 @@ Rectangle {
     required property color channelColor
     required property string label
     required property real frequencyHz
+    required property int mode
     required property string modeName
     required property int filterLowHz
     required property int filterHighHz
@@ -30,6 +31,9 @@ Rectangle {
 
     /// Larghezza del filtro: è il numero che si legge, non i due estremi.
     readonly property int filterWidthHz: Math.max(0, filterHighHz - filterLowHz)
+
+    /// Le larghezze proposte per il modo in uso.
+    readonly property var filterChoices: FilterPresets.widthsFor(mode)
 
     /// Chi prende una targa sta lavorando su quel ricevitore: prenderla lo
     /// sceglie, come prendere il flag sullo spettro.
@@ -300,36 +304,44 @@ Rectangle {
 
         // ── Modo, filtro, AGC ────────────────────────────────────────────
         //
-        // Sola lettura: si regolano nel pannello del canale. Qui servono a
-        // sapere in che stato si sta ascoltando, che è la domanda a cui si
-        // risponde con un'occhiata.
-        Repeater {
-            model: [
-                root.modeName,
-                root.filterWidthHz >= 1000
-                    ? qsTr("%1 kHz").arg((root.filterWidthHz / 1000).toFixed(1))
-                    : qsTr("%1 Hz").arg(root.filterWidthHz),
-                qsTr("AGC %1").arg(root.agcName),
-            ]
+        // Si cambiano da qui, non solo dalla colonna: sono le tre cose che si
+        // toccano mentre si ascolta, cioè guardando lo spettro. Prima erano
+        // etichette da leggere, e per cambiare modo bisognava spostare gli
+        // occhi dall'altra parte della finestra e ritrovare la scheda giusta
+        // fra quelle aperte.
+        //
+        // A menu e non a pulsantiera come nella colonna: qui lo spazio è una
+        // riga sopra il waterfall, e undici modi in fila la renderebbero più
+        // larga della finestra. Il menu costa un gesto in più e non copre il
+        // segnale quando è chiuso, che è il compromesso giusto per una targa
+        // che sta sopra ciò che si guarda.
+        PlateChip {
+            text: root.modeName
+            enabled: Session.connected
+            model: Session.modeNames()
+            currentIndex: root.mode
+            onSelected: (index) => Session.setChannelMode(root.index, index)
+        }
 
-            delegate: Rectangle {
-                required property string modelData
+        PlateChip {
+            text: FilterPresets.label(root.filterWidthHz)
+            enabled: Session.connected
+            model: root.filterChoices.map(FilterPresets.label)
+            // Il filtro in uso può non essere fra quelli proposti — lo si
+            // regola anche a mano dal pannello — e allora nessuna voce è
+            // segnata: meglio di una spuntata a caso.
+            currentIndex: root.filterChoices.indexOf(root.filterWidthHz)
+            onSelected: (index) => FilterPresets.applyWidth(
+                            root.index, root.mode, root.filterChoices[index],
+                            root.filterLowHz, root.filterHighHz)
+        }
 
-                implicitWidth: chip.implicitWidth + 2 * Theme.spacing
-                implicitHeight: chip.implicitHeight + 4
-                radius: Theme.radiusSmall
-                color: "transparent"
-                border.width: 1
-                border.color: Theme.border
-
-                Text {
-                    id: chip
-                    anchors.centerIn: parent
-                    text: parent.modelData
-                    font.pixelSize: Theme.fontSmall
-                    color: Theme.textSecondary
-                }
-            }
+        PlateChip {
+            text: qsTr("AGC %1").arg(root.agcName)
+            enabled: Session.connected
+            model: Session.agcModeNames()
+            currentIndex: root.agcMode
+            onSelected: (index) => Session.setChannelAgcMode(root.index, index)
         }
     }
 }
