@@ -4,6 +4,32 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.10] — 2026-08-12
+
+### Corretto
+
+- **Il CAT di rete non è solo `rigctld`.** Il driver della 1.1.9 pretendeva il
+  protocollo esteso e un `dump_caps` riuscito: su un server rigctl **minimo** —
+  quello che espone DECODIUM 4, e con lui mezzo ecosistema — ogni domanda
+  scadeva e la radio non compariva. Ora il dialetto si stabilisce all'apertura
+  con una domanda di sola lettura, e la prova che dall'altra parte ci sia una
+  radio è la frequenza, che è l'unica cosa che ogni rigctl implementa.
+  Provato sul FT-991A vero, con la porta seriale in mano a DECODIUM 4 e il CAT
+  preso dal suo rigctl sulla 4533.
+- **Una porta seriale occupata da un altro programma lo dice.** Prima la si
+  saltava in silenzio e in fondo restava «zero device», che è indistinguibile
+  da una radio spenta, da un cavo staccato o da un CAT configurato male —
+  quattro rimedi diversi e nessun indizio su quale. L'avviso arriva
+  all'operatore, e parte solo se la ricerca è tornata davvero a mani vuote.
+- **Non ci si connette più al proprio server rigctl.** Il nostro sta sulla
+  4532, che è anche la porta di fabbrica di `rigctld`: la ricerca ci trovava e
+  nel log compariva un client che non esiste. Il core dichiara la porta che si
+  è preso e il backend la salta.
+- **La riga «Backend attivi»** che CMake stampa a fine configurazione elencava
+  una lista scritta a mano: `audiorig`, `hermes` e il sondaggio Flex ne erano
+  fuori da sempre. È esattamente la riga che si guarda per sapere se un backend
+  c'è.
+
 ## [1.1.9] — 2026-08-12
 
 ### Aggiunto
