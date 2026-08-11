@@ -11,11 +11,12 @@
 //     sbagliare quel riferimento significa passare rapporti sbagliati a
 //     persone che poi li ripassano ad altri.
 //
-// L'ultima prova apre una connessione vera verso un finto rigctld di quindici
-// righe: serve a presidiare l'unica cosa che le funzioni pure non vedono, cioè
-// che la sonda **non** si attacchi a qualcosa che non è rigctld — e il primo
-// «qualcosa» in ordine di probabilità è il server rigctl di DECODIUM SDR, che
-// sta sulla stessa porta di fabbrica.
+// In coda tre prove su una connessione vera, verso un finto server in tre
+// versioni: `rigctld` pieno, un rigctl minimo — che è quello che espone
+// DECODIUM 4, e parla solo la forma corta del protocollo — e qualcosa che
+// ascolta su quella porta senza essere un CAT. Sono i tre casi che si trovano
+// davvero, e il secondo è quello che ha fatto nascere il driver a due
+// dialetti.
 
 #include "hal/backends/audiorig/RigctldDriver.h"
 
@@ -33,17 +34,26 @@ using namespace dsdr::hal::audiorig;
 
 namespace {
 
-/// Un rigctld finto: risponde in forma estesa a quello che sa, `RPRT -4` al
-/// resto. `answersCaps` a false imita il nostro server rigctl, che di
-/// `\dump_caps` non sa nulla.
+/// Un server rigctl finto, in tre versioni. Sono le tre che si incontrano.
+///
+///   Pieno    — `rigctld` vero: capisce il prefisso `+`, risponde in forma
+///              estesa, sa dire le proprie capability e l'S-meter.
+///   Minimo   — il protocollo corto e basta: i soli valori, una riga per
+///              ciascuno, nessun esito, `+` ignorato, `dump_caps` e `STRENGTH`
+///              non implementati. È quello che espone DECODIUM 4, ed è il
+///              motivo per cui questo driver deve parlare due dialetti.
+///   Muto     — qualcosa ascolta su quella porta, ma non è un CAT: `RPRT -4`
+///              a tutto, frequenza compresa.
+enum class Flavour { Full, Minimal, Mute };
+
 class FakeRigctld : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit FakeRigctld(bool answersCaps, QObject *parent = nullptr)
+    explicit FakeRigctld(Flavour flavour, QObject *parent = nullptr)
         : QObject(parent)
-        , m_answersCaps(answersCaps)
+        , m_flavour(flavour)
     {
         connect(&m_server, &QTcpServer::newConnection, this, [this] {
             while (m_server.hasPendingConnections()) {
@@ -66,17 +76,20 @@ public:
 private:
     void reply(QTcpSocket *socket, const QByteArray &line)
     {
-        // Il driver manda sempre il prefisso `+`: senza, le risposte sarebbero
-        // valori nudi e chi legge dovrebbe saperne a memoria l'ordine.
-        if (!line.startsWith('+')) {
+        if (m_flavour == Flavour::Mute) {
             socket->write("RPRT -4\n");
             return;
         }
-        const QByteArray command = line.mid(1);
+
+        const bool extended = line.startsWith('+') && m_flavour == Flavour::Full;
+        // Il server minimo il `+` lo ignora e basta: è quello che fa quello
+        // vero di DECODIUM 4, e il driver deve accorgersene dalla forma della
+        // risposta invece che da una dichiarazione.
+        const QByteArray command = line.startsWith('+') ? line.mid(1) : line;
 
         if (command == "\\dump_caps") {
-            if (!m_answersCaps) {
-                socket->write("RPRT -4\n");
+            if (m_flavour != Flavour::Full) {
+                socket->write("RPRT -11\n");   // non implementato
                 return;
             }
             socket->write("Caps dump for model:\t1035\n"
@@ -86,19 +99,24 @@ private:
             return;
         }
         if (command == "\\get_freq") {
-            socket->write("Frequency: 14074000\nRPRT 0\n");
+            socket->write(extended ? "Frequency: 14074000\nRPRT 0\n" : "14074000\n");
             return;
         }
         if (command == "\\get_mode") {
-            socket->write("Mode: PKTUSB\nPassband: 3000\nRPRT 0\n");
+            socket->write(extended ? "Mode: PKTUSB\nPassband: 3000\nRPRT 0\n"
+                                   : "PKTUSB\n3000\n");
             return;
         }
         if (command == "\\get_ptt") {
-            socket->write("PTT: 0\nRPRT 0\n");
+            socket->write(extended ? "PTT: 0\nRPRT 0\n" : "0\n");
             return;
         }
         if (command == "\\get_level STRENGTH") {
-            socket->write("Level Value: 12\nRPRT 0\n");
+            if (m_flavour != Flavour::Full) {
+                socket->write("RPRT -11\n");
+                return;
+            }
+            socket->write(extended ? "Level Value: 12\nRPRT 0\n" : "12\n");
             return;
         }
         if (command.startsWith("\\set_freq") || command.startsWith("\\set_mode")
@@ -110,7 +128,7 @@ private:
     }
 
     QTcpServer m_server;
-    bool m_answersCaps;
+    Flavour m_flavour;
 };
 
 /// Il demone finto su un thread suo.
@@ -122,8 +140,8 @@ private:
 class DaemonThread : public QThread
 {
 public:
-    explicit DaemonThread(bool answersCaps)
-        : m_answersCaps(answersCaps)
+    explicit DaemonThread(Flavour flavour)
+        : m_flavour(flavour)
     {
     }
 
@@ -149,7 +167,7 @@ public:
 protected:
     void run() override
     {
-        FakeRigctld daemon(m_answersCaps);
+        FakeRigctld daemon(m_flavour);
         m_port = daemon.listen();
         m_ready.release();
         if (m_port != 0)
@@ -157,7 +175,7 @@ protected:
     }
 
 private:
-    bool m_answersCaps;
+    Flavour m_flavour;
     QSemaphore m_ready;
     std::atomic<quint16> m_port{0};
 };
@@ -178,6 +196,7 @@ private slots:
     void theDataModesLandOnThePacketOnes();
     void theStrengthLandsOnTheRightSignalLevel();
     void aFakeDaemonAnswersTheWholePoll();
+    void theMinimalDialectWorksToo();
     void whatIsNotARigctldIsNotARadio();
 };
 
@@ -322,7 +341,7 @@ void TestRigctld::theStrengthLandsOnTheRightSignalLevel()
 
 void TestRigctld::aFakeDaemonAnswersTheWholePoll()
 {
-    DaemonThread daemon(true);
+    DaemonThread daemon(Flavour::Full);
     QVERIFY(daemon.start());
 
     RigctldDriver driver;
@@ -350,14 +369,56 @@ void TestRigctld::aFakeDaemonAnswersTheWholePoll()
     daemon.stop();
 }
 
+void TestRigctld::theMinimalDialectWorksToo()
+{
+    // Il caso che ha fatto nascere questo pezzo di codice. «rigctl_net» non è
+    // solo `rigctld`: DECODIUM 4 tiene la porta seriale della radio ed espone
+    // un server rigctl minimo, che del protocollo implementa la parte corta —
+    // i soli valori, nessun esito, `+` ignorato, `dump_caps` assente. Una
+    // prima stesura pretendeva la forma estesa e un `dump_caps` riuscito: su
+    // quel server non trovava niente, e il CAT restava irraggiungibile con la
+    // radio accesa a mezzo metro.
+    DaemonThread daemon(Flavour::Minimal);
+    QVERIFY(daemon.start());
+
+    RigctldDriver driver;
+    const int result = driver.probe(daemon.endpoint());
+    if (result != 0) {
+        daemon.stop();
+        QCOMPARE(result, 0);
+    }
+    QVERIFY(driver.isOpen());
+
+    // Senza `dump_caps` non si può sapere che radio sia, e non ci si inventa
+    // un modello: si dice quello che si sa.
+    QVERIFY(!driver.radioModel().isEmpty());
+
+    CatState state;
+    QVERIFY(driver.poll(state));
+    QCOMPARE(state.frequencyHz, 14074000LL);
+    // Il modo e la larghezza arrivano come due righe nude: contarle male
+    // significa leggere «3000» come modo alla domanda dopo, e da lì in poi
+    // ogni risposta è quella della domanda precedente.
+    QCOMPARE(state.mode, DemodMode::DigU);
+    QCOMPARE(state.transmitting, false);
+
+    // Questo server l'S-meter non ce l'ha: si smette di chiederlo, e il
+    // livello resta quello misurato sull'audio.
+    QVERIFY(!std::isfinite(state.signalDbm));
+
+    QVERIFY(driver.setFrequency(7074000));
+    QVERIFY(driver.setPtt(false));
+
+    driver.close();
+    daemon.stop();
+}
+
 void TestRigctld::whatIsNotARigctldIsNotARadio()
 {
-    // Il server rigctl di DECODIUM SDR sta sulla stessa porta di fabbrica del
-    // demone e risponde al protocollo corto, ma non sa nulla di `dump_caps`.
-    // Senza questa verifica il programma si attaccherebbe a sé stesso: si
-    // vedrebbe comparire una radio che non esiste, e ogni comando tornerebbe
-    // indietro da dove è partito.
-    DaemonThread notADaemon(false);
+    // Qualcosa ascolta su quella porta e non è un CAT. La prova è la
+    // frequenza: è l'unica cosa che ogni rigctl implementa — `dump_caps` no,
+    // e pretenderlo escluderebbe metà dei server veri.
+    DaemonThread notADaemon(Flavour::Mute);
     QVERIFY(notADaemon.start());
 
     RigctldDriver driver;

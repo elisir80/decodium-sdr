@@ -252,6 +252,9 @@ void AudiorigBackend::startDiscovery()
         /// dicono in fondo: una per volta sarebbero sei righe uguali a porta.
         QMap<QString, QString> busy;
 
+        /// Quante radio ha trovato questa ricerca, su tutte le vie.
+        int devices = 0;
+
         // ── rigctld, sulla rete ─────────────────────────────────────────
         //
         // Prima delle seriali: è la via con cui una radio che nessuno di noi
@@ -271,7 +274,11 @@ void AudiorigBackend::startDiscovery()
             // riavvio e l'altro, e due demoni su due porte sono due radio.
             device.deviceId = QStringLiteral("rigctld@") + endpoint.trimmed();
             device.model = driver.radioModel();
-            device.displayName = tr("%1 (rigctld %2)")
+            // Il nome del demone non entra nell'etichetta: dall'altra parte
+            // può esserci rigctld o un rigctl minimo — DECODIUM 4 ne espone
+            // uno — e dirlo sbagliato è peggio che non dirlo. L'indirizzo sì:
+            // con due server accesi è l'unica cosa che li distingue.
+            device.displayName = tr("%1 · %2")
                                      .arg(driver.radioModel(), endpoint.trimmed());
             device.transport = QStringLiteral("net");
             device.address = endpoint.trimmed();
@@ -287,6 +294,7 @@ void AudiorigBackend::startDiscovery()
             }
 
             driver.close();
+            ++devices;
             QMetaObject::invokeMethod(this, [this, device] {
                 emit deviceFound(device);
             }, Qt::QueuedConnection);
@@ -366,6 +374,7 @@ void AudiorigBackend::startDiscovery()
 
                 driver.close();
                 found = true;
+                ++devices;
                 QMetaObject::invokeMethod(this, [this, device] {
                     emit deviceFound(device);
                 }, Qt::QueuedConnection);
@@ -377,7 +386,13 @@ void AudiorigBackend::startDiscovery()
         // Le porte che non si sono nemmeno aperte: una riga per ciascuna, e un
         // avviso all'operatore. Una porta occupata non è un guasto della radio,
         // ma senza dirlo è indistinguibile da uno.
-        if (!busy.isEmpty()) {
+        //
+        // L'avviso però parte solo se la ricerca è tornata a mani vuote. Con la
+        // radio già raggiunta per un'altra via — il CAT di rete, che è proprio
+        // quello che si usa quando la porta seriale ce l'ha un altro programma
+        // — la porta occupata non è un problema, è la configurazione voluta, e
+        // segnalarla vorrebbe dire mandare a cercare un guasto che non c'è.
+        if (!busy.isEmpty() && devices == 0) {
             for (auto it = busy.cbegin(); it != busy.cend(); ++it)
                 qCWarning(dsdrHal) << "audiorig: porta" << it.key() << "non apribile —" << it.value();
 

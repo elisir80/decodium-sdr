@@ -51,9 +51,9 @@ connessione.
 |---|---|---|
 | `newcat` | Yaesu FT-991A, FT-891, FT-710, FT-DX10 | comandi ASCII chiusi da `;` |
 | `civ` | Icom IC-7300, IC-7610, IC-7851, IC-9700, IC-705 | telai binari su bus |
-| `rigctld` | qualunque radio che hamlib conosca | testo su TCP |
+| `rigctld` | qualunque radio raggiungibile via rigctl in rete | testo su TCP |
 
-## Il driver `rigctld` (hamlib in rete)
+## Il driver `rigctld` (CAT in rete)
 
 Hamlib parla con qualche centinaio di modelli, e nessuno di noi ha quei modelli
 sul tavolo per scriverne i driver. `rigctld` è il modo in cui quel lavoro si
@@ -82,28 +82,53 @@ DSDR_RIGCTLD=shack.lan:4532,192.168.1.40 decodium-sdr
 ```
 
 **Non ci si attacca a sé stessi.** DECODIUM SDR espone a sua volta un server
-rigctl sulla 4532: sondare quella porta trova noi. La sonda chiede
-`+\dump_caps` e pretende un `RPRT 0`; il nostro server risponde `RPRT -4`
-perché quel comando non lo conosce, e il giro si chiude prima di cominciare.
-Non è un accorgimento fragile — è la stessa domanda che serve comunque a sapere
-che radio c'è dall'altra parte.
+rigctl sulla 4532: sondare quella porta trova noi. Il core dichiara al processo
+la porta che si è preso e il backend la salta. Non lo si fa con un trucco di
+protocollo — la prima stesura pretendeva un `dump_caps` riuscito, che il nostro
+server non implementa: funzionava, ma escludeva anche tutti i rigctl minimi,
+cioè proprio quelli che si vogliono raggiungere.
 
-**Il protocollo esteso.** Ogni comando si manda preceduto da `+`, e allora
-rigctld risponde con righe `Nome: valore` e chiude con `RPRT n`. Il protocollo
-corto risponde con i soli valori, uno per riga, e chi legge deve sapere a
-memoria quanti sono e in che ordine — un modo eccellente di scambiare la
-larghezza del filtro per il modo. Costa qualche byte in più su una connessione
-che di solito è verso `127.0.0.1`.
+**Come si riconosce una radio.** Si chiede la frequenza. È l'unica cosa che
+*ogni* rigctl implementa: `dump_caps` no — il server minimo risponde
+`RPRT -11`, «non implementato» — e nemmeno `STRENGTH`. Una frequenza plausibile
+è la prova; il nome del modello è un di più, e senza non ci si inventa niente.
+
+**Due dialetti, e si riconoscono.** Con il prefisso `+` rigctld risponde in
+forma estesa — righe `Nome: valore` chiuse da `RPRT n` — ed è la forma che non
+si può fraintendere. Ma «rigctl_net» non è solo rigctld: mezzo ecosistema
+espone un server rigctl **minimo**, che implementa la parte corta del
+protocollo — i soli valori, una riga ciascuno, nessun esito — e ignora il `+`.
+Il dialetto si stabilisce all'apertura con una domanda di sola lettura, e da
+quel momento non si indovina più niente.
+
+Nel protocollo corto contare le righe è obbligatorio: `\get_mode` ne manda due,
+il modo e la larghezza, e leggerne una sola lascia l'altra nel socket — dove
+verrà raccolta come risposta alla domanda successiva, sfasando il dialogo di un
+giro per il resto della sessione. È il motivo per cui ogni comando dichiara
+quanti valori si aspetta.
+
+**Il caso DECODIUM 4.** È quello per cui il driver esiste sul banco di chi lo
+scrive. La porta seriale della radio la può tenere un solo programma; se ce
+l'ha DECODIUM 4, DECODIUM SDR non può aprirla — e non deve. DECODIUM 4 espone
+un rigctl minimo sulla **4533**, e il CAT si prende da lì:
+
+```
+FT-991A → COM5 → DECODIUM 4 → rigctl 127.0.0.1:4533 → DECODIUM SDR
+```
+
+L'audio resta indipendente: viene dal codec della radio, che i due programmi si
+dividono senza contendersi nulla.
 
 | Comando | A cosa serve |
 |---|---|
-| `\dump_caps` | chi c'è dall'altra parte, e il nome del modello |
+| `\get_freq` | c'è una radio? (ed è anche la prova del dialetto) |
+| `\dump_caps` | il nome del modello, quando c'è |
 | `\get_freq` / `\set_freq` | frequenza |
 | `\get_mode` / `\set_mode` | modo (la larghezza si lascia a zero: quella della radio) |
 | `\get_ptt` / `\set_ptt` | PTT |
 | `\get_level STRENGTH` | S-meter, in decibel rispetto a S9 |
 
-**L'S-meter arriva tarato, e resta tarato.** Le altre due lingue mandano la
+**L'S-meter arriva tarato, e resta tarato** — quando c'è. Le altre due lingue mandano la
 lettura grezza dello strumento della radio — un numero fra 0 e 255 il cui
 significato dipende dal modello. Hamlib invece restituisce decibel rispetto a
 S9, cioè una misura già interpretata dal profilo che hamlib ha di quella radio:

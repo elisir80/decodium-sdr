@@ -198,27 +198,32 @@ bool RigctldDriver::open(const QString &portName, int baudRate)
     // ammazzerebbe il polling.
     m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
 
-    // `dump_caps` deve **riuscire**, non solo rispondere qualcosa. Chi ascolta
-    // su quella porta senza essere rigctld risponde comunque — il server
-    // rigctl di DECODIUM SDR, che sta sulla stessa porta di fabbrica, replica
-    // `RPRT -4` a tutto ciò che non conosce. Prendere per buona una risposta
-    // qualunque vorrebbe dire attaccarsi a sé stessi: comparirebbe una radio
-    // che non esiste, e ogni comando tornerebbe indietro da dove è partito.
-    const QByteArray caps = ask("\\dump_caps", 1200);
-    if (!succeeded(caps)) {
-        m_error = QStringLiteral("nessun rigctld su %1:%2").arg(host).arg(port);
+    const qint64 hz = negotiate();
+    if (hz <= 0) {
+        // Nessuna frequenza plausibile: dall'altra parte c'è qualcosa che
+        // ascolta su quella porta, ma non è un CAT. Chiedere la frequenza e'
+        // la prova giusta perchè è l'unica cosa che *ogni* rigctl
+        // implementa: `dump_caps` no, e il server minimo di DECODIUM 4
+        // risponde `RPRT -11`.
+        m_error = QStringLiteral("nessun rigctl su %1:%2").arg(host).arg(port);
         close();
         return false;
     }
 
-    m_model = modelFromCaps(caps);
+    // Il nome del modello è un di più: ce l'ha solo chi implementa
+    // `dump_caps`, cioè rigctld vero. Senza, si dice quello che si sa — che
+    // c'è una radio a quell'indirizzo — invece di inventarsi un modello.
+    const Reply caps = ask("\\dump_caps", 0, 1200);
+    m_model = caps.ok() ? modelFromCaps(caps.raw) : QString();
     if (m_model.isEmpty())
-        m_model = QStringLiteral("Radio via rigctld");
+        m_model = QStringLiteral("Radio via rigctl");
 
     m_endpoint = host + QLatin1Char(':') + QString::number(port);
     m_strengthAvailable = true;
     m_error.clear();
-    qCInfo(dsdrHal) << "rigctld: connesso a" << m_endpoint << "—" << m_model;
+    qCInfo(dsdrHal) << "rigctl: connesso a" << m_endpoint << "—" << m_model
+                    << (m_dialect == Dialect::Extended ? "(protocollo esteso)"
+                                                       : "(protocollo corto)");
     return true;
 }
 
@@ -241,59 +246,114 @@ bool RigctldDriver::isOpen() const
     return m_socket && m_socket->state() == QAbstractSocket::ConnectedState;
 }
 
-QByteArray RigctldDriver::ask(const QByteArray &command, int timeoutMs)
+RigctldDriver::Reply RigctldDriver::ask(const QByteArray &command, int expectedValues,
+                                        int timeoutMs)
 {
+    Reply reply;
     if (!isOpen())
-        return {};
+        return reply;
 
-    // Il prefisso `+` chiede le risposte in forma estesa: righe `Nome: valore`
-    // e una `RPRT n` a chiudere. Senza, arrivano i soli valori e chi legge deve
-    // sapere a memoria quanti sono e in che ordine — un modo eccellente di
-    // scambiare la larghezza del filtro per il modo.
-    m_socket->write("+" + command + "\n");
+    // Il prefisso `+` chiede le risposte in forma estesa. Lo si manda solo a
+    // chi lo capisce: un server minimo lo prenderebbe come parte del nome del
+    // comando, e a quel punto non risponderebbe più a niente.
+    const QByteArray line = (m_dialect == Dialect::Extended ? "+" + command : command) + "\n";
+    m_socket->write(line);
     if (!m_socket->waitForBytesWritten(timeoutMs)) {
         m_error = m_socket->errorString();
-        return {};
+        return reply;
     }
 
-    QByteArray reply;
+    QByteArray pending;
     QElapsedTimer clock;
     clock.start();
+
     while (clock.elapsed() < timeoutMs) {
         if (!m_socket->waitForReadyRead(
                 std::max(1, timeoutMs - static_cast<int>(clock.elapsed())))) {
             break;
         }
-        reply += m_socket->readAll();
+        pending += m_socket->readAll();
 
-        // La risposta finisce con `RPRT n`, sempre: è l'esito, e senza
-        // aspettarlo si leggerebbe metà di una risposta e la restante metà
-        // finirebbe in testa a quella dopo — sfasando tutto il dialogo di un
-        // giro, per sempre.
-        const int rprt = reply.lastIndexOf("RPRT ");
-        if (rprt >= 0 && reply.indexOf('\n', rprt) >= 0)
-            return reply;
+        // Si lavora a righe complete: una risposta può arrivare spezzata in
+        // due pacchetti, e mezza riga interpretata è peggio di nessuna riga.
+        int newline = pending.indexOf('\n');
+        while (newline >= 0) {
+            const QByteArray text = pending.left(newline).trimmed();
+            pending.remove(0, newline + 1);
+            newline = pending.indexOf('\n');
+
+            reply.raw += text + '\n';
+
+            if (text.startsWith("RPRT")) {
+                // L'esito chiude sempre il discorso, in tutti e due i
+                // dialetti. Senza aspettarlo si leggerebbe metà risposta e la
+                // restante metà finirebbe in testa a quella dopo, sfasando il
+                // dialogo di un giro — per sempre.
+                reply.rprt = text.mid(4).trimmed().toInt();
+                reply.answered = true;
+                return reply;
+            }
+
+            if (text.isEmpty())
+                continue;
+
+            if (m_dialect == Dialect::Extended) {
+                // `Nome: valore`. Le righe senza due punti — `dump_caps` ne e'
+                // pieno — restano solo nella grezza.
+                const int colon = text.indexOf(':');
+                if (colon >= 0)
+                    reply.values.append(QString::fromLatin1(text.mid(colon + 1)).trimmed());
+                continue;
+            }
+
+            reply.values.append(QString::fromLatin1(text));
+            if (expectedValues > 0 && reply.values.size() >= expectedValues) {
+                // Il protocollo corto non manda un terminatore quando ha dei
+                // valori da dare: finiti quelli, ha finito.
+                reply.answered = true;
+                return reply;
+            }
+        }
     }
 
-    if (reply.isEmpty())
-        m_error = QStringLiteral("nessuna risposta da rigctld");
+    if (!reply.answered && reply.values.isEmpty())
+        m_error = QStringLiteral("nessuna risposta da rigctl");
     return reply;
-}
-
-bool RigctldDriver::succeeded(const QByteArray &reply)
-{
-    // Ogni risposta si chiude con `RPRT n`: zero è riuscito, il resto è il
-    // codice d'errore di hamlib. È l'esito dichiarato dal protocollo, e
-    // l'unico modo non congetturale di sapere se il comando è passato.
-    const int rprt = reply.lastIndexOf("RPRT ");
-    if (rprt < 0)
-        return false;
-    return reply.mid(rprt + 5).trimmed().toInt() == 0;
 }
 
 bool RigctldDriver::tell(const QByteArray &command)
 {
-    return succeeded(ask(command));
+    // I comandi che impostano qualcosa non restituiscono valori: rispondono
+    // con il solo esito, in entrambi i dialetti.
+    return ask(command).ok();
+}
+
+qint64 RigctldDriver::negotiate()
+{
+    // Una domanda sola, di sola lettura, e dice due cose: che dialetto parla
+    // chi c'è dall'altra parte, e se è una radio.
+    //
+    // Si prova prima l'esteso, che è quello che non si può fraintendere. Un
+    // server che lo capisce risponde `Frequency: 14074000`; uno minimo — e
+    // sono la maggioranza fuori da hamlib — risponde il numero e basta, o
+    // niente affatto. In tutti e tre i casi la mossa dopo è chiara.
+    m_dialect = Dialect::Extended;
+    Reply reply = ask("\\get_freq", 1, 900);
+    if (reply.ok() && !reply.values.isEmpty()) {
+        bool valid = false;
+        const qint64 hz = reply.values.first().toLongLong(&valid);
+        if (valid && hz > 0)
+            return hz;
+    }
+
+    m_dialect = Dialect::Short;
+    reply = ask("\\get_freq", 1, 900);
+    if (!reply.answered || reply.values.isEmpty())
+        return 0;
+
+    bool valid = false;
+    const qint64 hz = reply.values.first().toLongLong(&valid);
+    return (valid && hz > 0) ? hz : 0;
 }
 
 int RigctldDriver::probe(const QString &portName)
@@ -312,43 +372,48 @@ bool RigctldDriver::poll(CatState &state)
     if (!isOpen())
         return false;
 
-    const QByteArray freq = ask("\\get_freq");
-    if (freq.isEmpty())
+    // Un valore: la frequenza.
+    const Reply freq = ask("\\get_freq", 1);
+    if (!freq.answered)
         return false;
+    if (!freq.values.isEmpty()) {
+        bool valid = false;
+        const qint64 hz = freq.values.first().toLongLong(&valid);
+        if (valid && hz > 0)
+            state.frequencyHz = hz;
+    }
 
-    bool ok = false;
-    const qint64 hz = fieldValue(freq, QStringLiteral("Frequency")).toLongLong(&ok);
-    if (ok && hz > 0)
-        state.frequencyHz = hz;
-
-    const QByteArray mode = ask("\\get_mode");
-    if (mode.isEmpty())
+    // Due: il modo e la larghezza. La larghezza non ci serve — i filtri sono
+    // quelli della radio — ma va letta lo stesso: nel protocollo corto è una
+    // riga, e lasciarla nel socket la farebbe leggere come risposta alla
+    // domanda dopo.
+    const Reply mode = ask("\\get_mode", 2);
+    if (!mode.answered)
         return false;
-    const QString modeName = fieldValue(mode, QStringLiteral("Mode"));
-    if (!modeName.isEmpty())
-        state.mode = modeFromName(modeName);
+    if (!mode.values.isEmpty())
+        state.mode = modeFromName(mode.values.first());
 
-    const QByteArray ptt = ask("\\get_ptt");
-    if (ptt.isEmpty())
+    // Uno: il PTT.
+    const Reply ptt = ask("\\get_ptt", 1);
+    if (!ptt.answered)
         return false;
-    const QString pttValue = fieldValue(ptt, QStringLiteral("PTT"));
-    if (!pttValue.isEmpty())
-        state.transmitting = pttValue.toInt() != 0;
+    if (!ptt.values.isEmpty())
+        state.transmitting = ptt.values.first().toInt() != 0;
 
-    // L'S-meter è l'unica lettura facoltativa: parecchi backend di Hamlib non
-    // la implementano, e chiederla cinque volte al secondo per tutta la
-    // sessione è tempo speso a farsi dire di no. Al primo rifiuto si smette.
+    // L'S-meter è l'unica lettura facoltativa: parecchi server non ce l'hanno
+    // — quello di DECODIUM 4 risponde `RPRT -11`, «non implementato» — e
+    // chiederla cinque volte al secondo per tutta la sessione è tempo speso a
+    // farsi dire di no. Al primo rifiuto si smette.
     if (m_strengthAvailable) {
-        const QByteArray level = ask("\\get_level STRENGTH");
-        const QString value = fieldValue(level, QStringLiteral("Level Value"));
-        if (value.isEmpty()) {
+        const Reply level = ask("\\get_level STRENGTH", 1);
+        if (!level.answered || level.values.isEmpty() || level.rprt != 0) {
             m_strengthAvailable = false;
             state.sMeterRaw = -1;
             state.signalDbm = std::numeric_limits<double>::quiet_NaN();
-            qCInfo(dsdrHal) << "rigctld: la radio non riporta l'S-meter, "
+            qCInfo(dsdrHal) << "rigctl: la radio non riporta l'S-meter, "
                                "il livello resterà quello misurato sull'audio";
         } else {
-            state.signalDbm = dbmFromStrengthDb(value.toInt());
+            state.signalDbm = dbmFromStrengthDb(level.values.first().toInt());
         }
     }
 

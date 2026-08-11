@@ -15,18 +15,23 @@
 //
 // Tre cose che valgono la pena di essere dette prima di leggere il codice:
 //
-// **Il protocollo esteso.** Ogni comando si manda preceduto da `+`, e allora
-// `rigctld` risponde con righe `Nome: valore` e chiude con `RPRT n`. Il
-// protocollo corto risponde con i soli valori, uno per riga, e chi legge deve
-// sapere a memoria quanti sono e in che ordine — un modo eccellente di
-// interpretare la passband come se fosse il modo. Costa qualche byte in più su
-// una connessione che di solito è verso 127.0.0.1.
+// **Due dialetti, e si riconoscono.** `rigctld` accetta il prefisso `+` e
+// allora risponde con righe `Nome: valore` chiuse da `RPRT n`: è la forma che
+// non si può fraintendere, e quella che si preferisce. Ma «rigctl_net» non è
+// solo `rigctld`: mezzo ecosistema espone un server rigctl **minimo**, che del
+// protocollo implementa la parte corta — i soli valori, una riga per ciascuno,
+// senza esito — e ignora il `+`. Fra questi c'è DECODIUM 4, che è il motivo
+// per cui questo driver esiste sul banco di chi lo scrive: la porta seriale
+// della radio ce l'ha lui, e il CAT lo si prende da lì. Il dialetto si
+// stabilisce all'apertura con una domanda di sola lettura, e da quel momento
+// non si indovina più niente.
 //
-// **Non ci si attacca a sé stessi.** DECODIUM SDR espone a sua volta un server
-// rigctl sulla 4532, e sondare quella porta trova noi. La sonda pretende una
-// risposta a `+\dump_caps`, che il nostro server non implementa: il giro si
-// chiude prima di cominciare. Non è un accorgimento fragile — è la stessa
-// domanda che serve comunque a sapere che radio c'è dall'altra parte.
+// **Come si riconosce una radio.** Non da `dump_caps`: il server minimo non ce
+// l'ha. Si chiede la frequenza, e una frequenza plausibile è la prova che
+// dall'altra parte c'è una radio — con il nome del modello, se `dump_caps`
+// c'è, altrimenti senza. Non attaccarsi al proprio server rigctl è compito di
+// chi decide gli indirizzi da sondare: il core dichiara la porta che si è
+// preso e il backend la salta.
 //
 // **Niente hamlib fra le dipendenze.** Il protocollo di rigctl è testo ed è
 // documentato nella sua pagina di manuale; questa è una scrittura nuova.
@@ -36,6 +41,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 
 #include <memory>
 
@@ -94,11 +100,6 @@ public:
     /// fabbrica. Un indirizzo IPv6 fra parentesi quadre resta intero.
     static bool splitEndpoint(const QString &endpoint, QString &host, quint16 &port);
 
-    /// Se una risposta si chiude con `RPRT 0`, cioè se il comando è riuscito.
-    /// Una risposta che c'è non vuol dire che sia andata bene: chi ascolta su
-    /// quella porta senza essere rigctld risponde comunque.
-    static bool succeeded(const QByteArray &reply);
-
     /// Da `STRENGTH` di Hamlib ai dBm.
     ///
     /// Hamlib dà i decibel rispetto a S9, che per definizione IARU è −73 dBm
@@ -108,18 +109,57 @@ public:
     /// modello — vorrebbe dire buttare via proprio ciò che la rende utile.
     static double dbmFromStrengthDb(int strengthDb);
 
-private:
-    /// Manda un comando in forma estesa e restituisce tutta la risposta fino a
-    /// `RPRT`. Vuota se il dialogo si è interrotto o è scaduto il tempo.
-    QByteArray ask(const QByteArray &command, int timeoutMs = 700);
+    /// Quale delle due forme del protocollo parla il server dall'altra parte.
+    enum class Dialect {
+        Extended,   ///< `+comando` → righe `Nome: valore`, poi `RPRT n`
+        Short,      ///< `comando` → i soli valori, una riga ciascuno
+    };
 
-    /// Come sopra, ma interessa solo se `RPRT` ha detto zero.
+    /// Ciò che torna da una domanda.
+    struct Reply
+    {
+        /// I valori, nell'ordine in cui li manda il protocollo. In forma estesa
+        /// sono già ripuliti del nome del campo.
+        QStringList values;
+
+        /// La risposta grezza, per chi deve leggerci dentro un campo per nome.
+        QByteArray raw;
+
+        /// L'esito dichiarato, quando c'è: zero è riuscito. Il protocollo corto
+        /// lo manda solo per i comandi che non restituiscono valori, o quando
+        /// qualcosa è andato storto.
+        int rprt = 0;
+
+        /// Se una risposta è arrivata. Falso vuol dire dialogo interrotto o
+        /// tempo scaduto, che è una cosa diversa da «la radio ha detto di no».
+        bool answered = false;
+
+        bool ok() const { return answered && rprt == 0; }
+    };
+
+private:
+    /// Manda un comando e aspetta la risposta.
+    ///
+    /// `expectedValues` è quante righe di valore il comando restituisce: serve
+    /// solo al protocollo corto, che non manda un terminatore e va contato. In
+    /// forma estesa si aspetta comunque `RPRT`, che è il terminatore vero.
+    /// Zero significa «aspetta `RPRT`»: è il caso dei comandi che non
+    /// restituiscono valori, e di `dump_caps`.
+    Reply ask(const QByteArray &command, int expectedValues = 0, int timeoutMs = 700);
+
+    /// Come sopra, ma interessa solo se è andata bene.
     bool tell(const QByteArray &command);
+
+    /// Stabilisce il dialetto con una domanda di sola lettura, e restituisce la
+    /// frequenza che ha letto per strada — che è anche la prova che dall'altra
+    /// parte c'è una radio.
+    qint64 negotiate();
 
     std::unique_ptr<QTcpSocket> m_socket;
     QString m_endpoint;
     QString m_model;
     QString m_error;
+    Dialect m_dialect = Dialect::Extended;
 
     /// Se la radio sa dire l'S-meter. Alcuni backend di Hamlib non lo
     /// implementano, e chiederglielo cinque volte al secondo per tutta la
