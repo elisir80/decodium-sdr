@@ -32,9 +32,50 @@ PanelFrame {
     persistKey: "strumento"
     draggable: true
 
+    /// La taratura dello strumento: a quanti dBFS corrisponde S9.
+    ///
+    /// Sta qui e non nel quadrante perché deve sopravvivere al riavvio: una
+    /// taratura che si perde chiudendo il programma non è una taratura, è una
+    /// regolazione da rifare ogni sera. Il valore vale per il ricevitore, non
+    /// per il canale: cambiando canale la scala non si sposta.
+    property real s9ReferenceDb: -55
+
+    /// Se la taratura è stata fatta almeno una volta.
+    ///
+    /// La prima si fa da sé, appena arriva una misura del fondo: un valore di
+    /// fabbrica va bene per un ricevitore e male per tutti gli altri, e chi
+    /// apre il programma la prima volta non sa che esiste un tasto da premere.
+    /// Dopo, resta ferma: è quello che distingue una taratura da un
+    /// inseguimento.
+    property bool calibrated: false
+
+    /// Il fondo di rumore del canale corrente, per la prima taratura.
+    property real currentFloorDb: -140
+
+    // La prima taratura non si fa sulla prima misura: la stima del fondo parte
+    // dal livello che trova e scende, quindi appena connessi è alta di
+    // parecchi decibel e tararci sopra dà una scala buona per nessuno. Sei
+    // secondi bastano perché l'inseguitore sia sceso dove deve.
+    Timer {
+        id: firstCalibration
+
+        interval: 6000
+        repeat: false
+        running: !root.calibrated && root.currentFloorDb > -139
+
+        onTriggered: {
+            if (root.calibrated || root.currentFloorDb <= -139)
+                return
+            root.s9ReferenceDb = SMeterScale.s9From(root.currentFloorDb)
+            root.calibrated = true
+        }
+    }
+
     Settings {
         category: "panels/strumento"
         property alias instrument: root.instrument
+        property alias s9ReferenceDb: root.s9ReferenceDb
+        property alias calibrated: root.calibrated
     }
 
     // ── Il selettore ─────────────────────────────────────────────────────
@@ -158,6 +199,13 @@ PanelFrame {
                     onSignalDbChanged: if (index === signalColumn.secondIndex)
                                            signalColumn.secondLevelDb = signalDb
 
+                    // Il fondo del canale corrente sale al pannello, che è
+                    // dove vive la taratura: il quadrante la riceve, non la
+                    // decide.
+                    onNoiseFloorDbChanged:
+                        if (Session.channels.currentIndex === index)
+                            root.currentFloorDb = noiseFloorDb
+
                     DecoMeterS {
                         id: meter
 
@@ -169,6 +217,12 @@ PanelFrame {
                         modeName: entry.modeName
                         bandwidthHz: Math.max(0, entry.filterHighHz - entry.filterLowHz)
                         transmitting: Session.transmitting
+
+                        // La taratura va e viene dal pannello: è del
+                        // ricevitore, non di questo quadrante, e deve restare
+                        // dov'è anche cambiando canale o lettura.
+                        s9ReferenceDb: root.s9ReferenceDb
+                        onS9ReferenceDbChanged: root.s9ReferenceDb = s9ReferenceDb
 
                         sourceLabel: Session.backendName
                         channelLabel: qsTr("RX %1").arg(entry.index + 1)

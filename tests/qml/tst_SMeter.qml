@@ -38,12 +38,9 @@ TestCase {
         fuzzyCompare(SMeterScale.units(s9 - 48, s9), 1, 0.001)
     }
 
-    // Il riferimento nasce dal fondo di rumore, non da un livello assoluto:
-    // su un ricevitore non tarato i dBFS dipendono dal guadagno della catena,
-    // e una scala ancorata al tetto della dinamica manda ogni segnale oltre S9
-    // appena si alza il guadagno. È il difetto che rendeva lo strumento
-    // inservibile sulla 1.1.3.
-    function test_the_scale_follows_the_noise_floor_data() {
+    // La taratura porta il rumore a S1: è la lettura giusta per un canale
+    // vuoto, e il punto da cui si contano i sei decibel per gradino.
+    function test_calibration_puts_the_noise_at_s1_data() {
         return [
             { tag: "ricevitore quieto", floor: -120 },
             { tag: "guadagno alto",     floor: -80 },
@@ -51,17 +48,46 @@ TestCase {
         ]
     }
 
-    function test_the_scale_follows_the_noise_floor(data) {
+    function test_calibration_puts_the_noise_at_s1(data) {
         const s9 = SMeterScale.s9From(data.floor)
-
-        // Il rumore vale S1, qualunque sia il suo livello: è la definizione
-        // stessa del riferimento.
         fuzzyCompare(SMeterScale.units(data.floor, s9), 1, 0.6)
 
-        // E un segnale quaranta decibel sopra il rumore vale sempre lo stesso
-        // rapporto, su ogni ricevitore.
+        // E un segnale quaranta decibel sopra il rumore vale lo stesso
+        // rapporto su ogni ricevitore tarato allo stesso modo.
         const strong = SMeterScale.units(data.floor + 40, s9)
         fuzzyCompare(strong, 1 + 40 / SMeterScale.dbPerUnit, 0.6)
+    }
+
+    // E poi sta ferma. Questo è il difetto che la 1.1.6 aveva al posto del
+    // precedente: la scala inseguiva il fondo di rumore, che è un inseguitore
+    // di minimo dentro la banda del canale e si muove con la banda, con il
+    // filtro e con quanto è occupato il canale. Lo stesso segnale dava due
+    // rapporti diversi in due momenti diversi, ed è la sola cosa che un
+    // S-meter non può fare.
+    function test_the_scale_does_not_move_with_the_noise() {
+        const meter = createTemporaryObject(meterComponent, testCase, {
+            width: 320, height: 220, noiseFloorDb: -110, levelDb: -70
+        })
+        meter.calibrateFromFloor()
+        wait(50)
+
+        const reference = meter.s9ReferenceDb
+        const reading = meter.units
+
+        // Il rumore sale di venti decibel — succede cambiando banda, o
+        // togliendo l'attenuatore — e il segnale resta dov'è.
+        meter.noiseFloorDb = -90
+        wait(120)
+
+        compare(meter.s9ReferenceDb, reference,
+                "la taratura si è spostata da sola")
+        fuzzyCompare(meter.units, reading, 0.001,
+                     "lo stesso segnale legge un rapporto diverso")
+
+        // Solo chi tara la sposta.
+        meter.calibrateFromFloor()
+        verify(meter.s9ReferenceDb !== reference,
+               "la taratura a comando non ha fatto niente")
     }
 
     // Il fondo scala del quadrante è S9+60: sessanta decibel oltre S9, non uno
@@ -179,8 +205,10 @@ TestCase {
     // andare a riposo invece di restare sull'ultimo valore letto, che
     // resterebbe lì plausibile e falso per tutta la chiamata.
     function test_transmitting_parks_the_needle() {
+        // La taratura si dichiara: da quando è una misura presa una volta e
+        // non un inseguimento, quanto valga un livello dipende da lei.
         const meter = createTemporaryObject(meterComponent, testCase, {
-            width: 320, height: 220, levelDb: -60
+            width: 320, height: 220, levelDb: -60, s9ReferenceDb: -80
         })
         verify(meter.units > 9, "il segnale di prova non è oltre S9")
 

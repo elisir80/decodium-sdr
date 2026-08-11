@@ -68,13 +68,41 @@ Item {
 
     readonly property bool showsSecond: hasSecondChannel && channelMode !== 0
 
-    /// Dove cade S9, ricavato dal fondo di rumore invece che dal tetto della
-    /// dinamica. Il fondo che conta è quello smorzato: quello istantaneo si
-    /// muove di qualche decibel da una misura all'altra, e una scala che
-    /// respira insieme al rumore è illeggibile — le tacche resterebbero ferme
-    /// mentre i numeri che rappresentano cambiano sotto.
-    property real smoothedFloorDb: noiseFloorDb
-    readonly property real s9ReferenceDb: SMeterScale.s9From(smoothedFloorDb)
+    /// Dove cade S9, in dBFS. È una **taratura**, e sta ferma.
+    ///
+    /// Ci sono passate due versioni sbagliate prima di questa. La prima
+    /// ancorava S9 al tetto della dinamica: su un ricevitore con guadagno alto
+    /// ogni segnale finiva oltre S9 e l'ago restava appoggiato al fermo. La
+    /// seconda lo inseguiva sul fondo di rumore, ed era peggio in modo meno
+    /// visibile — il fondo lo stima un inseguitore di minimo dentro la banda
+    /// del canale, quindi si muove con la banda, con il filtro e con quanto è
+    /// occupato il canale. La scala si spostava sotto i piedi: lo stesso
+    /// segnale, su due bande diverse, dava due rapporti diversi. Un S-meter
+    /// che fa così non è confrontabile con nessuno, ed è la sola cosa per cui
+    /// serve un S-meter.
+    ///
+    /// Una radio tarata ha S9 a −73 dBm all'antenna e non si muove di lì. Qui
+    /// non c'è una taratura di fabbrica — i dBFS dipendono dal guadagno della
+    /// catena — quindi la si fa una volta, con [calibrateFromFloor], e poi
+    /// resta ferma finché non la si rifà.
+    property real s9ReferenceDb: -55
+
+    /// Porta S9 dove sta adesso il fondo di rumore più quarantotto decibel:
+    /// il rumore diventa S1, che è la lettura giusta per un canale vuoto.
+    ///
+    /// Si fa a comando e non di continuo. La differenza è tutta qui: una
+    /// taratura è una misura presa una volta in condizioni note, un
+    /// inseguimento è una scala che cambia mentre la si legge.
+    /// Il livello si può passare invece di lasciarlo leggere da qui: chi tara
+    /// subito dopo aver ricevuto una misura ce l'ha in mano, e la proprietà di
+    /// questo oggetto potrebbe essere ancora quella di un istante prima — è
+    /// così che la prima taratura automatica è finita sul valore iniziale del
+    /// modello, tarando su un canale che non aveva ancora ricevuto niente.
+    function calibrateFromFloor(floorOverride) {
+        const floor = floorOverride === undefined ? noiseFloorDb : floorOverride
+        if (isFinite(floor) && floor > -139)
+            s9ReferenceDb = SMeterScale.s9From(floor)
+    }
 
     implicitHeight: width * 0.58
 
@@ -177,10 +205,6 @@ Item {
             const power = Math.pow(10, level / 10)
             root.rmsPower += (power - root.rmsPower) * slow
 
-            // Il fondo si insegue in cinque secondi: cambia con la banda e con
-            // l'attenuatore, non da un istante all'altro.
-            root.smoothedFloorDb += (root.noiseFloorDb - root.smoothedFloorDb)
-                                    * (1 - Math.exp(-dt / 5))
         }
     }
 
@@ -587,6 +611,22 @@ Item {
                     current: root.readingMode === index
                     onPressed: root.readingMode = index
                 }
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                color: Theme.border
+            }
+
+            // La taratura: porta il rumore a S1, qui e adesso. Si preme su un
+            // canale vuoto — è lì che il fondo è davvero il fondo — e da quel
+            // momento la scala sta ferma.
+            DecoMeterChip {
+                objectName: "calibrate"
+                Layout.fillWidth: true
+                text: qsTr("TARA")
+                onPressed: root.calibrateFromFloor()
             }
 
             Rectangle {

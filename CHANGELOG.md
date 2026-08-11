@@ -4,6 +4,24 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.7] — 2026-08-11
+
+### Corretto
+
+- **L'S-meter è tarato, e la taratura sta ferma.** Nella 1.1.6 la scala
+  inseguiva il fondo di rumore, che il DSP stima con un inseguitore di minimo
+  dentro la banda del canale: si muove con la banda, con il filtro e con
+  quanto è occupato il canale. La scala si spostava sotto i piedi e lo stesso
+  segnale, in due momenti diversi, dava due rapporti diversi — che è la sola
+  cosa che un S-meter non può fare, perché il rapporto serve a confrontare.
+  Ora il riferimento è una taratura: si prende una volta e resta.
+- **Il tasto `TARA`** porta il rumore a S1, qui e adesso. Si preme su un canale
+  vuoto, dove il fondo è davvero il fondo. La prima taratura la fa il
+  programma, sei secondi dopo la connessione — il tempo perché la stima del
+  fondo sia scesa dove deve — e da lì in poi non si muove più da sola.
+- La taratura **sopravvive al riavvio**: vale per il ricevitore, non per il
+  canale, e cambiando canale la scala non si sposta.
+
 ## [1.1.6] — 2026-08-11
 
 ### Corretto
