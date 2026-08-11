@@ -37,6 +37,7 @@ private:
     bool createPipelines();
     bool ensureSpectrumResources(QRhiResourceUpdateBatch *batch);
     bool ensureReliefResources(QRhiResourceUpdateBatch *batch);
+    void trackBinFloor();
     void uploadRows(QRhiResourceUpdateBatch *batch);
     void updateTraceGeometry(QRhiResourceUpdateBatch *batch);
     void updatePeakGeometry(QRhiResourceUpdateBatch *batch);
@@ -101,6 +102,10 @@ private:
     float m_tilt = 58.0f;
     float m_rotation = 0.0f;
     float m_reliefScale = 0.45f;
+    float m_reliefGrid = 0.35f;
+    float m_floorFlattening = 0.0f;
+    float m_timeSpan = 1.0f;
+    bool m_frozen = false;
     QColor m_traceColor;
     QColor m_fillColor;
     QColor m_peakColor;
@@ -123,6 +128,12 @@ private:
     // si muovono da soli quando l'auto-range lavora, e un massimo memorizzato
     // come posizione sullo schermo scivolerebbe insieme a loro — la riga
     // sembrerebbe salire mentre la scala si stringe.
+    /// Stima del fondo bin per bin, in decibel.
+    ///
+    /// È quello che rende possibile appiattire la pendenza del rumore lungo la
+    /// banda senza toccare la scala: vedi `PanadapterView::floorFlattening`.
+    std::vector<float> m_binFloorDb;
+
     std::vector<float> m_peakRow;
     std::vector<float> m_peakVertices;
     QElapsedTimer m_peakClock;

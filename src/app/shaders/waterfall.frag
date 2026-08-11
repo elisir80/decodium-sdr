@@ -10,7 +10,7 @@ layout(std140, binding = 0) uniform buf {
     float uMax;
     float blackThreshold;  // sotto questo livello resta fondo
     float gamma;           // <1 alza i segnali deboli, >1 li schiaccia
-    float unused0;
+    float timeSpan;        // quanta storia entra nell'altezza (zoom del tempo)
     float unused1;
 } ubuf;
 
@@ -21,7 +21,10 @@ void main()
 {
     // La texture è un anello: si scrive una riga per frame e si fa scorrere
     // l'offset UV, invece di ridisegnare tutta la storia a ogni fotogramma.
-    float age = 1.0 - v_uv.y;                 // 0 in alto (riga più recente)
+    // `timeSpan` decide quante righe entrano nell'altezza disponibile: a 1 si
+    // vede tutta la memoria, sotto si vedono meno righe più alte. Non cambia il
+    // ritmo con cui arrivano — è lo zoom dell'asse dei tempi.
+    float age = (1.0 - v_uv.y) * ubuf.timeSpan;   // 0 in alto (riga più recente)
     float row = fract(ubuf.rowOffset - age);
 
     float u = mix(ubuf.uMin, ubuf.uMax, v_uv.x);

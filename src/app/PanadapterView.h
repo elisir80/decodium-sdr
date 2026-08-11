@@ -45,6 +45,10 @@ class PanadapterView : public QQuickRhiItem
     Q_PROPERTY(qreal tilt READ tilt WRITE setTilt NOTIFY sceneChanged)
     Q_PROPERTY(qreal rotation3d READ rotation3d WRITE setRotation3d NOTIFY sceneChanged)
     Q_PROPERTY(qreal reliefScale READ reliefScale WRITE setReliefScale NOTIFY sceneChanged)
+    Q_PROPERTY(qreal reliefGrid READ reliefGrid WRITE setReliefGrid NOTIFY sceneChanged)
+    Q_PROPERTY(qreal floorFlattening READ floorFlattening WRITE setFloorFlattening NOTIFY toneChanged)
+    Q_PROPERTY(qreal timeSpan READ timeSpan WRITE setTimeSpan NOTIFY timeViewChanged)
+    Q_PROPERTY(bool frozen READ frozen WRITE setFrozen NOTIFY timeViewChanged)
     Q_PROPERTY(bool autoRange READ autoRange WRITE setAutoRange NOTIFY autoRangeChanged)
     Q_PROPERTY(qreal noiseFloorDb READ noiseFloorDb NOTIFY measuredLevelsChanged)
     Q_PROPERTY(qreal peakLevelDb READ peakLevelDb NOTIFY measuredLevelsChanged)
@@ -165,6 +169,63 @@ public:
     qreal reliefScale() const { return m_reliefScale; }
     void setReliefScale(qreal value);
 
+    /// Quanto marcata è la griglia disegnata sulla superficie in rilievo.
+    ///
+    /// In prospettiva la stessa distanza sullo schermo vale frequenze diverse a
+    /// seconda della profondità, e senza un reticolo su cui appoggiarsi non c'è
+    /// modo di dire dove cade una cresta: si vede *che* c'è un segnale, non
+    /// *dove*. È il difetto che rende il 3D un ornamento nella maggior parte
+    /// dei programmi.
+    qreal reliefGrid() const { return m_reliefGrid; }
+    void setReliefGrid(qreal value);
+
+    /// Quanto si toglie al waterfall la pendenza del proprio fondo, da 0 a 1.
+    ///
+    /// Il rumore non è piatto lungo la banda: un disturbo locale, la risposta
+    /// del preselettore, una emittente vicina alzano il fondo su una porzione
+    /// di spettro e non sulle altre. La scala però è una sola, e tarata sul
+    /// fondo *medio*: dove il fondo è più alto il colore si accende ovunque e i
+    /// segnali deboli ci scompaiono dentro; dove è più basso resta tutto nero e
+    /// non si vede più nemmeno quello che c'è.
+    ///
+    /// Con l'appiattimento si stima il fondo bin per bin e se ne toglie lo
+    /// scarto dalla media. Il waterfall torna leggibile su tutta la larghezza.
+    ///
+    /// Vale **solo per il waterfall**, mai per la traccia: la traccia è la
+    /// misura, e si legge contro una scala in decibel. Correggerla vorrebbe
+    /// dire mostrare un livello che il ricevitore non ha misurato, ed è il modo
+    /// più diretto di passare a qualcuno un rapporto sbagliato.
+    qreal floorFlattening() const { return m_floorFlattening; }
+    void setFloorFlattening(qreal value);
+
+    /// Quanta storia entra nell'altezza del waterfall, da 0 a 1.
+    ///
+    /// A 1 si vede tutta la memoria disponibile; sotto, le righe si allargano e
+    /// se ne vedono meno. Non cambia il ritmo con cui arrivano — quello lo
+    /// decide il DSP — cambia quanto spazio si dà a ciascuna: è lo zoom
+    /// dell'asse dei tempi, e serve a leggere la struttura di una trasmissione
+    /// breve, dove a piena storia una sillaba è alta due pixel.
+    qreal timeSpan() const { return m_timeSpan; }
+    void setTimeSpan(qreal value);
+
+    /// Ferma l'immagine senza fermare la radio.
+    ///
+    /// Le righe continuano ad arrivare e vengono consumate — se non lo fossero
+    /// il ring si riempirebbe e il DSP comincerebbe a scartare — ma non si
+    /// scrivono più: quello che c'è sullo schermo resta lì, e si può guardarlo,
+    /// misurarlo, fotografarlo. Serve tutte le volte che qualcosa passa e non
+    /// si fa in tempo a leggerlo.
+    bool frozen() const { return m_frozen; }
+    void setFrozen(bool frozen);
+
+    /// Il livello in dB alla posizione indicata nella banda, da 0 a 1.
+    ///
+    /// È l'ultima riga di spettro misurata, la stessa da cui nascono la traccia
+    /// e le misure di fondo e picco: serve al cursore che legge lo spettro
+    /// sotto il puntatore. Restituisce il valore del fondo scala se non c'è
+    /// ancora nulla da leggere.
+    Q_INVOKABLE qreal levelAt(qreal bandFraction) const;
+
     /// Con l'auto-range attivo, `floorDb` e `ceilingDb` smettono di essere
     /// comandi e diventano il risultato della misura: la UI continua a
     /// leggerli allo stesso modo, ma non li scrive più.
@@ -211,6 +272,7 @@ signals:
     void measuredLevelsChanged();
     void historySecondsChanged();
     void peakHoldChanged();
+    void timeViewChanged();
 
 private:
     /// Pubblica sul thread GUI le misure raccolte dal render thread.
@@ -239,6 +301,10 @@ private:
     qreal m_tilt = 58.0;
     qreal m_rotation3d = 0.0;
     qreal m_reliefScale = 0.45;
+    qreal m_reliefGrid = 0.35;
+    qreal m_floorFlattening = 0.0;
+    qreal m_timeSpan = 1.0;
+    bool m_frozen = false;
 
     bool m_autoRange = false;
     qreal m_noiseFloorDb = -130.0;
@@ -246,6 +312,14 @@ private:
     bool m_levelsSeeded = false;
     bool m_publishPending = false;
     std::vector<float> m_levelScratch;  ///< copia ordinabile della riga
+
+    /// L'ultima riga misurata, così com'è arrivata.
+    ///
+    /// La scrive il render thread dentro `synchronize()`, quando il thread GUI
+    /// è fermo; la legge `levelAt()` dal thread GUI. Non serve un lock proprio
+    /// perché i due momenti non possono sovrapporsi — è lo stesso contratto
+    /// che regge tutto il resto di questa classe.
+    std::vector<float> m_lastRow;
 
     // ── Misura del ritmo delle righe ─────────────────────────────────────
     QElapsedTimer m_rowClock;

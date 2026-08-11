@@ -106,6 +106,46 @@ const std::vector<std::vector<ColorStop>> &palettes()
         {
             {0.00f, 0.00f, 0.00f, 0.00f}, {1.00f, 1.00f, 1.00f, 1.00f},
         },
+        // Viridis, per i segnali deboli.
+        //
+        // Nasce per le mappe scientifiche e ha una proprietà che qui conta più
+        // della bellezza: la luminanza cresce in modo monotono e quasi lineare
+        // lungo tutta la scala. Sulle altre palette due livelli vicini possono
+        // avere la stessa luminanza e differire solo di tinta, e la tinta è il
+        // canale in cui l'occhio distingue peggio le differenze piccole — che
+        // è esattamente quello che si cerca di fare quando si guarda se sotto
+        // il rumore c'è una traccia o no.
+        //
+        // Regge anche la daltonia rosso-verde, che le rampe blu→verde→giallo→
+        // rosso non reggono.
+        //
+        // L'ordine dei colori è quello originale; le quote no, per la stessa
+        // ragione di Turbo — il giallo va portato dove sta il traffico.
+        {
+            {0.00f, 0.27f, 0.00f, 0.33f}, {0.14f, 0.25f, 0.27f, 0.53f},
+            {0.26f, 0.16f, 0.47f, 0.56f}, {0.36f, 0.13f, 0.66f, 0.52f},
+            {0.46f, 0.48f, 0.82f, 0.32f}, {0.56f, 0.99f, 0.91f, 0.15f},
+            {0.78f, 1.00f, 0.60f, 0.12f}, {1.00f, 1.00f, 1.00f, 1.00f},
+        },
+        // Iride: tutte le tinte del cerchio, coda in magenta.
+        //
+        // Il criterio non è estetico. Su una banda affollata, con l'auto-range
+        // che stringe la scala attorno al traffico, i livelli da separare stanno
+        // in pochi decibel: più stop distinti ci sono, più fine è la differenza
+        // che si riesce a vedere. È la palette da tenere quando si guarda un
+        // segmento digitale pieno di stazioni a pochi hertz l'una dall'altra.
+        //
+        // Il magenta oltre il rosso è una convenzione dei ricevitori
+        // professionali e serve a una cosa precisa: dice «qui sei in cima alla
+        // scala», e a colpo d'occhio distingue un segnale forte da uno che sta
+        // saturando la vista.
+        {
+            {0.00f, 0.00f, 0.00f, 0.02f}, {0.10f, 0.10f, 0.00f, 0.45f},
+            {0.20f, 0.00f, 0.35f, 0.85f}, {0.30f, 0.00f, 0.75f, 0.80f},
+            {0.38f, 0.05f, 0.85f, 0.35f}, {0.48f, 0.75f, 0.95f, 0.10f},
+            {0.60f, 1.00f, 0.75f, 0.05f}, {0.74f, 1.00f, 0.30f, 0.05f},
+            {0.88f, 0.95f, 0.10f, 0.55f}, {1.00f, 1.00f, 0.80f, 1.00f},
+        },
     };
     return table;
 }
@@ -117,7 +157,8 @@ QStringList waterfallPaletteNames()
     // I nomi restano quelli d'uso: chi arriva da un altro programma li
     // riconosce senza doverli provare tutti.
     return {QObject::tr("DECODIUM"), QObject::tr("Raptor"), QObject::tr("Turbo"),
-            QObject::tr("Fuoco"), QObject::tr("Scala di grigi")};
+            QObject::tr("Fuoco"), QObject::tr("Scala di grigi"), QObject::tr("Viridis"),
+            QObject::tr("Iride")};
 }
 
 QByteArray buildWaterfallColorMap(int paletteIndex)

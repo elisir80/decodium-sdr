@@ -178,6 +178,11 @@ void PanadapterView::reportMeasuredLevels(const std::vector<float> &row)
     if (row.empty())
         return;
 
+    // La riga si conserva così com'è: `m_levelScratch` viene riordinato dai
+    // nth_element qui sotto, e non è più buono per dire che livello c'è a una
+    // certa frequenza.
+    m_lastRow = row;
+
     m_levelScratch = row;
     const auto count = m_levelScratch.size();
 
@@ -364,6 +369,59 @@ void PanadapterView::setReliefScale(qreal value)
     m_reliefScale = value;
     emit sceneChanged();
     update();
+}
+
+void PanadapterView::setReliefGrid(qreal value)
+{
+    value = qBound(0.0, value, 1.0);
+    if (qFuzzyCompare(m_reliefGrid, value))
+        return;
+    m_reliefGrid = value;
+    emit sceneChanged();
+    update();
+}
+
+void PanadapterView::setFloorFlattening(qreal value)
+{
+    value = qBound(0.0, value, 1.0);
+    if (qFuzzyCompare(m_floorFlattening, value))
+        return;
+    m_floorFlattening = value;
+    emit toneChanged();
+    update();
+}
+
+void PanadapterView::setTimeSpan(qreal value)
+{
+    // Il minimo non è zero: sotto un decimo della memoria le righe diventano
+    // fasce alte decine di pixel e l'immagine smette di essere un waterfall.
+    value = qBound(0.1, value, 1.0);
+    if (qFuzzyCompare(m_timeSpan, value))
+        return;
+    m_timeSpan = value;
+    emit timeViewChanged();
+    update();
+}
+
+void PanadapterView::setFrozen(bool frozen)
+{
+    if (m_frozen == frozen)
+        return;
+    m_frozen = frozen;
+    emit timeViewChanged();
+    update();
+}
+
+qreal PanadapterView::levelAt(qreal bandFraction) const
+{
+    if (m_lastRow.empty())
+        return m_floorDb;
+
+    const auto count = static_cast<qreal>(m_lastRow.size());
+    const auto index = static_cast<std::size_t>(
+        qBound<qreal>(0.0, bandFraction * (count - 1.0), count - 1.0));
+    const float value = m_lastRow[index];
+    return std::isfinite(value) ? static_cast<qreal>(value) : m_floorDb;
 }
 
 void PanadapterView::setTraceColor(const QColor &color)

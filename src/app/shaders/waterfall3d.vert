@@ -7,6 +7,7 @@ layout(location = 0) in vec2 grid;
 layout(location = 0) out float v_level;
 layout(location = 1) out float v_age;
 layout(location = 2) out vec3 v_normal;
+layout(location = 3) out vec2 v_grid;
 
 layout(std140, binding = 0) uniform buf {
     mat4 mvp;
@@ -19,6 +20,8 @@ layout(std140, binding = 0) uniform buf {
     float gamma;         // <1 alza i segnali deboli, >1 li schiaccia
     float stepX;         // passo della griglia lungo la banda
     float stepZ;         // passo della griglia lungo il tempo
+    float timeSpan;      // quanta storia entra nella profondità della scena
+    float gridStrength;  // quanto marcato il reticolo di riferimento
 } ubuf;
 
 layout(binding = 1) uniform sampler2D waterfallTex;
@@ -32,7 +35,7 @@ float reliefAt(vec2 g)
 {
     // La texture è un anello: la riga più recente è quella appena scritta, e
     // si torna indietro nel tempo scendendo di riga.
-    float row = fract(ubuf.rowOffset - g.y);
+    float row = fract(ubuf.rowOffset - g.y * ubuf.timeSpan);
     float u = mix(ubuf.uMin, ubuf.uMax, g.x);
     float level = texture(waterfallTex, vec2(u, row)).r;
     return max(level - ubuf.floorLevel, 0.0) / max(1.0 - ubuf.floorLevel, 0.001);
@@ -40,7 +43,7 @@ float reliefAt(vec2 g)
 
 void main()
 {
-    float row = fract(ubuf.rowOffset - grid.y);
+    float row = fract(ubuf.rowOffset - grid.y * ubuf.timeSpan);
     float u = mix(ubuf.uMin, ubuf.uMax, grid.x);
 
     // Campionare la texture nel vertex shader è ciò che rende possibile
@@ -74,6 +77,7 @@ void main()
     v_normal = normalize(cross(alongBand, alongTime));
     v_level = level;
     v_age = grid.y;
+    v_grid = grid;
 
     // Scena in coordinate normalizzate: x attraversa la banda, y è
     // l'ampiezza, z è il tempo che si allontana.

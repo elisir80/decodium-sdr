@@ -36,6 +36,12 @@ constexpr int kReliefGridDepth = 96;
 /// 1.0, questo rapporto dà una superficie che si legge senza schiacciarsi.
 constexpr float kReliefDepth = 1.4f;
 
+/// Con che frazione della differenza risale, a ogni riga, la stima del fondo di
+/// un bin. A venticinque righe al secondo, un centesimo è una costante di tempo
+/// di circa quattro secondi: abbastanza lenta da non seguire una trasmissione,
+/// abbastanza svelta da accorgersi che il preselettore è cambiato.
+constexpr float kFloorRise = 0.01f;
+
 QShader loadShader(const QString &path)
 {
     QFile file(path);
@@ -229,6 +235,7 @@ void PanadapterRenderer::releaseSpectrumResources()
     m_peakRow.clear();
     m_peakSeeded = false;
     m_peakClock.invalidate();
+    m_binFloorDb.clear();
     m_binCount = 0;
     m_writeRow = 0;
 }
@@ -250,6 +257,10 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
     m_tilt = static_cast<float>(item->tilt());
     m_rotation = static_cast<float>(item->rotation3d());
     m_reliefScale = static_cast<float>(item->reliefScale());
+    m_reliefGrid = static_cast<float>(item->reliefGrid());
+    m_floorFlattening = static_cast<float>(item->floorFlattening());
+    m_timeSpan = static_cast<float>(item->timeSpan());
+    m_frozen = item->frozen();
     m_traceColor = item->traceColor();
     m_fillColor = item->fillColor();
     m_peakColor = item->peakColor();
@@ -272,7 +283,22 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
         m_binCount = bins;
     }
 
+    // Le righe si consumano comunque, anche a immagine ferma: il ring ha un
+    // fondo, e un consumatore che smette di leggere non «mette in pausa» il
+    // DSP — lo fa scartare. Fermo vuol dire che non si scrive più sullo
+    // schermo, non che la radio si ferma.
     m_pendingRows = m_feed->fetchRows(m_fetched, kMaxRowsPerFrame);
+
+    // Il fondo per bin si aggiorna sempre, anche mentre l'immagine è ferma:
+    // riprendendo, una stima vecchia di dieci secondi correggerebbe il
+    // waterfall con la pendenza che la banda aveva prima.
+    trackBinFloor();
+
+    if (m_frozen) {
+        m_pendingRows = 0;
+        return;
+    }
+
     if (m_pendingRows > 0) {
         const std::size_t offset = static_cast<std::size_t>(m_pendingRows - 1)
             * static_cast<std::size_t>(m_binCount);
@@ -491,6 +517,38 @@ bool PanadapterRenderer::ensureReliefResources(QRhiResourceUpdateBatch *batch)
     return true;
 }
 
+void PanadapterRenderer::trackBinFloor()
+{
+    if (m_pendingRows <= 0 || m_binCount <= 0)
+        return;
+
+    const auto bins = static_cast<std::size_t>(m_binCount);
+    if (m_binFloorDb.size() != bins) {
+        // Si parte dalla prima riga che arriva. Partire da meno infinito
+        // vorrebbe dire aspettare secondi prima che la stima significhi
+        // qualcosa, e in quei secondi l'appiattimento correggerebbe a caso.
+        m_binFloorDb.assign(m_fetched.begin(), m_fetched.begin() + m_binCount);
+        return;
+    }
+
+    for (int row = 0; row < m_pendingRows; ++row) {
+        const float *source = m_fetched.data() + static_cast<std::size_t>(row) * m_binCount;
+        for (std::size_t bin = 0; bin < bins; ++bin) {
+            const float level = source[bin];
+            if (!std::isfinite(level))
+                continue;
+
+            // Asimmetrico, e non è un dettaglio: il fondo è il livello che il
+            // bin tocca quando non c'è nessuno, e una portante che si accende
+            // non deve alzarlo — se lo alzasse, l'appiattimento scaverebbe una
+            // buca proprio sotto il segnale che si sta guardando. Scende
+            // subito, risale piano.
+            float &floor = m_binFloorDb[bin];
+            floor = (level < floor) ? level : floor + (level - floor) * kFloorRise;
+        }
+    }
+}
+
 void PanadapterRenderer::uploadRows(QRhiResourceUpdateBatch *batch)
 {
     if (m_pendingRows <= 0 || !m_waterfallTexture)
@@ -499,10 +557,30 @@ void PanadapterRenderer::uploadRows(QRhiResourceUpdateBatch *batch)
     const float span = std::max(m_ceilingDb - m_floorDb, 1.0f);
     m_rowBytes.resize(static_cast<std::size_t>(m_binCount));
 
+    // La quota media del fondo: è il riferimento rispetto a cui si toglie la
+    // pendenza. Togliere il fondo *assoluto* di ogni bin porterebbe tutta
+    // l'immagine a zero e con essa il significato della scala; qui si toglie
+    // soltanto lo scarto dalla media, cioè la forma, e il livello complessivo
+    // resta quello misurato.
+    const bool flatten = m_floorFlattening > 0.001f
+        && m_binFloorDb.size() == static_cast<std::size_t>(m_binCount);
+    float meanFloor = 0.0f;
+    if (flatten) {
+        double sum = 0.0;
+        for (const float value : m_binFloorDb)
+            sum += value;
+        meanFloor = static_cast<float>(sum / static_cast<double>(m_binFloorDb.size()));
+    }
+
     for (int row = 0; row < m_pendingRows; ++row) {
         const float *source = m_fetched.data() + static_cast<std::size_t>(row) * m_binCount;
         for (int bin = 0; bin < m_binCount; ++bin) {
-            const float normalized = std::clamp((source[bin] - m_floorDb) / span, 0.0f, 1.0f);
+            float level = source[bin];
+            if (flatten) {
+                level -= (m_binFloorDb[static_cast<std::size_t>(bin)] - meanFloor)
+                    * m_floorFlattening;
+            }
+            const float normalized = std::clamp((level - m_floorDb) / span, 0.0f, 1.0f);
             m_rowBytes[static_cast<std::size_t>(bin)] =
                 static_cast<uchar>(std::lround(normalized * 255.0f));
         }
@@ -648,7 +726,8 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
         batch->updateDynamicBuffer(m_waterfallUbuf.get(), 72, 4, &uMax);
         batch->updateDynamicBuffer(m_waterfallUbuf.get(), 76, 4, &m_blackThreshold);
         batch->updateDynamicBuffer(m_waterfallUbuf.get(), 80, 4, &m_gamma);
-        batch->updateDynamicBuffer(m_waterfallUbuf.get(), 84, 4, &unused);
+        batch->updateDynamicBuffer(m_waterfallUbuf.get(), 84, 4, &m_timeSpan);
+        batch->updateDynamicBuffer(m_waterfallUbuf.get(), 88, 4, &unused);
 
         if (relief) {
             const float aspect = (waterfallHeight > 1.0f)
@@ -733,6 +812,8 @@ void PanadapterRenderer::render(QRhiCommandBuffer *cb)
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 88, 4, &m_gamma);
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 92, 4, &stepX);
             batch->updateDynamicBuffer(m_reliefUbuf.get(), 96, 4, &stepZ);
+            batch->updateDynamicBuffer(m_reliefUbuf.get(), 100, 4, &m_timeSpan);
+            batch->updateDynamicBuffer(m_reliefUbuf.get(), 104, 4, &m_reliefGrid);
         }
 
         const float traceRgba[4] = {

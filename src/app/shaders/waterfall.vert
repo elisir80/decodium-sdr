@@ -12,7 +12,7 @@ layout(std140, binding = 0) uniform buf {
     float uMax;
     float blackThreshold;
     float gamma;
-    float unused0;
+    float timeSpan;
     float unused1;
 } ubuf;
 

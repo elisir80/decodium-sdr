@@ -45,6 +45,9 @@ ColumnLayout {
         property real tilt: 58
         property real rotation3d: 0
         property real reliefScale: 0.45
+        property real reliefGrid: 0.35
+        property real floorFlattening: 0
+        property real timeSpan: 1
         property int averaging: 3
         property bool peakHold: true
         property real peakDecayDb: 12
@@ -59,6 +62,9 @@ ColumnLayout {
         panadapter.tilt = prefs.tilt
         panadapter.rotation3d = prefs.rotation3d
         panadapter.reliefScale = prefs.reliefScale
+        panadapter.reliefGrid = prefs.reliefGrid
+        panadapter.floorFlattening = prefs.floorFlattening
+        panadapter.timeSpan = prefs.timeSpan
         panadapter.peakHold = prefs.peakHold
         panadapter.peakDecayDb = prefs.peakDecayDb
         Session.spectrumAveraging = prefs.averaging
@@ -76,13 +82,18 @@ ColumnLayout {
         function onToneChanged() {
             prefs.gamma = root.panadapter.gamma
             prefs.blackThreshold = root.panadapter.blackThreshold
+            prefs.floorFlattening = root.panadapter.floorFlattening
         }
+        // Il fermo immagine non si salva: riaprire il programma con lo spettro
+        // già fermo è il modo più rapido di credere che la radio sia guasta.
+        function onTimeViewChanged() { prefs.timeSpan = root.panadapter.timeSpan }
         function onAutoRangeChanged() { prefs.autoRange = root.panadapter.autoRange }
         function onWaterfallModeChanged() { prefs.waterfallMode = root.panadapter.waterfallMode }
         function onSceneChanged() {
             prefs.tilt = root.panadapter.tilt
             prefs.rotation3d = root.panadapter.rotation3d
             prefs.reliefScale = root.panadapter.reliefScale
+            prefs.reliefGrid = root.panadapter.reliefGrid
         }
         function onPeakHoldChanged() {
             prefs.peakHold = root.panadapter.peakHold
@@ -256,6 +267,36 @@ ColumnLayout {
         onMoved: (v) => root.panadapter.blackThreshold = v
     }
 
+    // ── Appiattimento del fondo ──────────────────────────────────────────
+    //
+    // Il rumore non è piatto lungo la banda: un disturbo locale, la risposta
+    // del preselettore, una emittente vicina lo alzano su una porzione di
+    // spettro e non sulle altre. La scala però è una sola, e dove il fondo è
+    // più alto il colore si accende ovunque — i segnali deboli ci scompaiono
+    // dentro.
+    LevelRow {
+        Layout.fillWidth: true
+        label: qsTr("Fondo piatto")
+        readout: root.panadapter.floorFlattening < 0.01
+                 ? qsTr("no")
+                 : qsTr("%1%").arg(Math.round(root.panadapter.floorFlattening * 100))
+        from: 0; to: 1
+        value: root.panadapter.floorFlattening
+        onMoved: (v) => root.panadapter.floorFlattening = v
+    }
+
+    // Va detto dove si paga, e si paga in onestà: la traccia resta la misura,
+    // il waterfall diventa una mappa corretta. Chi legge un livello lo legge
+    // sulla traccia, che non è stata toccata.
+    Text {
+        Layout.fillWidth: true
+        visible: root.panadapter.floorFlattening >= 0.01
+        text: qsTr("solo il waterfall: la traccia resta la misura")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textSecondary
+        wrapMode: Text.WordWrap
+    }
+
     // ── Media fra le righe ───────────────────────────────────────────────
     //
     // Il fondo di una FFT non mediata respira di parecchi decibel da una riga
@@ -287,6 +328,38 @@ ColumnLayout {
         elide: Text.ElideRight
     }
 
+    // ── Scorrimento ──────────────────────────────────────────────────────
+    //
+    // Quanta storia entra nell'altezza disponibile. Non cambia il ritmo con cui
+    // arrivano le righe — quello lo decide il DSP — cambia quanto spazio si dà
+    // a ciascuna: è lo zoom dell'asse dei tempi, e serve a leggere la struttura
+    // di una trasmissione breve, dove a piena storia una sillaba è alta due
+    // pixel.
+    LevelRow {
+        Layout.fillWidth: true
+        label: qsTr("Zoom del tempo")
+        readout: root.panadapter.historySeconds > 0
+                 ? qsTr("%1 s").arg((root.panadapter.historySeconds
+                                     * root.panadapter.timeSpan).toFixed(1))
+                 : qsTr("×%1").arg((1 / root.panadapter.timeSpan).toFixed(1))
+        from: 0.1; to: 1
+        value: root.panadapter.timeSpan
+        onMoved: (v) => root.panadapter.timeSpan = v
+    }
+
+    // Il fermo immagine ferma lo schermo, non la radio: le righe continuano ad
+    // arrivare e a essere consumate — se non lo fossero il ring si riempirebbe
+    // e il DSP comincerebbe a scartare. Serve tutte le volte che qualcosa passa
+    // e non si fa in tempo a leggerlo.
+    DsdrButton {
+        Layout.fillWidth: true
+        implicitWidth: 0
+        text: root.panadapter.frozen ? qsTr("Riprendi") : qsTr("Ferma l'immagine")
+        checkable: true
+        checked: root.panadapter.frozen
+        onClicked: root.panadapter.frozen = checked
+    }
+
     // ── Tenuta dei picchi ────────────────────────────────────────────────
     DsdrButton {
         Layout.fillWidth: true
@@ -308,6 +381,56 @@ ColumnLayout {
     }
 
     // ── Scena in rilievo ─────────────────────────────────────────────────
+    //
+    // Tre inquadrature pronte, prima dei tre cursori che le compongono.
+    // Inclinazione, rotazione e rilievo sono tre numeri che si azzeccano solo
+    // insieme, e chi apre la vista in rilievo per la prima volta non ha modo di
+    // sapere quali: ne prova uno per volta, trova una scena illeggibile e torna
+    // al piatto. I preset sono le combinazioni che funzionano; i cursori
+    // restano, per chi vuole andare oltre.
+    RowLayout {
+        Layout.fillWidth: true
+        visible: root.showRelief
+        spacing: Theme.spacingTight
+
+        DsdrButton {
+            Layout.fillWidth: true
+            implicitWidth: 0
+            // Quasi allo zenit: è il waterfall piatto con l'ombreggiatura, e
+            // legge le frequenze come quello — ma una cresta si vede alzarsi.
+            text: qsTr("Dall'alto")
+            onClicked: {
+                root.panadapter.tilt = 85
+                root.panadapter.rotation3d = 0
+                root.panadapter.reliefScale = 0.30
+            }
+        }
+
+        DsdrButton {
+            Layout.fillWidth: true
+            implicitWidth: 0
+            text: qsTr("Prospettiva")
+            onClicked: {
+                root.panadapter.tilt = 58
+                root.panadapter.rotation3d = 0
+                root.panadapter.reliefScale = 0.45
+            }
+        }
+
+        DsdrButton {
+            Layout.fillWidth: true
+            implicitWidth: 0
+            // Radente e girata: le creste si sovrappongono, e si legge
+            // l'andamento nel tempo di un singolo segnale.
+            text: qsTr("Di taglio")
+            onClicked: {
+                root.panadapter.tilt = 26
+                root.panadapter.rotation3d = -18
+                root.panadapter.reliefScale = 0.75
+            }
+        }
+    }
+
     LevelRow {
         Layout.fillWidth: true
         visible: root.showRelief
@@ -336,6 +459,21 @@ ColumnLayout {
         from: 0.05; to: 1.2
         value: root.panadapter.reliefScale
         onMoved: (v) => root.panadapter.reliefScale = v
+    }
+
+    // In prospettiva la stessa distanza sullo schermo vale frequenze diverse a
+    // seconda di quanto è lontana la riga: senza un reticolo su cui
+    // appoggiarsi si vede *che* c'è un segnale, non *dove*.
+    LevelRow {
+        Layout.fillWidth: true
+        visible: root.showRelief
+        label: qsTr("Reticolo")
+        readout: root.panadapter.reliefGrid < 0.01
+                 ? qsTr("no")
+                 : qsTr("%1%").arg(Math.round(root.panadapter.reliefGrid * 100))
+        from: 0; to: 1
+        value: root.panadapter.reliefGrid
+        onMoved: (v) => root.panadapter.reliefGrid = v
     }
 
     // I cursori di livello seguono la misura finché comanda l'auto-range:

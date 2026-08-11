@@ -126,6 +126,29 @@ Item {
     /// Quota di altezza occupata dallo spettro; il resto è waterfall.
     readonly property real spectrumRatio: 0.45
 
+    /// Frequenza del ricevitore scelto: la scrive il suo delegate.
+    property real currentChannelHz: 0
+
+    // ── Righello ─────────────────────────────────────────────────────────
+    //
+    // Si prende con Shift e si trascina. Misura quanto è larga una emissione o
+    // quanto distano due stazioni — a occhio, contro una griglia da dieci
+    // kilohertz, quella misura non si fa.
+    //
+    // Resta disegnato dopo il rilascio: si misura per leggere il numero, e un
+    // numero che sparisce insieme al gesto va riletto mentre si tiene premuto.
+    // Lo toglie il primo clic che non è una misura.
+    property real rulerFromHz: 0
+    property bool rulerActive: false
+
+    /// Cambia a ogni riga di spettro misurata.
+    ///
+    /// Serve a far ricalcolare la lettura del mirino: `levelAt()` è una
+    /// funzione, e un binding che la chiama non ha modo di sapere che i dati
+    /// sotto sono cambiati — resterebbe fermo sul livello che c'era quando il
+    /// puntatore si è mosso l'ultima volta.
+    property int levelTick: 0
+
     /// Il panadattatore, per chi deve comandarne la resa da fuori.
     ///
     /// I comandi del waterfall vivono nella colonna dei pannelli, che è un
@@ -339,6 +362,18 @@ Item {
 
             onSelectRequested: Session.channels.currentIndex = index
 
+            // La frequenza del ricevitore scelto, per il mirino: è l'unico
+            // punto dell'albero in cui una riga del modello è già stata
+            // srotolata in proprietà, e chiederla di nuovo al modello vorrebbe
+            // dire tenerne una copia da riallineare a mano.
+            Binding {
+                target: root
+                property: "currentChannelHz"
+                value: plate.frequencyHz
+                when: Session.channels.currentIndex === plate.index
+                restoreMode: Binding.RestoreNone
+            }
+
             Component.onCompleted: {
                 x = Math.max(0, (root.width - width) / 2)
                 y = Theme.spacing + index * (implicitHeight + Theme.spacingTight)
@@ -349,9 +384,14 @@ Item {
 
     // ── Interazione: click-to-tune, pan, zoom ────────────────────────────
     MouseArea {
+        id: spectrumMouse
+
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
         cursorShape: root.viewSpan < 1 ? Qt.OpenHandCursor : Qt.CrossCursor
+        // Serve al mirino: è questo l'item che sa dove sta il puntatore sullo
+        // spettro, ed è già quello che possiede i gesti.
+        hoverEnabled: true
         z: -1
 
         onClicked: (mouse) => {
@@ -386,6 +426,9 @@ Item {
         /// soglia oltre la quale un gesto smette di essere un clic tremolante.
         property bool panned: false
 
+        /// Se il gesto in corso sta misurando invece di spostare la vista.
+        property bool measuring: false
+
         onPressed: (mouse) => {
             if (mouse.button === Qt.RightButton) {
                 if (Session.connected && Session.channels.currentIndex >= 0) {
@@ -395,13 +438,37 @@ Item {
                 return
             }
 
+            // Tasto centrale: un marcatore dove si punta, o via quello che c'è
+            // già lì. Lo stesso gesto nei due versi, così chi ne mette uno per
+            // sbaglio lo toglie ripetendo quello che ha appena fatto.
+            if (mouse.button === Qt.MiddleButton) {
+                if (Session.connected)
+                    Markers.toggle(root.frequencyAt(mouse.x))
+                return
+            }
+
+            // Shift: si sta misurando, non si sta spostando la vista.
+            measuring = (mouse.modifiers & Qt.ShiftModifier) !== 0
+            if (measuring) {
+                root.rulerFromHz = root.frequencyAt(mouse.x)
+                root.rulerActive = true
+                panned = true      // niente sintonia al rilascio: era una misura
+                return
+            }
+
+            // Un clic normale chiude la misura precedente: il righello resta
+            // disegnato dopo il rilascio — si misura per leggere il numero, e
+            // un numero che sparisce col gesto va riletto tenendo premuto — ma
+            // non deve restare lì per sempre.
+            root.rulerActive = false
+
             dragAnchorX = mouse.x
             dragAnchorStart = root.viewStart
             panned = false
         }
 
         onPositionChanged: (mouse) => {
-            if (!pressed)
+            if (!pressed || measuring)
                 return
             if (Math.abs(mouse.x - dragAnchorX) > 4)
                 panned = true
@@ -410,6 +477,8 @@ Item {
             const delta = (dragAnchorX - mouse.x) / Math.max(root.width, 1) * root.viewSpan
             root.viewStart = Math.max(0, Math.min(1 - root.viewSpan, dragAnchorStart + delta))
         }
+
+        onReleased: measuring = false
 
         onWheel: (wheel) => {
             if (!Session.connected)
@@ -434,6 +503,98 @@ Item {
             if (Session.channels.currentIndex >= 0)
                 Session.nudgeChannel(Session.channels.currentIndex, direction * step)
         }
+    }
+
+    // ── Marcatori ────────────────────────────────────────────────────────
+    //
+    // Non sono canali e non sono memorie: sono punti che si tengono d'occhio.
+    // Si mettono e si tolgono con il tasto centrale, che era l'unico dei tre
+    // libero — e che nessun altro gesto dello spettro usa, quindi metterne uno
+    // per sbaglio non fa altro.
+    //
+    // Sopra la griglia e sotto le targhe: devono vedersi, ma non coprire i
+    // comandi.
+    Repeater {
+        model: Markers.entries
+
+        delegate: Item {
+            required property var modelData
+
+            readonly property real markerX: root.xForFrequency(modelData.frequency)
+
+            anchors.fill: parent
+            visible: Session.connected && markerX >= -20 && markerX <= root.width + 20
+            z: 3
+
+            Rectangle {
+                x: Math.round(parent.markerX)
+                width: 1
+                y: 0
+                height: parent.height
+                color: Theme.spectrumPeak
+                opacity: 0.5
+            }
+
+            // L'etichetta in basso: in alto ci sono le targhe, e un marcatore
+            // messo sotto un ricevitore aperto sparirebbe proprio lì.
+            Rectangle {
+                x: Math.round(parent.markerX) - width / 2
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 2
+                width: markerLabel.implicitWidth + 8
+                height: markerLabel.implicitHeight + 4
+                radius: Theme.radiusSmall
+                color: Theme.surface
+                border.width: 1
+                border.color: Theme.spectrumPeak
+
+                Text {
+                    id: markerLabel
+                    anchors.centerIn: parent
+                    text: Markers.label(parent.parent.modelData)
+                    font.pixelSize: Theme.fontSmall
+                    font.family: Theme.monoFamily
+                    color: Theme.spectrumPeak
+                }
+            }
+        }
+    }
+
+    // ── Mirino ───────────────────────────────────────────────────────────
+    //
+    // Legge frequenza e livello sotto il puntatore. Non riceve gesti: quelli
+    // restano del MouseArea sotto, e un item che li prendesse romperebbe il
+    // click-to-tune — è già successo con i comandi del waterfall.
+    Connections {
+        target: panadapter
+        function onMeasuredLevelsChanged() { root.levelTick++ }
+    }
+
+    SpectrumCursor {
+        anchors.fill: parent
+        z: 8
+
+        // Il puntatore lo dà il MouseArea che possiede già i gesti dello
+        // spettro, e non un HoverHandler a parte: sopra le targhe è il loro
+        // MouseArea a prendere l'evento, e il mirino si spegne da sé — che è
+        // giusto, perché lì sotto non si sta guardando lo spettro.
+        readonly property real pointerX: spectrumMouse.containsMouse
+                                         ? spectrumMouse.mouseX : -1
+
+        cursorX: pointerX
+        cursorHz: root.frequencyAt(pointerX)
+        cursorLevelDb: {
+            root.levelTick    // dipendenza voluta: vedi `levelTick`
+            return panadapter.levelAt(root.viewStart
+                                      + (pointerX / Math.max(root.width, 1)) * root.viewSpan)
+        }
+        referenceHz: root.currentChannelHz
+        floorDb: panadapter.floorDb
+        ceilingDb: panadapter.ceilingDb
+        spectrumRatio: root.spectrumRatio
+        rulerActive: root.rulerActive
+        rulerFromHz: root.rulerFromHz
+        rulerX: root.xForFrequency(root.rulerFromHz)
     }
 
     // ── Spia di saturazione ──────────────────────────────────────────────
