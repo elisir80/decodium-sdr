@@ -318,12 +318,32 @@ Item {
     Repeater {
         model: Session.channels
 
+        // Una targa per ogni ricevitore aperto, non solo per quello scelto:
+        // con più ricevitori si sta seguendo più di una cosa, ed è lì che
+        // serve vedere frequenza e livello di tutti insieme.
+        //
+        // Niente anchors: la targa si sposta, e un ancoraggio la riporterebbe
+        // al suo posto al primo rilascio. La posizione di partenza è una
+        // scala — la prima in alto, le altre sotto — perché nascere tutte
+        // nello stesso punto vorrebbe dire trovarne una sola e doverle
+        // separare a mano ogni volta che se ne apre una.
         delegate: VfoPlate {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: parent.top
-            anchors.topMargin: Theme.spacing
-            z: 5
-            visible: Session.channels.currentIndex === index
+            id: plate
+
+            movable: true
+            visible: Session.connected
+
+            // Quella scelta sta sopra le altre: è quella che si guarda, e se
+            // finisce sotto si perde proprio mentre la si cerca.
+            z: Session.channels.currentIndex === index ? 6 : 5
+
+            onSelectRequested: Session.channels.currentIndex = index
+
+            Component.onCompleted: {
+                x = Math.max(0, (root.width - width) / 2)
+                y = Theme.spacing + index * (implicitHeight + Theme.spacingTight)
+                keepInside()
+            }
         }
     }
 
@@ -335,7 +355,7 @@ Item {
         z: -1
 
         onClicked: (mouse) => {
-            if (!Session.connected)
+            if (!Session.connected || panned)
                 return
             const target = Math.round(root.frequencyAt(mouse.x))
             if (Session.channels.currentIndex >= 0)
@@ -357,6 +377,15 @@ Item {
         property real dragAnchorX: 0
         property real dragAnchorStart: 0
 
+        /// Se il gesto in corso ha spostato lo spettro.
+        ///
+        /// `onClicked` di un MouseArea scatta anche dopo un trascinamento, e
+        /// senza questa distinzione ogni pan finiva con una sintonia: si
+        /// spostava la vista per andare a vedere un segnale e il ricevitore si
+        /// piazzava dove capitava di lasciare il dito. Quattro punti sono la
+        /// soglia oltre la quale un gesto smette di essere un clic tremolante.
+        property bool panned: false
+
         onPressed: (mouse) => {
             if (mouse.button === Qt.RightButton) {
                 if (Session.connected && Session.channels.currentIndex >= 0) {
@@ -368,10 +397,15 @@ Item {
 
             dragAnchorX = mouse.x
             dragAnchorStart = root.viewStart
+            panned = false
         }
 
         onPositionChanged: (mouse) => {
-            if (!pressed || root.viewSpan >= 1)
+            if (!pressed)
+                return
+            if (Math.abs(mouse.x - dragAnchorX) > 4)
+                panned = true
+            if (root.viewSpan >= 1)
                 return
             const delta = (dragAnchorX - mouse.x) / Math.max(root.width, 1) * root.viewSpan
             root.viewStart = Math.max(0, Math.min(1 - root.viewSpan, dragAnchorStart + delta))

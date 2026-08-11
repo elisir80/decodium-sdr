@@ -31,6 +31,38 @@ Rectangle {
     /// Larghezza del filtro: è il numero che si legge, non i due estremi.
     readonly property int filterWidthHz: Math.max(0, filterHighHz - filterLowHz)
 
+    /// Chi prende una targa sta lavorando su quel ricevitore: prenderla lo
+    /// sceglie, come prendere il flag sullo spettro.
+    signal selectRequested()
+
+    /// La targa si prende per la maniglia e si mette dove si vuole.
+    ///
+    /// Con un ricevitore solo, in cima al centro andava bene. Con quattro,
+    /// una sopra l'altra, le targhe coprono la parte di spettro che si sta
+    /// guardando — e quale sia la parte che dà fastidio lo sa solo chi ascolta.
+    property bool movable: false
+
+    /// Riporta la targa dentro il riquadro che la ospita.
+    ///
+    /// Serve quando la finestra si stringe: una targa lasciata a destra
+    /// finirebbe fuori dal bordo e non ci sarebbe più modo di riprenderla, se
+    /// non allargando di nuovo la finestra.
+    function keepInside() {
+        if (!parent)
+            return
+        x = Math.max(0, Math.min(Math.max(0, parent.width - width), x))
+        y = Math.max(0, Math.min(Math.max(0, parent.height - height), y))
+    }
+
+    Connections {
+        target: root.parent
+        enabled: root.movable && root.parent !== null
+        ignoreUnknownSignals: true
+
+        function onWidthChanged() { root.keepInside() }
+        function onHeightChanged() { root.keepInside() }
+    }
+
     /// Nome dell'AGC. Il modello espone il numero del modo, non la sua
     /// etichetta; la tabella dei nomi la tiene la sessione, tradotta.
     readonly property string agcName: {
@@ -48,10 +80,113 @@ Rectangle {
     border.width: 1
     border.color: root.channelColor
 
+    // La targa ferma i gesti che le arrivano sopra.
+    //
+    // È opaca, e sotto scorre lo spettro: senza questo, un clic su una sua
+    // parte vuota attraversa e finisce nel click-to-tune, che sposta il
+    // canale. Si preme un pezzo di targa per leggere meglio un numero e la
+    // radio cambia frequenza — e non c'è modo di collegare le due cose. Anche
+    // la rotellina si ferma qui: sotto c'è lo zoom dello spettro, e girarla
+    // sopra una targa non deve muovere il mondo dietro.
+    //
+    // Sta dichiarata **prima** della riga dei comandi, quindi le resta sotto:
+    // la maniglia e i comandi ricevono i gesti per primi. Un TapHandler sul
+    // riquadro faceva la stessa cosa in apparenza e prendeva il gesto prima
+    // che il trascinamento potesse cominciare — la targa non si spostava più.
+    MouseArea {
+        id: plateArea
+
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+        hoverEnabled: true
+        cursorShape: overHandle || drag.active
+                     ? (drag.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
+                     : Qt.ArrowCursor
+
+        /// Se il puntatore sta sulla maniglia, cioè nella fascia a sinistra.
+        ///
+        /// Il bordo si ricava sommando dove comincia la riga dei comandi e
+        /// dove finisce la maniglia dentro di essa: la riga è centrata nella
+        /// targa, quindi la maniglia non parte dal bordo del riquadro e
+        /// misurare dal bordo darebbe una zona sfalsata di qualche punto —
+        /// abbastanza da mancarla proprio dove si prova a prenderla.
+        readonly property real handleEdge: row.x + handleZone.x + handleZone.width
+        readonly property bool overHandle: root.movable && mouseX <= handleEdge
+
+        drag.axis: Drag.XAndYAxis
+        drag.minimumX: 0
+        drag.maximumX: Math.max(0, (root.parent ? root.parent.width : 0) - root.width)
+        drag.minimumY: 0
+        drag.maximumY: Math.max(0, (root.parent ? root.parent.height : 0) - root.height)
+
+        // Il bersaglio del trascinamento si decide al momento della presa: la
+        // targa si sposta solo se il gesto nasce sulla maniglia, e altrove il
+        // gesto resta un clic.
+        //
+        // Un solo MouseArea per tutta la targa, e non due — uno per la
+        // maniglia e uno per il resto — perché due si contendono la presa: il
+        // secondo prendeva il gesto e il primo non trascinava più, e dall'alto
+        // sembrava che la maniglia non facesse niente.
+        onPressed: (mouse) => {
+            drag.target = overHandle ? root : null
+            root.selectRequested()
+        }
+
+        onReleased: drag.target = null
+
+        // La rotellina si ferma qui: sotto c'è lo zoom dello spettro, e
+        // girarla sopra una targa non deve muovere il mondo dietro.
+        onWheel: (wheel) => wheel.accepted = true
+    }
+
     RowLayout {
         id: row
         anchors.centerIn: parent
         spacing: Theme.spacingLoose
+
+        // ── Maniglia ─────────────────────────────────────────────────────
+        //
+        // Il trascinamento sta su una maniglia e non su tutta la targa: qui
+        // dentro ci sono un cursore del volume e una frequenza che si edita a
+        // cifre, e un gesto che comincia su quelli deve restare loro.
+        Item {
+            id: handleZone
+
+            visible: root.movable
+            // Il bersaglio è più largo dei puntini che si vedono: otto punti
+            // di larghezza sono una cosa che si manca, e mancarla qui non
+            // significa non fare niente — significa che il gesto arriva allo
+            // spettro sotto, che lo interpreta come una sintonia.
+            implicitWidth: 22
+            implicitHeight: 26
+
+            Column {
+                anchors.centerIn: parent
+                spacing: 3
+
+                Repeater {
+                    model: 4
+
+                    delegate: Row {
+                        spacing: 3
+
+                        Repeater {
+                            model: 2
+
+                            delegate: Rectangle {
+                                width: 2
+                                height: 2
+                                radius: 1
+                                color: plateArea.drag.active ? Theme.accent
+                                     : plateArea.overHandle ? Theme.textPrimary
+                                     : Theme.textDisabled
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
 
         // ── Etichetta del canale ─────────────────────────────────────────
         Rectangle {
