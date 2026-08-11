@@ -33,11 +33,19 @@ void CatController::open(const QString &portName, int baudRate)
     if (!m_driver)
         return;
 
+    const QList<int> candidates = m_driver->candidateBaudRates();
+
     bool ok = false;
     if (baudRate > 0) {
         ok = m_driver->open(portName, baudRate);
+    } else if (candidates.isEmpty()) {
+        // Un driver che non propone velocità non ha una linea seriale da
+        // regolare — è il caso di rigctld, che parla su TCP. Si apre e basta:
+        // il ciclo qui sotto, su un elenco vuoto, non aprirebbe mai e il
+        // device fallirebbe con «la radio non risponde», che sarebbe falso.
+        ok = m_driver->open(portName, 0);
     } else {
-        for (int rate : m_driver->candidateBaudRates()) {
+        for (int rate : candidates) {
             if (m_driver->open(portName, rate)) {
                 baudRate = rate;
                 ok = true;
@@ -92,7 +100,7 @@ void CatController::poll()
 
     m_failures = 0;
     emit stateRead(m_state.frequencyHz, static_cast<int>(m_state.mode),
-                   m_state.transmitting, m_state.sMeterRaw);
+                   m_state.transmitting, m_state.sMeterRaw, m_state.signalDbm);
 }
 
 void CatController::setFrequency(qint64 hz)

@@ -40,15 +40,81 @@ poco — basta un comando andato storto mentre la radio cambiava banda — ma
 continuare a disegnare il panadattatore sulla vecchia frequenza sarebbe peggio
 che fermarsi: senza CAT non sappiamo più dove siamo.
 
-## Due lingue: `newcat` e `civ`
+## Tre lingue: `newcat`, `civ` e `rigctld`
 
 Sulla stessa porta seriale non c'è modo di sapere quale protocollo parli la
-radio senza provare. La discovery prova la prima, poi la seconda.
+radio senza provare. La discovery prova la prima, poi la seconda; la terza non
+sta su una seriale ma su TCP, e si guarda per prima perché costa una
+connessione.
 
 | Driver | Radio | Protocollo |
 |---|---|---|
 | `newcat` | Yaesu FT-991A, FT-891, FT-710, FT-DX10 | comandi ASCII chiusi da `;` |
 | `civ` | Icom IC-7300, IC-7610, IC-7851, IC-9700, IC-705 | telai binari su bus |
+| `rigctld` | qualunque radio che hamlib conosca | testo su TCP |
+
+## Il driver `rigctld` (hamlib in rete)
+
+Hamlib parla con qualche centinaio di modelli, e nessuno di noi ha quei modelli
+sul tavolo per scriverne i driver. `rigctld` è il modo in cui quel lavoro si
+riusa **senza linkare hamlib e senza copiarne una riga**: è un demone che tiene
+la porta seriale e accetta comandi su TCP.
+
+```sh
+rigctld -m 1035 -r COM5 -s 38400 -t 4532     # FT-991A
+rigctld -m 3073 -r /dev/ttyUSB0 -t 4533      # IC-7300, su un'altra porta
+rigctld -l                                    # l'elenco dei modelli
+```
+
+Da lì in poi è un `ICatDriver` come gli altri: il backend non sa che dall'altra
+parte c'è una rete, e non deve saperlo. Cambia solo che l'indirizzo è un
+`host:porta` e che la velocità di linea non esiste — la governa il demone, che
+è chi ha la seriale in mano.
+
+**Dove si cerca.** Di fabbrica `127.0.0.1:4532` e `127.0.0.1:4533`. La prima è
+la porta di fabbrica del demone; la seconda perché quando il server rigctl di
+DECODIUM SDR è acceso occupa la 4532 e chi avvia rigctld ripiega. Per un demone
+su un'altra macchina — che è il caso per cui rigctld esiste — si passa
+l'elenco:
+
+```sh
+DSDR_RIGCTLD=shack.lan:4532,192.168.1.40 decodium-sdr
+```
+
+**Non ci si attacca a sé stessi.** DECODIUM SDR espone a sua volta un server
+rigctl sulla 4532: sondare quella porta trova noi. La sonda chiede
+`+\dump_caps` e pretende un `RPRT 0`; il nostro server risponde `RPRT -4`
+perché quel comando non lo conosce, e il giro si chiude prima di cominciare.
+Non è un accorgimento fragile — è la stessa domanda che serve comunque a sapere
+che radio c'è dall'altra parte.
+
+**Il protocollo esteso.** Ogni comando si manda preceduto da `+`, e allora
+rigctld risponde con righe `Nome: valore` e chiude con `RPRT n`. Il protocollo
+corto risponde con i soli valori, uno per riga, e chi legge deve sapere a
+memoria quanti sono e in che ordine — un modo eccellente di scambiare la
+larghezza del filtro per il modo. Costa qualche byte in più su una connessione
+che di solito è verso `127.0.0.1`.
+
+| Comando | A cosa serve |
+|---|---|
+| `\dump_caps` | chi c'è dall'altra parte, e il nome del modello |
+| `\get_freq` / `\set_freq` | frequenza |
+| `\get_mode` / `\set_mode` | modo (la larghezza si lascia a zero: quella della radio) |
+| `\get_ptt` / `\set_ptt` | PTT |
+| `\get_level STRENGTH` | S-meter, in decibel rispetto a S9 |
+
+**L'S-meter arriva tarato, e resta tarato.** Le altre due lingue mandano la
+lettura grezza dello strumento della radio — un numero fra 0 e 255 il cui
+significato dipende dal modello. Hamlib invece restituisce decibel rispetto a
+S9, cioè una misura già interpretata dal profilo che hamlib ha di quella radio:
+`CatState::signalDbm` la porta fino al meter così com'è. Farla passare per la
+scala grezza vorrebbe dire buttare via proprio ciò che la rende utile — quella
+scala si ferma a −60 dBm, che è S9+13, e un locale a S9+40 ci arriverebbe
+schiacciato contro il fondo senza che nessuno se ne accorga.
+
+Se la radio non sa dire lo `STRENGTH` — capita, non tutti i backend di hamlib
+lo implementano — si smette di chiederlo al primo rifiuto, e il livello resta
+quello misurato sull'audio.
 
 ## Il driver `civ` (Icom)
 

@@ -26,6 +26,7 @@
 #include <QPointer>
 
 #include <atomic>
+#include <limits>
 #include <memory>
 
 class QThread;
@@ -88,7 +89,8 @@ public:
     QVariant nativeCommand(const QString &command, const QVariantMap &args) override;
 
 private slots:
-    void onCatState(qint64 frequencyHz, int mode, bool transmitting, int sMeterRaw);
+    void onCatState(qint64 frequencyHz, int mode, bool transmitting, int sMeterRaw,
+                    double signalDbm);
     void onCatLost(const QString &reason);
 
 private:
@@ -107,6 +109,11 @@ private:
     double m_sampleRate = 48000.0;
     DemodMode m_radioMode = DemodMode::Usb;
     int m_sMeterRaw = -1;
+
+    /// Il livello tarato, quando il CAT sa darlo. NaN altrimenti: allora si
+    /// ricade sulla lettura grezza, che è quello che una radio manda sulla
+    /// seriale e che senza il profilo del modello vale a occhio.
+    double m_signalDbm = std::numeric_limits<double>::quiet_NaN();
 
     QHash<ChannelId, RxChannelConfig> m_channels;
     QHash<PanId, PanConfig> m_panadapters;

@@ -60,10 +60,14 @@ PanelFrame {
                 const s = root.status
                 if (!Session.connected)
                     return qsTr("non collegata")
-                return qsTr("%1 · %2 a %3 baud")
-                    .arg(s.radio || qsTr("radio"))
-                    .arg(s.catPort || "—")
-                    .arg(s.catBaud || 0)
+                const radio = s.radio || qsTr("radio")
+                const port = s.catPort || "—"
+                // Zero baud vuol dire che non è una seriale: con rigctld la
+                // velocità di linea la governa il demone, e stamparne una
+                // farebbe cercare a qualcuno una porta che non esiste.
+                if (!s.catBaud)
+                    return qsTr("%1 · %2").arg(radio).arg(port)
+                return qsTr("%1 · %2 a %3 baud").arg(radio).arg(port).arg(s.catBaud)
             }
             font.pixelSize: Theme.fontSmall
             font.family: Theme.monoFamily

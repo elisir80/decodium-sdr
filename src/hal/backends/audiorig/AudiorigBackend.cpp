@@ -3,6 +3,7 @@
 #include "hal/backends/audiorig/CatController.h"
 #include "hal/backends/audiorig/CivDriver.h"
 #include "hal/backends/audiorig/NewcatDriver.h"
+#include "hal/backends/audiorig/RigctldDriver.h"
 #include "audio/AudioOut.h"
 #include "audio/MicSource.h"
 #include "hal/HalLog.h"
@@ -13,6 +14,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
 
 namespace dsdr::hal::audiorig {
 
@@ -26,6 +28,40 @@ constexpr double kAudioRate = 48000.0;
 /// Cadenza con cui si annuncia l'audio disponibile: ~21 ms, la stessa misura
 /// del blocco degli altri backend.
 constexpr int kPublishIntervalMs = 20;
+
+/// Il driver CAT che porta questo nome.
+///
+/// Restava da fare: `open()` costruiva sempre un NewcatDriver, anche quando la
+/// sonda aveva trovato una Icom — la radio compariva nell'elenco e poi non
+/// rispondeva a nessun comando. Con tre driver la scelta va fatta per nome, e
+/// il nome è quello che la sonda ha messo nel descrittore.
+std::unique_ptr<ICatDriver> makeCatDriver(const QString &driverId)
+{
+    if (driverId == QLatin1String("civ"))
+        return std::make_unique<CivDriver>();
+    if (driverId == QLatin1String("rigctld"))
+        return std::make_unique<RigctldDriver>();
+    return std::make_unique<NewcatDriver>();
+}
+
+/// Gli indirizzi dove cercare un `rigctld`.
+///
+/// La 4532 è la porta di fabbrica del demone. Sulla stessa porta ascolta anche
+/// il server rigctl di DECODIUM SDR, e infatti quando è acceso il demone non
+/// riesce a prenderla e chi lo avvia sceglie la 4533: si guardano entrambe.
+/// Attaccarsi a sé stessi non può succedere — la sonda pretende una risposta a
+/// `\dump_caps`, che il nostro server non implementa.
+///
+/// `DSDR_RIGCTLD` sostituisce l'elenco, separando gli indirizzi con la
+/// virgola: serve a chi tiene il demone su un'altra macchina, che è il caso
+/// per cui rigctld esiste.
+QStringList rigctldEndpoints()
+{
+    const QString configured = qEnvironmentVariable("DSDR_RIGCTLD");
+    if (!configured.trimmed().isEmpty())
+        return configured.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    return {QStringLiteral("127.0.0.1:4532"), QStringLiteral("127.0.0.1:4533")};
+}
 
 /// Il codec di una radio si riconosce dalla descrizione. Non è una certezza —
 /// per questo l'ingresso resta scegliibile dal pannello — ma indovinarlo
@@ -169,13 +205,15 @@ void AudiorigBackend::startDiscovery()
     //
     // Serve anche alla suite: la conformance apre un backend per ogni prova, e
     // una sonda per prova la faceva durare due minuti.
-    if (qEnvironmentVariableIsSet("DSDR_AUDIORIG_NO_PROBE")) {
+    // La sonda seriale si può spegnere; quella di rete no, perché non ha
+    // niente da cui proteggersi: una connessione TCP rifiutata non alza
+    // nessuna linea su nessun cavo.
+    const bool probeSerial = !qEnvironmentVariableIsSet("DSDR_AUDIORIG_NO_PROBE");
+    if (!probeSerial) {
         qCInfo(dsdrHal) << "audiorig: sonda delle porte seriali disattivata "
                            "(DSDR_AUDIORIG_NO_PROBE)";
-        setState(m_open ? BackendState::Streaming : BackendState::Idle);
-        emit discoveryFinished();
-        return;
     }
+
     m_discovering = true;
     m_abortDiscovery.store(false, std::memory_order_release);
     setState(BackendState::Discovering);
@@ -184,8 +222,50 @@ void AudiorigBackend::startDiscovery()
     // con la sua attesa, sono secondi interi. Sul thread del seam sarebbero
     // secondi di applicazione ferma, e nessuno collegherebbe la cosa alla
     // porta seriale.
-    QThread *prober = QThread::create([this] {
-        const QList<QSerialPortInfo> ports = QSerialPortInfo::availablePorts();
+    QThread *prober = QThread::create([this, probeSerial] {
+        // ── rigctld, sulla rete ─────────────────────────────────────────
+        //
+        // Prima delle seriali: è la via con cui una radio che nessuno di noi
+        // ha sul tavolo diventa comandabile, e costa una connessione TCP che
+        // su localhost o fallisce o riesce in un millesimo di secondo.
+        for (const QString &endpoint : rigctldEndpoints()) {
+            if (m_abortDiscovery.load(std::memory_order_acquire))
+                break;
+
+            RigctldDriver driver;
+            if (driver.probe(endpoint.trimmed()) < 0)
+                continue;
+
+            DeviceDescriptor device;
+            device.backendId = backendId();
+            // L'indirizzo *è* l'identità: è quello che resta uguale fra un
+            // riavvio e l'altro, e due demoni su due porte sono due radio.
+            device.deviceId = QStringLiteral("rigctld@") + endpoint.trimmed();
+            device.model = driver.radioModel();
+            device.displayName = tr("%1 (rigctld %2)")
+                                     .arg(driver.radioModel(), endpoint.trimmed());
+            device.transport = QStringLiteral("net");
+            device.address = endpoint.trimmed();
+            device.extra.insert(QStringLiteral("catPort"), endpoint.trimmed());
+            device.extra.insert(QStringLiteral("catBaud"), 0);
+            device.extra.insert(QStringLiteral("catDriver"), driver.driverId());
+
+            const QAudioDevice input = pickInput(QString());
+            if (!input.isNull()) {
+                device.extra.insert(QStringLiteral("audioInput"),
+                                    QString::fromUtf8(input.id()));
+                device.extra.insert(QStringLiteral("audioInputName"), input.description());
+            }
+
+            driver.close();
+            QMetaObject::invokeMethod(this, [this, device] {
+                emit deviceFound(device);
+            }, Qt::QueuedConnection);
+        }
+
+        // ── Le porte seriali ────────────────────────────────────────────
+        const QList<QSerialPortInfo> ports =
+            probeSerial ? QSerialPortInfo::availablePorts() : QList<QSerialPortInfo>();
         for (const QSerialPortInfo &info : ports) {
             if (m_abortDiscovery.load(std::memory_order_acquire))
                 break;
@@ -315,7 +395,8 @@ void AudiorigBackend::open(const DeviceDescriptor &device)
     }
 
     // ── Piano di controllo ──────────────────────────────────────────────
-    auto controller = new CatController(std::make_unique<NewcatDriver>());
+    const QString catDriverId = device.extra.value(QStringLiteral("catDriver")).toString();
+    auto controller = new CatController(makeCatDriver(catDriverId));
     m_catThread = new QThread(this);
     m_catThread->setObjectName(QStringLiteral("dsdr-audiorig-cat"));
     controller->moveToThread(m_catThread);
@@ -325,7 +406,13 @@ void AudiorigBackend::open(const DeviceDescriptor &device)
     connect(controller, &CatController::opened, this,
             [this](const QString &model, const QString &port, int baud) {
                 m_radioModel = model;
-                qCInfo(dsdrHal) << "audiorig: CAT aperto su" << port << baud << "baud —" << model;
+                // Zero baud vuol dire che non è una seriale: su rigctld la
+                // velocità di linea la governa il demone, e stamparne una
+                // farebbe cercare a qualcuno una porta che non esiste.
+                if (baud > 0)
+                    qCInfo(dsdrHal) << "audiorig: CAT aperto su" << port << baud << "baud —" << model;
+                else
+                    qCInfo(dsdrHal) << "audiorig: CAT aperto su" << port << "—" << model;
                 emit capabilitiesChanged();
             });
     m_cat = controller;
@@ -407,7 +494,15 @@ void AudiorigBackend::publishAudio()
     // e non risente del volume, che l'operatore muove di continuo. La
     // conversione in punti S dipende dal modello (SPEC-004 §8.2) e per ora si
     // consegna la lettura grezza normalizzata.
-    if (m_sMeterRaw >= 0)
+    //
+    // Con rigctld il livello arriva già in decibel rispetto a S9, cioè tarato
+    // dal profilo che hamlib ha di quella radio: si consegna così com'è.
+    // Riportarlo sulla scala grezza e riconvertirlo qui vorrebbe dire perdere
+    // proprio la taratura — la scala grezza si ferma a −60 dBm, che è S9+13, e
+    // qualunque segnale più forte arriverebbe schiacciato lì.
+    if (std::isfinite(m_signalDbm))
+        meters.signalDbm = static_cast<float>(m_signalDbm);
+    else if (m_sMeterRaw >= 0)
         meters.signalDbm = -127.0f + static_cast<float>(m_sMeterRaw) * (67.0f / 255.0f);
     emit meterUpdate(meters);
 }
@@ -553,9 +648,11 @@ SampleRing *AudiorigBackend::spectrumStream(PanId pan) const
     return nullptr;   // lo spettro lo calcola il client, dall'audio
 }
 
-void AudiorigBackend::onCatState(qint64 frequencyHz, int mode, bool transmitting, int sMeterRaw)
+void AudiorigBackend::onCatState(qint64 frequencyHz, int mode, bool transmitting,
+                                 int sMeterRaw, double signalDbm)
 {
     m_sMeterRaw = sMeterRaw;
+    m_signalDbm = signalDbm;
     m_radioMode = static_cast<DemodMode>(mode);
 
     if (frequencyHz > 0 && frequencyHz != m_centerHz) {

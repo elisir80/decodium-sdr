@@ -120,6 +120,8 @@ if(DSDR_BACKEND_AUDIORIG)
             backends/audiorig/NewcatDriver.cpp
             backends/audiorig/CivDriver.h
             backends/audiorig/CivDriver.cpp
+            backends/audiorig/RigctldDriver.h
+            backends/audiorig/RigctldDriver.cpp
             backends/audiorig/CatController.h
             backends/audiorig/CatController.cpp
             backends/audiorig/AudiorigBackend.h
@@ -127,6 +129,9 @@ if(DSDR_BACKEND_AUDIORIG)
         )
         list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_AUDIORIG)
         set(DSDR_HAL_NEEDS_SERIAL ON)
+        # rigctld parla su TCP: il driver di rete sta dentro audiorig, e con
+        # lui ci sta la dipendenza da Qt6::Network.
+        set(DSDR_HAL_NEEDS_NETWORK ON)
         set(DSDR_BUILT_AUDIORIG ON CACHE INTERNAL "audiorig compilato davvero")
     else()
         # Chi compila per sé può farne a meno, e lo si dice e basta. Chi

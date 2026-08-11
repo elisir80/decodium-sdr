@@ -19,6 +19,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <limits>
+
 namespace dsdr::hal::audiorig {
 
 /// Ciò che una lettura CAT restituisce. I campi che la radio non sa dire
@@ -31,6 +33,18 @@ struct CatState
     /// Lettura grezza dell'S-meter, 0…255. La conversione in punti S dipende
     /// dal modello e sta nel profilo, non qui (SPEC-004 §8.2).
     int sMeterRaw = -1;
+
+    /// Il livello in dBm, quando il driver lo sa davvero.
+    ///
+    /// La lettura grezza è quella che una radio manda sulla seriale: un numero
+    /// fra 0 e 255 il cui significato dipende dal modello, e che senza il
+    /// profilo di quel modello si può solo interpretare a occhio. Hamlib
+    /// invece restituisce decibel rispetto a S9, cioè una misura tarata: farla
+    /// passare per la scala grezza vorrebbe dire buttare via l'unica cosa che
+    /// la rende utile, e riprenderla dall'altra parte con un'approssimazione.
+    ///
+    /// NaN quando non si sa: il chiamante allora ricade sulla lettura grezza.
+    double signalDbm = std::numeric_limits<double>::quiet_NaN();
 };
 
 class ICatDriver

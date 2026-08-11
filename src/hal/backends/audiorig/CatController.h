@@ -33,7 +33,10 @@ public:
 signals:
     /// Una lettura completa. Il modo viaggia come intero perché attraversa i
     /// thread e non vale la pena registrare un metatype per un enum.
-    void stateRead(qint64 frequencyHz, int mode, bool transmitting, int sMeterRaw);
+    /// `signalDbm` è NaN quando la radio non sa dire un livello tarato: allora
+    /// vale `sMeterRaw`, che è la lettura grezza del suo strumento.
+    void stateRead(qint64 frequencyHz, int mode, bool transmitting, int sMeterRaw,
+                   double signalDbm);
 
     /// La radio ha smesso di rispondere. È una cosa seria: senza CAT il
     /// panadattatore non sa più dove sta, e continuare a disegnarlo sulla

@@ -60,6 +60,14 @@ if(DSDR_BUILT_AUDIORIG)
     dsdr_add_test(tst_civ
         SOURCES tst_civ.cpp
         LIBRARIES dsdr::hal)
+
+    # rigctld: l'indirizzo, i campi delle risposte estese e la conversione
+    # dell'S-meter. In coda un finto demone di quindici righe, che presidia
+    # l'unica cosa che le funzioni pure non vedono — che la sonda non si
+    # attacchi al server rigctl di DECODIUM SDR, che sta sulla stessa porta.
+    dsdr_add_test(tst_rigctld
+        SOURCES tst_rigctld.cpp
+        LIBRARIES dsdr::hal Qt6::Network)
 endif()
 
 if(DSDR_BACKEND_COLIBRI)
