@@ -4,6 +4,26 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.4] — 2026-08-11
+
+**La 1.1.3 non vede le radio via CAT: usare questa.** Nei pacchetti Windows e
+Linux della 1.1.3 mancava il backend `audiorig` — quello che parla con un
+FT-991A, un IC-7300 e con ogni radio tradizionale collegata via audio e porta
+seriale. Il pacchetto macOS non era interessato.
+
+### Corretto
+
+- **Il backend CAT torna nei pacchetti.** Nessuno dei due workflow installava
+  `qt6-serialport`: senza quel modulo il backend si spegne da sé, e fa bene —
+  chi non ha una radio tradizionale non deve installare mezzo Qt per compilare
+  — ma lo diceva con una riga di log in mezzo a trecento. Nel pacchetto che
+  arriva all'operatore quella riga non c'è più: c'è solo un elenco di device in
+  cui la sua radio non compare.
+- **Un backend non può più sparire in silenzio da un pacchetto.**
+  `DSDR_STRICT_BACKENDS` trasforma un backend spento per dipendenze mancanti in
+  un errore di configurazione, e la release lo accende. Chi compila per sé
+  resta libero di farne a meno; chi costruisce per altri no.
+
 ## [1.1.3] — 2026-08-11
 
 Due strumenti nella colonna e un pacchetto Windows che si regge in piedi.
