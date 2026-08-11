@@ -177,8 +177,15 @@ Impostazioni della radio da verificare (i numeri di menù cambiano con il
 firmware):
 
 - **CAT RATE** al massimo supportato;
-- **CAT RTS** coerente con il metodo PTT scelto — noi usiamo `TX;` via comando,
-  quindi RTS può restare disattivato;
+- **CAT RTS**: noi usiamo `TX;` via comando per il PTT, quindi può restare
+  disattivato. Ma se è **abilitato** — ed è il valore di fabbrica su alcune
+  radio, fra cui il FTDX3000 — quella linea diventa il controllo di flusso: la
+  radio non manda una risposta finché RTS non è alto. Il driver se ne accorge
+  da sé, riprovando l'apertura con l'handshake hardware quando la radio non
+  risponde; il secondo tentativo si fa solo sulla porta che ha scelto
+  l'operatore, mai durante la scansione automatica — là si aprono porte di cui
+  non si sa nulla, e alzare RTS su un'interfaccia in cui è il PTT manderebbe
+  in aria una portante;
 - modo **DATA-USB** con sorgente di modulazione **USB** per il TX dati;
 - filtri DATA **LCUT/HCUT aperti**: sono loro a decidere quanto spettro
   vedremo, e chiusi strozzano la passata che alimenta il panadattatore.

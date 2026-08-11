@@ -56,7 +56,11 @@ public:
 private:
     /// Apre la porta e mette subito giù RTS e DTR. Separata dal resto perché
     /// la sonda la chiama una volta e poi cambia solo la velocità.
-    bool openPort(const QString &portName, int baudRate);
+    /// Apre la porta. Con `handshake` la linea RTS la governa Qt, che la
+    /// alza quando è pronto a ricevere: è quello che si aspetta una Yaesu con
+    /// «CAT RTS» abilitato — e con quell'opzione attiva, RTS basso significa
+    /// che la radio non manda risposte e ogni domanda scade.
+    bool openPort(const QString &portName, int baudRate, bool handshake = false);
 
     /// Chiede `ID;` e ne ricava il modello. Vero se dall'altra parte c'è una
     /// radio che parla newcat.
