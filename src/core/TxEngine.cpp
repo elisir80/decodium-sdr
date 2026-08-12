@@ -59,6 +59,7 @@ TxEngine::TxEngine(QObject *parent)
 
     m_speech.configure(m_audioRate);
     m_modulator.configure(m_audioRate);
+    m_cfc.configure(m_audioRate);
     m_keyer.configure(m_audioRate);
 
     m_audio.resize(kAudioBlockFrames);
@@ -403,6 +404,11 @@ void TxEngine::produce(std::size_t audioFrames)
             m_starved.fetch_add(audioFrames - got, std::memory_order_relaxed);
         }
         m_speech.process(m_audio.data(), audioFrames);
+        // Il multibanda dopo il processore di voce: quello livella e comprime
+        // la voce nel suo insieme, questo la divide in quattro e tratta ogni
+        // parte per conto suo. Invertirli vorrebbe dire dare al multibanda un
+        // segnale già schiacciato, su cui non ha più niente da distinguere.
+        m_cfc.process(m_audio.data(), audioFrames);
         m_micPeak.store(m_speech.lastInputPeak(), std::memory_order_relaxed);
         m_compressionDb.store(m_speech.lastCompressionDb(), std::memory_order_relaxed);
     }

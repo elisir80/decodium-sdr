@@ -65,6 +65,16 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
     Q_PROPERTY(dsdr::core::SpectrumFeed *audioSpectrum READ audioSpectrum CONSTANT)
 
+    // ── Compressore multibanda della voce (SPEC-005 §4.1) ───────────────
+    //
+    // Quattro bande, un comando solo. Sedici manopole sono il motivo per cui
+    // un multibanda resta spento nella maggior parte delle stazioni che ce
+    // l'hanno: nessuno sa da dove cominciare.
+    Q_PROPERTY(bool cfcEnabled READ cfcEnabled WRITE setCfcEnabled NOTIFY cfcChanged)
+    Q_PROPERTY(double cfcPunch READ cfcPunch WRITE setCfcPunch NOTIFY cfcChanged)
+    Q_PROPERTY(int cfcBandCount READ cfcBandCount CONSTANT)
+    Q_PROPERTY(QVariantList cfcReduction READ cfcReduction NOTIFY txMetersChanged)
+
     // ── Equalizzatore dell'ascolto (SPEC-005 §4.1) ──────────────────────
     //
     // Cinque campane sul percorso che arriva alle cuffie. Non su quello dei
@@ -268,6 +278,17 @@ public:
     /// portante a tre.
     double audioPeakDb() const { return m_audioPeakDb; }
     double audioRmsDb() const { return m_audioRmsDb; }
+
+    bool cfcEnabled() const;
+    void setCfcEnabled(bool enabled);
+    double cfcPunch() const;
+    void setCfcPunch(double punch);
+    int cfcBandCount() const;
+
+    /// Di quanto sta abbassando ogni banda, in decibel. È la misura che dice
+    /// quale parte della voce sta lavorando, ed è quella che si guarda invece
+    /// di fidarsi dell'orecchio.
+    QVariantList cfcReduction() const;
 
     bool audioEqEnabled() const;
     void setAudioEqEnabled(bool enabled);
@@ -598,6 +619,7 @@ signals:
     void streamHealthChanged();
     void audioToneChanged();
     void audioEqChanged();
+    void cfcChanged();
     void audioLevelsChanged();
     void neuralChanged();
     void overloadChanged();

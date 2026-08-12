@@ -23,6 +23,7 @@
 #include "dsp/SpectrumAnalyzer.h"
 #include "dsp/InterpolatorChain.h"
 #include "dsp/Modulator.h"
+#include "dsp/MultibandCompressor.h"
 #include "dsp/Nco.h"
 #include "dsp/SpeechProcessor.h"
 #include "dsp/SpscRing.h"
@@ -119,6 +120,9 @@ public slots:
     void setMicGainDb(double db);
     void setCompressionDb(double db);
 
+    /// Il compressore multibanda, per chi lo comanda e per chi lo misura.
+    dsp::MultibandCompressor &multiband() noexcept { return m_cfc; }
+
     /// Livello d'uscita 0…1, applicato in banda base. Non è la potenza del
     /// finale — quella la conosce solo la radio — ma quanto del fondo scala
     /// del convertitore si sta usando.
@@ -158,6 +162,11 @@ private:
     void configureMonitor();
 
     dsp::SpeechProcessor m_speech;
+
+    /// Il compressore multibanda (SPEC-005 §4.1). Sta dopo il processore di
+    /// voce e prima del livello: quello livella e comprime a banda intera,
+    /// questo divide la voce in quattro e tratta ogni parte per conto suo.
+    dsp::MultibandCompressor m_cfc;
     dsp::Modulator m_modulator;
     dsp::InterpolatorChain m_interpolator;
     dsp::CwKeyer m_keyer;

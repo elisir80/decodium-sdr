@@ -107,7 +107,19 @@ PanelFrame {
         "nr":    "M2,17 C20,12 44,16 70,14",
         "mon":   "M2,13 L10,13 L14,5 L20,21 L26,9 L32,17 L38,11 L46,14 L70,13",
         "eq":    "M2,16 C12,16 14,7 22,7 C30,7 32,19 42,19 C52,19 58,9 70,9",
+        "cfc":   "M6,24 L6,10 M20,24 L20,5 M34,24 L34,13 M48,24 L48,7 M62,24 L62,15",
     })
+
+    /// Quanto sta abbassando la banda che lavora di più, in decibel. È la
+    /// misura che dice se il multibanda sta esagerando, e sta sul collegamento
+    /// perché è quello che esce dal blocco.
+    readonly property real cfcWorking: {
+        const values = Session.cfcReduction
+        let worst = 0
+        for (let i = 0; i < values.length; ++i)
+            worst = Math.max(worst, values[i])
+        return worst
+    }
 
     /// Da dBFS a frazione di barretta. Sessanta decibel di scala: sotto non c'è
     /// niente da vedere, ed è la stessa scala della barra dei livelli audio.
@@ -192,6 +204,22 @@ PanelFrame {
             level: Session.transmitting
                    ? Math.min(1, Session.txCompressionMeter / 20) : -1
             tint: Session.txCompressionMeter > 12 ? Theme.spectrumPeak : Theme.success
+        }
+
+        ChainBlock {
+            title: qsTr("CFC")
+            glyph: root.glyphs.cfc
+            readout: Session.cfcEnabled ? qsTr("punch %1").arg(Session.cfcPunch.toFixed(1)) : ""
+            on: Session.cfcEnabled
+            warning: root.cfcWorking > 8
+            selected: root.picked === "cfc"
+            onToggled: Session.cfcEnabled = !Session.cfcEnabled
+            onPicked: root.picked = root.picked === "cfc" ? "" : "cfc"
+        }
+
+        ChainLink {
+            level: Session.cfcEnabled ? Math.min(1, root.cfcWorking / 12) : -1
+            tint: root.cfcWorking > 8 ? Theme.danger : Theme.spectrumPeak
         }
 
         ChainBlock {
@@ -445,6 +473,14 @@ PanelFrame {
                 wrapMode: Text.WordWrap
             }
 
+            // Il multibanda ha quattro misure e un comando: un cursore solo
+            // non basterebbe, e le quattro colonne sono la ragione per cui si
+            // guarda questo pannello invece di fidarsi dell'orecchio.
+            CfcBands {
+                Layout.fillWidth: true
+                visible: root.picked === "cfc"
+            }
+
             // Un cursore solo, quello che quel blocco ha davvero. I blocchi
             // con più di una regolazione — l'AGC, il filtro — mandano al loro
             // pannello: duplicare qui dieci comandi vorrebbe dire tenerne due
@@ -492,6 +528,7 @@ PanelFrame {
         "dnr": qsTr("DECODIUM NR"),
         "agc": qsTr("AGC"),
         "eq": qsTr("Equalizzatore d'ascolto"),
+        "cfc": qsTr("Compressore multibanda"),
     })[picked] || ""
 
     readonly property var detailHint: ({
@@ -507,6 +544,7 @@ PanelFrame {
         "dnr": qsTr("Lo stadio neurale. Costa un thread e qualche millisecondo di ritardo, e agisce solo sull'ascolto: il flusso verso i decoder resta lineare."),
         "agc": qsTr("Il modo e la soglia si scelgono dalla targa o dal pannello dei canali: sono due comandi, e qui ce ne sta uno."),
         "eq": qsTr("Cinque campane sull'ascolto. La curva si trascina nello studio audio, sopra lo spettro vivo: si muove il punto e si vede la voce cambiare forma sotto. Non tocca il percorso dei decoder."),
+        "cfc": qsTr("La voce divisa in quattro bande, ognuna con il suo compressore: una sibilante non abbassa più il corpo della voce, e un colpo sul microfono non fa sparire la presenza. Un comando solo muove le quattro soglie."),
     })[picked] || ""
 
     readonly property real detailFrom: ({

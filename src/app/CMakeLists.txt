@@ -40,6 +40,7 @@ set(DSDR_QML_FILES
     qml/AudioLevelBar.qml
     qml/ChainBlock.qml
     qml/ChainGlyph.qml
+    qml/CfcBands.qml
     qml/ChainEndpoint.qml
     qml/ChainLink.qml
     qml/ChainFlowPanel.qml

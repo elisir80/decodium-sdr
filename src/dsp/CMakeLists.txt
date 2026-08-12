@@ -39,6 +39,8 @@ add_library(dsdr_dsp STATIC
     OverloadGuard.cpp
     LmsFilter.h
     LmsFilter.cpp
+    MultibandCompressor.h
+    MultibandCompressor.cpp
     NotchFilter.h
     NotchFilter.cpp
     ParametricEq.h

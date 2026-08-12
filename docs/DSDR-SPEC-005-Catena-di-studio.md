@@ -64,6 +64,7 @@ e le misure che sappiamo fare.
 | TX | Compressore | quantità | compressione applicata |
 | TX | Filtro di trasmissione | larghezza | — |
 | TX | Modulatore | modo | — |
+| TX | CFC multibanda | punch (0–10) | riduzione per banda |
 | TX | Drive | livello | livello d'uscita |
 
 ## 4. Quello che manca (disegnato)
@@ -79,8 +80,12 @@ e le misure che sappiamo fare.
   catena di trasmissione resta da fare: là serve prima il resto della catena,
   perché un equalizzatore prima di un gate e di un leveller equalizza il
   respiro della stanza insieme alla voce.
-- **CFC — compressore multibanda**: la voce divisa in bande, ognuna con la sua
-  compressione. È il blocco che distingue una eSSB da una SSB alzata.
+- ~~**CFC — compressore multibanda**~~: fatto. Quattro bande — 50–250 il corpo,
+  250–700 il calore, 700–1800 la parola, 1800–4000 la presenza — separate con
+  Linkwitz-Riley del quarto ordine e ricostruite esatte, così che a riposo non
+  colori niente. Si comanda con un numero solo: sedici manopole sono il motivo
+  per cui un multibanda resta spento nella maggior parte delle stazioni che ce
+  l'hanno.
 - **Limiter**: l'ultimo, e l'unico che non deve mai lasciar passare niente
   oltre il fondo scala.
 

@@ -604,6 +604,47 @@ SpectrumFeed *SessionManager::audioSpectrum() const
     return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
 }
 
+bool SessionManager::cfcEnabled() const
+{
+    return m_tx && m_tx->multiband().isEnabled();
+}
+
+void SessionManager::setCfcEnabled(bool enabled)
+{
+    if (!m_tx || m_tx->multiband().isEnabled() == enabled)
+        return;
+    m_tx->multiband().setEnabled(enabled);
+    emit cfcChanged();
+}
+
+double SessionManager::cfcPunch() const
+{
+    return m_tx ? m_tx->multiband().punch() : 0.0;
+}
+
+void SessionManager::setCfcPunch(double punch)
+{
+    if (!m_tx || qFuzzyCompare(m_tx->multiband().punch(), punch))
+        return;
+    m_tx->multiband().setPunch(punch);
+    emit cfcChanged();
+}
+
+int SessionManager::cfcBandCount() const
+{
+    return dsp::MultibandCompressor::kBands;
+}
+
+QVariantList SessionManager::cfcReduction() const
+{
+    QVariantList out;
+    if (!m_tx)
+        return out;
+    for (int band = 0; band < dsp::MultibandCompressor::kBands; ++band)
+        out.append(m_tx->multiband().gainReductionDb(band));
+    return out;
+}
+
 bool SessionManager::audioEqEnabled() const
 {
     return m_audio && m_audio->equalizer().isEnabled();
