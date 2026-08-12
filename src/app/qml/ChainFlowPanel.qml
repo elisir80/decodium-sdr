@@ -187,6 +187,36 @@ PanelFrame {
         }
 
         ChainBlock {
+            title: qsTr("Gate")
+            glyph: root.glyphs.gate
+            readout: Session.gateEnabled
+                     ? qsTr("%1 dB").arg(Math.round(Session.gateThresholdDb)) : ""
+            on: Session.gateEnabled
+            selected: root.picked === "gate"
+            onToggled: Session.gateEnabled = !Session.gateEnabled
+            onPicked: root.picked = root.picked === "gate" ? "" : "gate"
+        }
+
+        ChainLink {
+            level: Session.gateEnabled ? Session.gateOpening : -1
+            tint: Session.gateOpening > 0.5 ? Theme.success : Theme.textDisabled
+        }
+
+        ChainBlock {
+            title: qsTr("Leveller")
+            glyph: root.glyphs.lev
+            readout: Session.levellerEnabled
+                     ? qsTr("%1 dB").arg(Session.levellerGainDb.toFixed(0)) : ""
+            on: Session.levellerEnabled
+            warning: Session.levellerEnabled && Session.levellerGainDb > 18
+            selected: root.picked === "lev"
+            onToggled: Session.levellerEnabled = !Session.levellerEnabled
+            onPicked: root.picked = root.picked === "lev" ? "" : "lev"
+        }
+
+        ChainLink {}
+
+        ChainBlock {
             title: qsTr("Compressore")
             glyph: root.glyphs.lev
             readout: qsTr("%1 dB").arg(Math.round(Session.txCompressionDb))
@@ -220,6 +250,23 @@ PanelFrame {
         ChainLink {
             level: Session.cfcEnabled ? Math.min(1, root.cfcWorking / 12) : -1
             tint: root.cfcWorking > 8 ? Theme.danger : Theme.spectrumPeak
+        }
+
+        ChainBlock {
+            title: qsTr("Limiter")
+            glyph: root.glyphs.lim
+            readout: Session.limiterEnabled
+                     ? qsTr("%1 dB").arg(Session.limiterCeilingDb.toFixed(0)) : ""
+            on: Session.limiterEnabled
+            warning: Session.limiterReductionDb > 6
+            selected: root.picked === "lim"
+            onToggled: Session.limiterEnabled = !Session.limiterEnabled
+            onPicked: root.picked = root.picked === "lim" ? "" : "lim"
+        }
+
+        ChainLink {
+            level: Session.limiterEnabled ? Math.min(1, Session.limiterReductionDb / 12) : -1
+            tint: Session.limiterReductionDb > 6 ? Theme.danger : Theme.spectrumPeak
         }
 
         ChainBlock {
@@ -529,6 +576,9 @@ PanelFrame {
         "agc": qsTr("AGC"),
         "eq": qsTr("Equalizzatore d'ascolto"),
         "cfc": qsTr("Compressore multibanda"),
+        "gate": qsTr("Gate"),
+        "lev": qsTr("Leveller"),
+        "lim": qsTr("Limiter"),
     })[picked] || ""
 
     readonly property var detailHint: ({
@@ -545,18 +595,25 @@ PanelFrame {
         "agc": qsTr("Il modo e la soglia si scelgono dalla targa o dal pannello dei canali: sono due comandi, e qui ce ne sta uno."),
         "eq": qsTr("Cinque campane sull'ascolto. La curva si trascina nello studio audio, sopra lo spettro vivo: si muove il punto e si vede la voce cambiare forma sotto. Non tocca il percorso dei decoder."),
         "cfc": qsTr("La voce divisa in quattro bande, ognuna con il suo compressore: una sibilante non abbassa più il corpo della voce, e un colpo sul microfono non fa sparire la presenza. Un comando solo muove le quattro soglie."),
+        "gate": qsTr("Toglie la stanza fra una frase e l'altra. La soglia si regola sul rumore del proprio posto, non su un valore di libro: si alza finché il respiro sparisce e non un decibel di più, o sparisce anche la coda delle parole."),
+        "lev": qsTr("Un AGC lento che corregge la distanza dal microfono. Sta prima del compressore perché insegue i secondi, mentre quello insegue i millisecondi: una costante di tempo sola non può fare bene entrambe."),
+        "lim": qsTr("L'ultimo, e l'unico che non deve mai lasciar passare niente oltre il tetto: oltre, il modulatore tosa, e tosare in banda base vuol dire allargarsi sui vicini. Guarda avanti di due millisecondi, che è il ritardo che aggiunge."),
     })[picked] || ""
 
     readonly property real detailFrom: ({
         "mic": 0, "comp": 0, "drive": 0, "nb": 1, "nr": 0, "dnr": 0,
+        "gate": -70, "lev": -35, "lim": -8,
     })[picked] !== undefined ? ({
         "mic": 0, "comp": 0, "drive": 0, "nb": 1, "nr": 0, "dnr": 0,
+        "gate": -70, "lev": -35, "lim": -8,
     })[picked] : 0
 
     readonly property real detailTo: ({
         "mic": 40, "comp": 20, "drive": 1, "nb": 12, "nr": 10, "dnr": 1,
+        "gate": -20, "lev": -8, "lim": 0,
     })[picked] !== undefined ? ({
         "mic": 40, "comp": 20, "drive": 1, "nb": 12, "nr": 10, "dnr": 1,
+        "gate": -20, "lev": -8, "lim": 0,
     })[picked] : 0
 
     readonly property real detailValue: {
@@ -567,6 +624,9 @@ PanelFrame {
         case "nb":    return Session.noiseBlankerThreshold
         case "nr":    return nrStrength
         case "dnr":   return Session.neuralIntensity
+        case "gate":  return Session.gateThresholdDb
+        case "lev":   return Session.levellerTargetDb
+        case "lim":   return Session.limiterCeilingDb
         }
         return 0
     }
@@ -579,6 +639,11 @@ PanelFrame {
         case "nb":    return qsTr("%1×").arg(Session.noiseBlankerThreshold.toFixed(1))
         case "nr":    return nrStrength.toFixed(0)
         case "dnr":   return qsTr("%1%").arg(Math.round(Session.neuralIntensity * 100))
+        case "gate":  return qsTr("%1 dB").arg(Session.gateThresholdDb.toFixed(0))
+        case "lev":   return qsTr("%1 dB").arg(Session.levellerTargetDb.toFixed(0))
+        case "lim":   return qsTr("%1 dB · %2 ms")
+                             .arg(Session.limiterCeilingDb.toFixed(1))
+                             .arg(Session.limiterLatencyMs.toFixed(1))
         }
         return ""
     }
@@ -591,6 +656,9 @@ PanelFrame {
         case "nb":    Session.setNoiseBlanker(Session.noiseBlanker, value); break
         case "nr":    Session.setChannelNoiseReduction(row, nrEnabled, value); break
         case "dnr":   Session.neuralIntensity = value; break
+        case "gate":  Session.gateThresholdDb = value; break
+        case "lev":   Session.levellerTargetDb = value; break
+        case "lim":   Session.limiterCeilingDb = value; break
         }
     }
 }

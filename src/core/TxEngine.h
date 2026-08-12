@@ -23,7 +23,10 @@
 #include "dsp/SpectrumAnalyzer.h"
 #include "dsp/InterpolatorChain.h"
 #include "dsp/Modulator.h"
+#include "dsp/Leveller.h"
+#include "dsp/Limiter.h"
 #include "dsp/MultibandCompressor.h"
+#include "dsp/NoiseGate.h"
 #include "dsp/Nco.h"
 #include "dsp/SpeechProcessor.h"
 #include "dsp/SpscRing.h"
@@ -123,6 +126,11 @@ public slots:
     /// Il compressore multibanda, per chi lo comanda e per chi lo misura.
     dsp::MultibandCompressor &multiband() noexcept { return m_cfc; }
 
+    /// Gli stadi di dinamica, nell'ordine in cui il segnale li attraversa.
+    dsp::NoiseGate &gate() noexcept { return m_gate; }
+    dsp::Leveller &leveller() noexcept { return m_leveller; }
+    dsp::Limiter &limiter() noexcept { return m_limiter; }
+
     /// Livello d'uscita 0…1, applicato in banda base. Non è la potenza del
     /// finale — quella la conosce solo la radio — ma quanto del fondo scala
     /// del convertitore si sta usando.
@@ -167,6 +175,13 @@ private:
     /// voce e prima del livello: quello livella e comprime a banda intera,
     /// questo divide la voce in quattro e tratta ogni parte per conto suo.
     dsp::MultibandCompressor m_cfc;
+
+    // In testa alla catena: il gate toglie la stanza, il leveller corregge la
+    // distanza dal microfono. In coda il limiter, che è l'unico che non deve
+    // mai lasciar passare niente oltre il tetto.
+    dsp::NoiseGate m_gate;
+    dsp::Leveller m_leveller;
+    dsp::Limiter m_limiter;
     dsp::Modulator m_modulator;
     dsp::InterpolatorChain m_interpolator;
     dsp::CwKeyer m_keyer;

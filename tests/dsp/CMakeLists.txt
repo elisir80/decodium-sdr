@@ -14,6 +14,12 @@ dsdr_add_test(tst_noise_filters
     SOURCES tst_noise_filters.cpp
     LIBRARIES dsdr::dsp)
 
+# Gate, leveller e limiter: i tre stadi che sbagliano in silenzio — non
+# producono un errore, producono un segnale.
+dsdr_add_test(tst_tx_dynamics
+    SOURCES tst_tx_dynamics.cpp
+    LIBRARIES dsdr::dsp)
+
 # Il multibanda: la prova che conta e' che a riposo non si senta. Se le
 # separazioni non sommano piatto, colora la voce prima ancora di comprimere.
 dsdr_add_test(tst_multiband

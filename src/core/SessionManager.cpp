@@ -604,6 +604,104 @@ SpectrumFeed *SessionManager::audioSpectrum() const
     return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
 }
 
+bool SessionManager::gateEnabled() const
+{
+    return m_tx && m_tx->gate().isEnabled();
+}
+
+void SessionManager::setGateEnabled(bool enabled)
+{
+    if (!m_tx || m_tx->gate().isEnabled() == enabled)
+        return;
+    m_tx->gate().setEnabled(enabled);
+    emit dynamicsChanged();
+}
+
+double SessionManager::gateThresholdDb() const
+{
+    return m_tx ? m_tx->gate().thresholdDb() : -45.0;
+}
+
+void SessionManager::setGateThresholdDb(double db)
+{
+    if (!m_tx)
+        return;
+    m_tx->gate().setThresholdDb(db);
+    emit dynamicsChanged();
+}
+
+double SessionManager::gateOpening() const
+{
+    return m_tx ? m_tx->gate().opening() : 0.0;
+}
+
+bool SessionManager::levellerEnabled() const
+{
+    return m_tx && m_tx->leveller().isEnabled();
+}
+
+void SessionManager::setLevellerEnabled(bool enabled)
+{
+    if (!m_tx || m_tx->leveller().isEnabled() == enabled)
+        return;
+    m_tx->leveller().setEnabled(enabled);
+    emit dynamicsChanged();
+}
+
+double SessionManager::levellerTargetDb() const
+{
+    return m_tx ? m_tx->leveller().targetDb() : -18.0;
+}
+
+void SessionManager::setLevellerTargetDb(double db)
+{
+    if (!m_tx)
+        return;
+    m_tx->leveller().setTargetDb(db);
+    emit dynamicsChanged();
+}
+
+double SessionManager::levellerGainDb() const
+{
+    return m_tx ? m_tx->leveller().gainDb() : 0.0;
+}
+
+bool SessionManager::limiterEnabled() const
+{
+    return m_tx && m_tx->limiter().isEnabled();
+}
+
+void SessionManager::setLimiterEnabled(bool enabled)
+{
+    if (!m_tx || m_tx->limiter().isEnabled() == enabled)
+        return;
+    m_tx->limiter().setEnabled(enabled);
+    emit dynamicsChanged();
+}
+
+double SessionManager::limiterCeilingDb() const
+{
+    return m_tx ? m_tx->limiter().ceilingDb() : -1.0;
+}
+
+void SessionManager::setLimiterCeilingDb(double db)
+{
+    if (!m_tx)
+        return;
+    m_tx->limiter().setCeilingDb(db);
+    emit dynamicsChanged();
+}
+
+double SessionManager::limiterReductionDb() const
+{
+    return m_tx ? m_tx->limiter().reductionDb() : 0.0;
+}
+
+double SessionManager::limiterLatencyMs() const
+{
+    return m_tx ? m_tx->limiter().latencyMs() : 0.0;
+}
+
 bool SessionManager::cfcEnabled() const
 {
     return m_tx && m_tx->multiband().isEnabled();

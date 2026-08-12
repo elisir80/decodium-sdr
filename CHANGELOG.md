@@ -4,6 +4,51 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.12] — 2026-08-12
+
+### Aggiunto
+
+- **La catena di studio, disegnata come si attraversa** (DSDR-SPEC-005). Un
+  pannello nuovo, `FLUSSO`, staccabile: i blocchi stanno in fila nel verso in
+  cui il segnale li percorre, con l'interruttore addosso e la misura in mezzo —
+  perché è fra un blocco e l'altro che una misura significa qualcosa. Due
+  corsie, trasmissione e ricezione, ognuna con i suoi capi. Ogni blocco porta
+  il disegno di quello che fa alla forma d'onda: «Gate» e «Limiter» sono due
+  parole che a chi non le ha già imparate non dicono niente, mentre una soglia
+  con un gradino e una cima tosata si capiscono prima di essere lette.
+- **Equalizzatore parametrico d'ascolto**: cinque campane, e la curva si regola
+  trascinando i punti **sopra lo spettro vivo** nello studio audio. Si muove il
+  punto e si vede la voce cambiare forma sotto, nello stesso istante e nello
+  stesso riquadro. La rotellina stringe e allarga la campana.
+- **Compressore multibanda della voce (CFC)**: quattro bande — corpo, calore,
+  parola, presenza — separate con Linkwitz-Riley del quarto ordine e
+  ricostruite esatte, così che a riposo non colori niente. Un comando solo,
+  `punch`, muove le quattro soglie: sedici manopole sono il motivo per cui un
+  multibanda resta spento nella maggior parte delle stazioni che ce l'hanno.
+- **Gate, leveller e limiter** completano la catena di trasmissione. Il gate
+  toglie la stanza fra una frase e l'altra; il leveller corregge la distanza
+  dal microfono, e sta prima del compressore perché insegue i secondi mentre
+  quello insegue i millisecondi; il limiter guarda avanti di due millisecondi e
+  tiene il tetto, perché oltre il fondo scala il modulatore tosa — e tosare in
+  banda base vuol dire allargarsi sulle frequenze dei vicini.
+- **Studio audio** come modulo a sé: spettro e waterfall dell'audio che si
+  ascolta, oscilloscopio con base dei tempi e aggancio, livelli con picco, RMS
+  e fattore di cresta, tono dominante e distorsione armonica, e i bordi del
+  filtro disegnati sullo spettro — il termine di paragone che mancava a «il
+  filtro taglia dove credo?».
+- **I pannelli si staccano** in finestre proprie, e una fila di icone in testa
+  alla colonna li accende e li spegne. Spento vuol dire che non viene proprio
+  costruito.
+- **La qualità del collegamento** in fondo alla finestra, dove la sorgente sta
+  dall'altra parte di una rete.
+
+### Nota
+
+Gli stadi disegnati e non ancora costruiti — l'EQ sulla trasmissione, l'host
+LV2/VST3, i profili per modo, il registra-e-riascolta — non compaiono
+nell'interfaccia: un blocco che non fa niente è peggio di un blocco che manca.
+Sono in `docs/DSDR-SPEC-005-Catena-di-studio.md`.
+
 ## [1.1.11] — 2026-08-12
 
 ### Aggiunto

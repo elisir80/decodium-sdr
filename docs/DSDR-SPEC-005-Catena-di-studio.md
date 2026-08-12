@@ -64,17 +64,25 @@ e le misure che sappiamo fare.
 | TX | Compressore | quantità | compressione applicata |
 | TX | Filtro di trasmissione | larghezza | — |
 | TX | Modulatore | modo | — |
+| TX | Gate | soglia | apertura |
+| TX | Leveller | bersaglio | guadagno applicato |
 | TX | CFC multibanda | punch (0–10) | riduzione per banda |
+| TX | Limiter | tetto | riduzione, ritardo |
 | TX | Drive | livello | livello d'uscita |
 
 ## 4. Quello che manca (disegnato)
 
 ### 4.1 Gli stadi nuovi della catena TX
+> Resta l'**EQ parametrico sulla trasmissione**: quello d'ascolto è fatto, e il
+> componente a curve si riusa. Manca il posto in cui metterlo — fra il
+> compressore e il multibanda — e i suoi cinque parametri sul percorso TX.
 
-- **Gate**: soglia, attacco, rilascio. Toglie il respiro della stanza fra una
-  frase e l'altra, che su una eSSB larga si sente più della voce.
-- **Leveller**: un AGC lento *prima* della compressione. Corregge la distanza
-  dal microfono; senza, il compressore fa due lavori diversi e nessuno bene.
+
+- ~~**Gate**~~: fatto. Tre tempi — attacco immediato per non mangiare la prima
+  consonante, tenuta di 120 ms per non chiudersi fra due sillabe, rilascio
+  lento per non tagliare la coda delle parole.
+- ~~**Leveller**~~: fatto. AGC lento prima della compressione, con il tetto al
+  guadagno: senza, nelle pause alzerebbe il rumore fino al livello della voce.
 - ~~**EQ parametrico**~~: fatto sul percorso di ricezione — cinque campane
   RBJ sull'ascolto, con la curva trascinabile sopra lo spettro vivo. Sulla
   catena di trasmissione resta da fare: là serve prima il resto della catena,
@@ -86,8 +94,8 @@ e le misure che sappiamo fare.
   colori niente. Si comanda con un numero solo: sedici manopole sono il motivo
   per cui un multibanda resta spento nella maggior parte delle stazioni che ce
   l'hanno.
-- **Limiter**: l'ultimo, e l'unico che non deve mai lasciar passare niente
-  oltre il fondo scala.
+- ~~**Limiter**~~: fatto, con due millisecondi di anticipo — dichiarati, perché
+  chi somma le latenze della catena deve poterli leggere.
 
 ### 4.2 Le curve
 

@@ -60,6 +60,9 @@ TxEngine::TxEngine(QObject *parent)
     m_speech.configure(m_audioRate);
     m_modulator.configure(m_audioRate);
     m_cfc.configure(m_audioRate);
+    m_gate.configure(m_audioRate);
+    m_leveller.configure(m_audioRate);
+    m_limiter.configure(m_audioRate);
     m_keyer.configure(m_audioRate);
 
     m_audio.resize(kAudioBlockFrames);
@@ -403,12 +406,26 @@ void TxEngine::produce(std::size_t audioFrames)
                       m_audio.begin() + static_cast<std::ptrdiff_t>(audioFrames), 0.0f);
             m_starved.fetch_add(audioFrames - got, std::memory_order_relaxed);
         }
+        // ── La catena, nell'ordine in cui il segnale la attraversa ──────
+        //
+        // Il gate per primo: dopo la compressione il rumore è già stato alzato
+        // al livello della voce, e non c'è più una soglia che li separi. Poi
+        // il leveller, che insegue la distanza dal microfono in secondi, e
+        // solo dopo il compressore, che doma le punte in millisecondi — una
+        // costante di tempo sola non può fare bene entrambe.
+        m_gate.process(m_audio.data(), audioFrames);
+        m_leveller.process(m_audio.data(), audioFrames);
+
         m_speech.process(m_audio.data(), audioFrames);
         // Il multibanda dopo il processore di voce: quello livella e comprime
         // la voce nel suo insieme, questo la divide in quattro e tratta ogni
         // parte per conto suo. Invertirli vorrebbe dire dare al multibanda un
         // segnale già schiacciato, su cui non ha più niente da distinguere.
         m_cfc.process(m_audio.data(), audioFrames);
+        // Il limiter chiude: tutto quello che viene prima lavora sul suono,
+        // lui lavora sul fondo scala. Oltre il tetto il modulatore tosa, e
+        // tosare in banda base vuol dire allargarsi sui vicini.
+        m_limiter.process(m_audio.data(), audioFrames);
         m_micPeak.store(m_speech.lastInputPeak(), std::memory_order_relaxed);
         m_compressionDb.store(m_speech.lastCompressionDb(), std::memory_order_relaxed);
     }

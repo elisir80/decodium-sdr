@@ -65,6 +65,23 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
     Q_PROPERTY(dsdr::core::SpectrumFeed *audioSpectrum READ audioSpectrum CONSTANT)
 
+    // ── Dinamica della voce (SPEC-005 §4.1) ─────────────────────────────
+    Q_PROPERTY(bool gateEnabled READ gateEnabled WRITE setGateEnabled NOTIFY dynamicsChanged)
+    Q_PROPERTY(double gateThresholdDb READ gateThresholdDb WRITE setGateThresholdDb
+                   NOTIFY dynamicsChanged)
+    Q_PROPERTY(double gateOpening READ gateOpening NOTIFY txMetersChanged)
+    Q_PROPERTY(bool levellerEnabled READ levellerEnabled WRITE setLevellerEnabled
+                   NOTIFY dynamicsChanged)
+    Q_PROPERTY(double levellerTargetDb READ levellerTargetDb WRITE setLevellerTargetDb
+                   NOTIFY dynamicsChanged)
+    Q_PROPERTY(double levellerGainDb READ levellerGainDb NOTIFY txMetersChanged)
+    Q_PROPERTY(bool limiterEnabled READ limiterEnabled WRITE setLimiterEnabled
+                   NOTIFY dynamicsChanged)
+    Q_PROPERTY(double limiterCeilingDb READ limiterCeilingDb WRITE setLimiterCeilingDb
+                   NOTIFY dynamicsChanged)
+    Q_PROPERTY(double limiterReductionDb READ limiterReductionDb NOTIFY txMetersChanged)
+    Q_PROPERTY(double limiterLatencyMs READ limiterLatencyMs NOTIFY dynamicsChanged)
+
     // ── Compressore multibanda della voce (SPEC-005 §4.1) ───────────────
     //
     // Quattro bande, un comando solo. Sedici manopole sono il motivo per cui
@@ -278,6 +295,25 @@ public:
     /// portante a tre.
     double audioPeakDb() const { return m_audioPeakDb; }
     double audioRmsDb() const { return m_audioRmsDb; }
+
+    bool gateEnabled() const;
+    void setGateEnabled(bool enabled);
+    double gateThresholdDb() const;
+    void setGateThresholdDb(double db);
+    double gateOpening() const;
+
+    bool levellerEnabled() const;
+    void setLevellerEnabled(bool enabled);
+    double levellerTargetDb() const;
+    void setLevellerTargetDb(double db);
+    double levellerGainDb() const;
+
+    bool limiterEnabled() const;
+    void setLimiterEnabled(bool enabled);
+    double limiterCeilingDb() const;
+    void setLimiterCeilingDb(double db);
+    double limiterReductionDb() const;
+    double limiterLatencyMs() const;
 
     bool cfcEnabled() const;
     void setCfcEnabled(bool enabled);
@@ -620,6 +656,7 @@ signals:
     void audioToneChanged();
     void audioEqChanged();
     void cfcChanged();
+    void dynamicsChanged();
     void audioLevelsChanged();
     void neuralChanged();
     void overloadChanged();
