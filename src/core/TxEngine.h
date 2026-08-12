@@ -27,6 +27,7 @@
 #include "dsp/Limiter.h"
 #include "dsp/MultibandCompressor.h"
 #include "dsp/NoiseGate.h"
+#include "dsp/ParametricEq.h"
 #include "dsp/Nco.h"
 #include "dsp/SpeechProcessor.h"
 #include "dsp/SpscRing.h"
@@ -177,6 +178,15 @@ public slots:
     dsp::Leveller &leveller() noexcept { return m_leveller; }
     dsp::Limiter &limiter() noexcept { return m_limiter; }
 
+    /// L'equalizzatore della voce che si trasmette.
+    ///
+    /// Sta **dopo** gate, leveller e compressore e **prima** del multibanda, e
+    /// non è un dettaglio d'ordine: un equalizzatore in testa alla catena
+    /// equalizza il respiro della stanza insieme alla voce, e quello che
+    /// alza lo alza per tutti e due. Qui davanti ha già trovato una voce
+    /// ripulita e a livello, e quello che tocca è solo il timbro.
+    dsp::ParametricEq &equalizer() noexcept { return m_txEq; }
+
     /// Livello d'uscita 0…1, applicato in banda base. Non è la potenza del
     /// finale — quella la conosce solo la radio — ma quanto del fondo scala
     /// del convertitore si sta usando.
@@ -257,6 +267,7 @@ private:
     // distanza dal microfono. In coda il limiter, che è l'unico che non deve
     // mai lasciar passare niente oltre il tetto.
     dsp::NoiseGate m_gate;
+    dsp::ParametricEq m_txEq;
     dsp::Leveller m_leveller;
     dsp::Limiter m_limiter;
     dsp::Modulator m_modulator;

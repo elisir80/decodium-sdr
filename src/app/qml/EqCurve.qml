@@ -33,6 +33,37 @@ Item {
     /// spazio in cui il filtro non può andare.
     readonly property real rangeDb: 12
 
+    /// Su quale delle due catene si sta lavorando.
+    ///
+    /// Il componente è lo stesso perché il gesto è lo stesso: cinque campane,
+    /// un punto per campana, la curva sopra lo spettro vivo. Cambia solo da
+    /// che parte del ricetrasmettitore si trova quello spettro — e duplicare
+    /// il file per cambiare un prefisso avrebbe voluto dire due curve da
+    /// tenere allineate a mano per sempre.
+    property bool transmit: false
+
+    readonly property bool eqEnabled: transmit ? Session.txEqEnabled : Session.audioEqEnabled
+    readonly property int bandCount: transmit ? Session.txEqBandCount : Session.audioEqBandCount
+
+    function bandHz(i) {
+        return transmit ? Session.txEqFrequency(i) : Session.audioEqFrequency(i)
+    }
+    function bandDb(i) {
+        return transmit ? Session.txEqGainDb(i) : Session.audioEqGainDb(i)
+    }
+    function bandQ(i) {
+        return transmit ? Session.txEqQ(i) : Session.audioEqQ(i)
+    }
+    function responseAt(hz) {
+        return transmit ? Session.txEqResponseDb(hz) : Session.audioEqResponseDb(hz)
+    }
+    function setBand(i, hz, db, q) {
+        if (transmit)
+            Session.setTxEqBand(i, hz, db, q)
+        else
+            Session.setAudioEqBand(i, hz, db, q)
+    }
+
     /// Quale punto si sta trascinando, o −1.
     property int active: -1
 
@@ -66,6 +97,7 @@ Item {
     Connections {
         target: Session
         function onAudioEqChanged() { root.revision++ }
+        function onTxEqChanged() { root.revision++ }
     }
 
     // ── La griglia ───────────────────────────────────────────────────────
@@ -107,7 +139,7 @@ Item {
         ShapePath {
             id: curve
 
-            strokeColor: Session.audioEqEnabled ? Theme.accent : Theme.textDisabled
+            strokeColor: root.eqEnabled ? Theme.accent : Theme.textDisabled
             strokeWidth: 2
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
@@ -129,14 +161,14 @@ Item {
         const steps = 60
         for (let i = 0; i <= steps; ++i) {
             const hz = spanStartHz + (i / steps) * spanWidthHz
-            points.push(Qt.point(xFor(hz), yFor(Session.audioEqResponseDb(hz))))
+            points.push(Qt.point(xFor(hz), yFor(responseAt(hz))))
         }
         return points
     }
 
     // ── I punti ──────────────────────────────────────────────────────────
     Repeater {
-        model: Session.audioEqBandCount
+        model: root.bandCount
 
         delegate: Item {
             id: knob
@@ -145,15 +177,15 @@ Item {
 
             readonly property real hz: {
                 root.revision
-                return Session.audioEqFrequency(index)
+                return root.bandHz(index)
             }
             readonly property real db: {
                 root.revision
-                return Session.audioEqGainDb(index)
+                return root.bandDb(index)
             }
             readonly property real q: {
                 root.revision
-                return Session.audioEqQ(index)
+                return root.bandQ(index)
             }
 
             x: root.xFor(hz) - width / 2
@@ -180,7 +212,7 @@ Item {
                 width: 11
                 height: 11
                 radius: 5.5
-                color: Session.audioEqEnabled ? Theme.accent : Theme.textDisabled
+                color: root.eqEnabled ? Theme.accent : Theme.textDisabled
                 border.width: root.active === knob.index ? 2 : 0
                 border.color: Theme.textPrimary
             }
@@ -206,10 +238,10 @@ Item {
                         return
                     const point = centroid.position
                     const scenePoint = knob.mapToItem(root, point.x, point.y)
-                    Session.setAudioEqBand(knob.index,
-                                           root.hzFor(scenePoint.x),
-                                           root.dbFor(scenePoint.y),
-                                           knob.q)
+                    root.setBand(knob.index,
+                                 root.hzFor(scenePoint.x),
+                                 root.dbFor(scenePoint.y),
+                                 knob.q)
                 }
             }
 
@@ -220,7 +252,7 @@ Item {
                 onWheel: (event) => {
                     const factor = event.angleDelta.y > 0 ? (1 + root.wheelStep)
                                                           : (1 - root.wheelStep)
-                    Session.setAudioEqBand(knob.index, knob.hz, knob.db, knob.q * factor)
+                    root.setBand(knob.index, knob.hz, knob.db, knob.q * factor)
                     event.accepted = true
                 }
             }

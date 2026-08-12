@@ -64,6 +64,10 @@ TxEngine::TxEngine(QObject *parent)
     m_modulator.configure(m_audioRate);
     m_cfc.configure(m_audioRate);
     m_gate.configure(m_audioRate);
+    // Mono: la voce è una. L'equalizzatore d'ascolto ne fa due perché l'uscita
+    // audio è stereo, questo no — e configurarlo a due canali gli farebbe
+    // saltare un campione su due.
+    m_txEq.configure(m_audioRate, 1);
     // Il registratore con gli altri: dieci secondi di due tracce sono meno di
     // quattro megabyte, e nascono qui perché nel percorso caldo non si alloca.
     m_recorder.configure(m_audioRate);
@@ -635,6 +639,10 @@ void TxEngine::produce(std::size_t audioFrames)
         m_leveller.process(m_audio.data(), audioFrames);
 
         m_speech.process(m_audio.data(), audioFrames);
+        // L'equalizzatore qui, e non in testa: davanti ha già una voce
+        // ripulita dal gate e portata a livello dal leveller, quindi quello
+        // che tocca è il timbro e non il respiro della stanza.
+        m_txEq.process(m_audio.data(), audioFrames);
         // Il multibanda dopo il processore di voce: quello livella e comprime
         // la voce nel suo insieme, questo la divide in quattro e tratta ogni
         // parte per conto suo. Invertirli vorrebbe dire dare al multibanda un

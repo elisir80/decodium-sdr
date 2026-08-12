@@ -72,6 +72,7 @@ private slots:
     void whatWasSaidComesBack();
     void theMonitorOnlySoundsWhileTransmitting();
     void theTwoCurvesSeeTwoDifferentThings();
+    void theTransmitEqualizerIsInTheChain();
 };
 
 void TestTxEngine::nothingLeavesWithThePttUp()
@@ -420,6 +421,45 @@ void TestTxEngine::theTwoCurvesSeeTwoDifferentThings()
     QVERIFY2(wet > dry + 6.0f,
              qPrintable(QStringLiteral("prima %1 dB, dopo %2 dB: la catena non si vede")
                             .arg(dry).arg(wet)));
+}
+
+void TestTxEngine::theTransmitEqualizerIsInTheChain()
+{
+    dsp::SpscRing<float> ring(1 << 20);
+    dsp::SpscRing<float> mic(1 << 16);
+
+    TxEngine engine;
+    engine.attach(&ring, kDeviceRate);
+    engine.setMicSource(&mic, 48000.0);
+    engine.start();
+
+    // Una campana profonda proprio sul tono di prova. Un equalizzatore
+    // collegato ai comandi ma non alla catena è il difetto più silenzioso che
+    // ci sia: la curva si muove sullo schermo, i numeri cambiano, e in aria
+    // non succede niente — e chi trasmette non ha modo di accorgersene.
+    engine.equalizer().setEnabled(true);
+    engine.equalizer().setBand(0, 700.0, -12.0, 4.0);
+
+    speak(engine, mic, 0.2);
+    engine.setTransmitting(false);
+
+    const int bin = static_cast<int>(std::lround(
+        700.0 / (48000.0 / TxEngine::kVoiceFftSize)));
+    const float dry = engine.voiceBinDb(false, bin);
+    const float wet = engine.voiceBinDb(true, bin);
+
+    QVERIFY2(dry - wet > 6.0f,
+             qPrintable(QStringLiteral("prima %1 dB, dopo %2 dB: l'equalizzatore "
+                                       "non tocca la catena").arg(dry).arg(wet)));
+
+    // E spento non deve toccare niente. Uno stadio che lavora anche in bypass
+    // è il difetto che nessuno cerca, perché nessuno pensa di doverlo cercare.
+    engine.equalizer().setEnabled(false);
+    speak(engine, mic, 0.2);
+    engine.setTransmitting(false);
+
+    QVERIFY2(std::abs(engine.voiceBinDb(false, bin) - engine.voiceBinDb(true, bin)) < 1.0f,
+             "l'equalizzatore spento continua a lavorare");
 }
 
 QTEST_MAIN(TestTxEngine)

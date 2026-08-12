@@ -49,6 +49,8 @@ namespace dsdr::core {
 class DspEngine;
 class TxEngine;
 
+class TxProfiles;
+
 class SessionManager : public QObject
 {
     Q_OBJECT
@@ -132,6 +134,24 @@ class SessionManager : public QObject
     Q_PROPERTY(bool audioEqEnabled READ audioEqEnabled WRITE setAudioEqEnabled
                    NOTIFY audioEqChanged)
     Q_PROPERTY(int audioEqBandCount READ audioEqBandCount CONSTANT)
+
+    // ── Equalizzatore della trasmissione (SPEC-005 §4.1) ────────────────
+    //
+    // Le stesse cinque campane, sull'altra catena. Sta dopo gate, leveller e
+    // compressore: un equalizzatore in testa equalizzerebbe il respiro della
+    // stanza insieme alla voce.
+    Q_PROPERTY(bool txEqEnabled READ txEqEnabled WRITE setTxEqEnabled NOTIFY txEqChanged)
+    Q_PROPERTY(int txEqBandCount READ txEqBandCount CONSTANT)
+
+    // ── Profili di trasmissione (SPEC-005 §4.4) ─────────────────────────
+    //
+    // Il profilo cambia da sé quando cambia il modo, e prima di uscirne si
+    // salva: non è un preset di fabbrica da cui si esce, è la memoria di come
+    // piace quel modo.
+    Q_PROPERTY(int txProfile READ txProfile NOTIFY txProfileChanged)
+    Q_PROPERTY(QString txProfileName READ txProfileName NOTIFY txProfileChanged)
+    Q_PROPERTY(int ssbProfile READ ssbProfile WRITE setSsbProfile NOTIFY txProfileChanged)
+    Q_PROPERTY(bool txProfileLocked READ txProfileLocked NOTIFY txProfileChanged)
 
     // ── Analisi dell'audio ──────────────────────────────────────────────
     Q_PROPERTY(double audioToneHz READ audioToneHz NOTIFY audioToneChanged)
@@ -389,6 +409,29 @@ public:
     /// mescolato al fruscio della banda non si giudica.
     Q_INVOKABLE void playVoiceRecording(int source = 1);
     Q_INVOKABLE void stopVoiceRecording();
+
+    int txProfile() const;
+    QString txProfileName() const;
+    int ssbProfile() const;
+    void setSsbProfile(int profile);
+
+    /// Vero quando il modo non lascia scelta: sui dati e in CW la catena va
+    /// spenta, e offrire un'alternativa suggerirebbe che ci sia un caso in cui
+    /// accenderla convenga.
+    bool txProfileLocked() const;
+
+    /// Riporta il profilo in corso com'era di fabbrica.
+    Q_INVOKABLE void restoreTxProfile();
+
+    bool txEqEnabled() const;
+    void setTxEqEnabled(bool enabled);
+    int txEqBandCount() const;
+    Q_INVOKABLE void setTxEqBand(int index, double frequencyHz, double gainDb, double q);
+    Q_INVOKABLE double txEqFrequency(int index) const;
+    Q_INVOKABLE double txEqGainDb(int index) const;
+    Q_INVOKABLE double txEqQ(int index) const;
+    Q_INVOKABLE double txEqResponseDb(double frequencyHz) const;
+    Q_INVOKABLE void resetTxEq();
 
     Q_INVOKABLE void setAudioEqBand(int index, double frequencyHz, double gainDb, double q);
     Q_INVOKABLE double audioEqFrequency(int index) const;
@@ -711,6 +754,8 @@ signals:
     void audioToneChanged();
     void audioEqChanged();
     void cfcChanged();
+    void txEqChanged();
+    void txProfileChanged();
     void voicePlaybackChanged();
     void dynamicsChanged();
     void audioLevelsChanged();
@@ -733,6 +778,17 @@ private:
 
     /// Da che parte del VFO sta il segnale, quando la sorgente è audio.
     void pushAudioSideband(DemodMode mode);
+
+    /// Salva nello slot del profilo in corso quello che i comandi dicono
+    /// adesso. Si chiama prima di uscire da un profilo, mai dopo.
+    void captureTxProfile();
+
+    /// Riversa un profilo sui comandi.
+    void applyTxProfile(int profile);
+
+    /// Sceglie il profilo che compete al modo del canale corrente e, se è
+    /// cambiato, salva il vecchio e applica il nuovo.
+    void syncTxProfileToMode();
 
     /// Apre il microfono scelto, o il predefinito se non ce n'è uno.
     bool startMicrophone();
@@ -803,6 +859,14 @@ private:
     bool m_transmitting = false;
     int m_txChannel = 0;
     double m_micGainDb = 6.0;
+    /// I profili della catena TX e quello che è in vigore adesso.
+    TxProfiles *m_txProfiles = nullptr;
+
+    /// Mentre si applica un profilo i comandi cambiano da soli, e ognuno di
+    /// loro ricadrebbe qui a sporcare il profilo che si sta applicando. Questo
+    /// tiene fuori il cane dalla propria coda.
+    bool m_applyingProfile = false;
+
     double m_txCompressionDb = 6.0;
     /// Livello d'uscita di partenza per un SDR, che lavora a fondo scala.
     /// Verso una radio tradizionale si parte molto più bassi: vedi

@@ -8,11 +8,14 @@
 // cui il segnale li attraversa, con l'interruttore addosso e la misura in
 // mezzo. Si capisce dove si sta intervenendo prima di aver toccato qualcosa.
 //
-// Compaiono solo gli stadi che il DSP ha davvero. Gate, leveller, EQ a curve,
-// compressore multibanda e limiter sono disegnati nella specifica e non
-// costruiti: un blocco che non fa niente è peggio di un blocco che manca
-// (CONSTITUTION §7), e disegnarlo spento sarebbe una promessa da pagare al
-// primo operatore che ci clicca sopra.
+// Compaiono solo gli stadi che il DSP ha davvero: un blocco che non fa niente
+// è peggio di un blocco che manca (CONSTITUTION §7), e disegnarlo spento
+// sarebbe una promessa da pagare al primo operatore che ci clicca sopra.
+//
+// Sotto la catena ci sta il contesto di misura, che è la parte che rende il
+// diagramma uno strumento invece di un disegno: la prova a uno e due toni, lo
+// spettro della voce prima e dopo con l'equalizzatore trascinabile sopra, il
+// monitor in cuffia, e gli ultimi dieci secondi da riascoltare.
 import QtQml
 import QtQuick
 import QtQuick.Controls.Basic
@@ -153,6 +156,49 @@ PanelFrame {
             color: Theme.textDisabled
         }
 
+        // ── Il profilo (SPEC-005 §4.4) ───────────────────────────────────
+        //
+        // Cambia da sé col modo, perché è quello che l'operatore intende
+        // quando passa da una chiacchierata a un pile-up: non sta chiedendo un
+        // preset, sta cambiando mestiere. Sui dati e in CW non c'è scelta —
+        // offrirne una suggerirebbe che ci sia un caso in cui accendere la
+        // catena convenga, e non c'è.
+        DsdrButton {
+            implicitWidth: 108
+            implicitHeight: 24
+            fontSize: Theme.fontSmall
+            text: qsTr("CHIACCHIERATA")
+            visible: !Session.txProfileLocked
+            checked: Session.ssbProfile === 0
+            onClicked: Session.ssbProfile = 0
+        }
+
+        DsdrButton {
+            implicitWidth: 92
+            implicitHeight: 24
+            fontSize: Theme.fontSmall
+            text: qsTr("DX · CONTEST")
+            visible: !Session.txProfileLocked
+            checked: Session.ssbProfile === 1
+            onClicked: Session.ssbProfile = 1
+        }
+
+        Text {
+            visible: Session.txProfileLocked
+            text: qsTr("catena spenta: sui dati comprimere allarga il segnale e non aiuta chi decodifica")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textDisabled
+            elide: Text.ElideRight
+        }
+
+        DsdrButton {
+            implicitWidth: 76
+            implicitHeight: 24
+            fontSize: Theme.fontSmall
+            text: qsTr("DI FABBRICA")
+            onClicked: Session.restoreTxProfile()
+        }
+
         Item { Layout.fillWidth: true }
 
         Text {
@@ -240,6 +286,22 @@ PanelFrame {
                    ? Math.min(1, Session.txCompressionMeter / 20) : -1
             tint: Session.txCompressionMeter > 12 ? Theme.spectrumPeak : Theme.success
         }
+
+        // L'equalizzatore sta qui e non in testa: davanti ha già trovato una
+        // voce ripulita dal gate e portata a livello dal leveller, quindi
+        // quello che tocca è il timbro. In testa alzerebbe il respiro della
+        // stanza insieme alla voce, e chi lo regola non ha modo di distinguere
+        // le due cose finché non è troppo tardi.
+        ChainBlock {
+            title: qsTr("EQ TX")
+            glyph: root.glyphs.eq
+            on: Session.txEqEnabled
+            selected: root.picked === "txeq"
+            onToggled: Session.txEqEnabled = !Session.txEqEnabled
+            onPicked: root.picked = root.picked === "txeq" ? "" : "txeq"
+        }
+
+        ChainLink {}
 
         ChainBlock {
             title: qsTr("CFC")
@@ -378,11 +440,63 @@ PanelFrame {
         }
     }
 
-    // ── Prima e dopo, sullo stesso grafico (SPEC-005 §4.3) ───────────────
+    // ── Prima e dopo, con l'equalizzatore sopra (SPEC-005 §4.2 e §4.3) ───
+    //
+    // La curva sta sopra lo spettro vivo della propria voce, ed è la lezione
+    // di SDR Console applicata al verso opposto: si trascina il punto e si
+    // vede la voce cambiare forma sotto la curva, nello stesso riquadro e
+    // nello stesso istante. Il legame fra il gesto e l'effetto smette di
+    // passare dalla memoria.
     VoiceCompare {
+        id: voiceCompare
+
         Layout.fillWidth: true
         Layout.topMargin: Theme.spacingTight
+        Layout.preferredHeight: 108
         visible: Session.capabilities.canTransmit
+
+        EqCurve {
+            anchors.fill: parent
+            anchors.margins: 4
+            transmit: true
+            spanStartHz: 0
+            spanWidthHz: Session.voiceSpectrumSpanHz
+            // Con l'equalizzatore spento la curva resta, spenta: toglierla
+            // vorrebbe dire nascondere dove sono i punti proprio a chi sta per
+            // riaccenderlo.
+            opacity: Session.txEqEnabled ? 1.0 : 0.55
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        visible: Session.capabilities.canTransmit
+        spacing: Theme.spacingTight
+
+        DsdrButton {
+            implicitWidth: 96
+            implicitHeight: 26
+            text: qsTr("EQ TX")
+            checkable: true
+            checked: Session.txEqEnabled
+            onClicked: Session.txEqEnabled = checked
+        }
+
+        DsdrButton {
+            implicitWidth: 76
+            implicitHeight: 26
+            text: qsTr("PIATTO")
+            enabled: Session.txEqEnabled
+            onClicked: Session.resetTxEq()
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: qsTr("trascina un punto · rotellina per stringere la campana")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textDisabled
+            elide: Text.ElideRight
+        }
     }
 
     // ── Il monitor (SPEC-005 §4.3) ───────────────────────────────────────
@@ -792,6 +906,7 @@ PanelFrame {
     readonly property var detailTitle: ({
         "mic": qsTr("Microfono"),
         "comp": qsTr("Compressore"),
+        "txeq": qsTr("Equalizzatore di trasmissione"),
         "txfilter": qsTr("Filtro di trasmissione"),
         "drive": qsTr("Drive"),
         "input": qsTr("Ingresso RF"),

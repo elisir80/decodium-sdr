@@ -11,6 +11,12 @@ dsdr_add_test(tst_tx_engine
     SOURCES tst_tx_engine.cpp
     LIBRARIES dsdr::core)
 
+# I profili per modo. Un profilo che cambia da se' e' comodo finche' non
+# cancella mezz'ora di lavoro senza dirlo.
+dsdr_add_test(tst_tx_profiles
+    SOURCES tst_tx_profiles.cpp
+    LIBRARIES dsdr::core)
+
 # Il percorso di ricezione dei backend server-DSP: audio dentro, audio fuori.
 dsdr_add_test(tst_audio_source
     SOURCES tst_audio_source.cpp

@@ -5,6 +5,8 @@ add_library(dsdr_core STATIC
     DspEngine.cpp
     TxEngine.h
     TxEngine.cpp
+    TxProfiles.h
+    TxProfiles.cpp
     IqModuleApi.h
     ChannelModel.h
     ChannelModel.cpp

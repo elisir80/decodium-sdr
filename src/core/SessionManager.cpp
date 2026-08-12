@@ -4,6 +4,7 @@
 #include "audio/AudioRouter.h"
 #include "core/DspEngine.h"
 #include "core/TxEngine.h"
+#include "core/TxProfiles.h"
 #include "hal/RadioScout.h"
 #ifdef DSDR_BACKEND_FLEX_PROBE
 #endif
@@ -166,6 +167,11 @@ SessionManager::SessionManager(QObject *parent)
     // deve diventare un ritardo dell'altra.
     m_mic = new audio::MicSource(this);
     m_tx = new TxEngine;
+    // I profili nascono prima del thread: il primo va applicato ai comandi
+    // appena la catena esiste, non alla prima trasmissione.
+    m_txProfiles = new TxProfiles(this);
+    m_txProfiles->load();
+
     m_txThread = new QThread(this);
     m_txThread->setObjectName(QStringLiteral("dsdr-tx"));
     m_tx->moveToThread(m_txThread);
@@ -188,6 +194,17 @@ SessionManager::SessionManager(QObject *parent)
         emit txRefused(reason);
     });
     m_txThread->start(QThread::HighPriority);
+
+    // Il profilo che compete al modo di partenza, applicato subito: aprire il
+    // programma in FT8 e trovare il compressore acceso perché «è il valore di
+    // fabbrica» sarebbe esattamente l'errore che i profili esistono per
+    // togliere di mezzo.
+    applyTxProfile(static_cast<int>(m_txProfiles->profileForMode(DemodMode::Usb)));
+
+    // Cambiare canale è cambiare mestiere quanto cambiare modo: se il canale
+    // scelto ascolta in FT8, la catena della voce va spenta lo stesso.
+    connect(&m_channels, &ChannelModel::currentIndexChanged,
+            this, &SessionManager::syncTxProfileToMode);
 
     m_tuneTimer.setSingleShot(true);
     connect(&m_tuneTimer, &QTimer::timeout, this, [this] {
@@ -557,6 +574,13 @@ SessionManager::SessionManager(QObject *parent)
 
 SessionManager::~SessionManager()
 {
+    // L'ultima cosa che si è regolata resta. Senza questo, chi passa mezz'ora
+    // a sistemare la propria voce e poi chiude il programma la ritrova com'era
+    // prima — e il profilo, che dovrebbe essere una memoria, diventa una tassa.
+    captureTxProfile();
+    if (m_txProfiles)
+        m_txProfiles->save();
+
     stopScan();
     stopRigctl();
     disconnectDevice();
@@ -877,6 +901,200 @@ void SessionManager::setAudioEqEnabled(bool enabled)
 int SessionManager::audioEqBandCount() const
 {
     return dsp::ParametricEq::kBands;
+}
+
+// ── I profili della catena di trasmissione (SPEC-005 §4.4) ──────────────
+
+int SessionManager::txProfile() const
+{
+    return m_txProfiles ? static_cast<int>(m_txProfiles->current())
+                        : static_cast<int>(TxProfiles::Ragchew);
+}
+
+QString SessionManager::txProfileName() const
+{
+    return m_txProfiles ? TxProfiles::name(m_txProfiles->current()) : QString();
+}
+
+int SessionManager::ssbProfile() const
+{
+    return m_txProfiles ? static_cast<int>(m_txProfiles->ssbProfile())
+                        : static_cast<int>(TxProfiles::Ragchew);
+}
+
+void SessionManager::setSsbProfile(int profile)
+{
+    if (!m_txProfiles || m_txProfiles->ssbProfile() == profile)
+        return;
+
+    // Prima di cambiare voce si salva quella che si sta lasciando, altrimenti
+    // mezz'ora di regolazioni sparisce senza che nessuno lo dica.
+    captureTxProfile();
+    m_txProfiles->setSsbProfile(static_cast<TxProfiles::Profile>(profile));
+    m_txProfiles->save();
+    syncTxProfileToMode();
+}
+
+bool SessionManager::txProfileLocked() const
+{
+    return m_txProfiles && m_txProfiles->current() == TxProfiles::Data;
+}
+
+void SessionManager::restoreTxProfile()
+{
+    if (!m_txProfiles)
+        return;
+    m_txProfiles->restoreDefaults(m_txProfiles->current());
+    applyTxProfile(m_txProfiles->current());
+    m_txProfiles->save();
+}
+
+void SessionManager::captureTxProfile()
+{
+    if (!m_txProfiles || !m_tx || m_applyingProfile)
+        return;
+
+    TxProfileState s;
+    s.gateEnabled = m_tx->gate().isEnabled();
+    s.gateThresholdDb = m_tx->gate().thresholdDb();
+    s.levellerEnabled = m_tx->leveller().isEnabled();
+    s.levellerTargetDb = m_tx->leveller().targetDb();
+    s.micGainDb = m_micGainDb;
+    s.compressionDb = m_txCompressionDb;
+    s.eqEnabled = m_tx->equalizer().isEnabled();
+    for (int i = 0; i < dsp::ParametricEq::kBands; ++i) {
+        s.eq[static_cast<std::size_t>(i)] = {m_tx->equalizer().bandFrequency(i),
+                                             m_tx->equalizer().bandGainDb(i),
+                                             m_tx->equalizer().bandQ(i)};
+    }
+    s.cfcEnabled = m_tx->multiband().isEnabled();
+    s.cfcPunch = m_tx->multiband().punch();
+    s.limiterEnabled = m_tx->limiter().isEnabled();
+    s.limiterCeilingDb = m_tx->limiter().ceilingDb();
+    s.drive = m_txDrive;
+
+    m_txProfiles->setState(m_txProfiles->current(), s);
+}
+
+void SessionManager::applyTxProfile(int profile)
+{
+    if (!m_txProfiles || !m_tx)
+        return;
+
+    const auto wanted = static_cast<TxProfiles::Profile>(profile);
+    const TxProfileState &s = m_txProfiles->state(wanted);
+    m_txProfiles->m_current = wanted;
+
+    // La sicura: ognuno dei comandi qui sotto emette un segnale che rientra da
+    // questa parte, e senza questa bandiera il profilo si riscriverebbe da sé
+    // mentre lo si sta applicando.
+    m_applyingProfile = true;
+
+    m_tx->gate().setEnabled(s.gateEnabled);
+    m_tx->gate().setThresholdDb(s.gateThresholdDb);
+    m_tx->leveller().setEnabled(s.levellerEnabled);
+    m_tx->leveller().setTargetDb(s.levellerTargetDb);
+    setMicGainDb(s.micGainDb);
+    setTxCompressionDb(s.compressionDb);
+    m_tx->equalizer().setEnabled(s.eqEnabled);
+    for (int i = 0; i < dsp::ParametricEq::kBands; ++i) {
+        const auto &band = s.eq[static_cast<std::size_t>(i)];
+        m_tx->equalizer().setBand(i, band.frequencyHz, band.gainDb, band.q);
+    }
+    m_tx->multiband().setEnabled(s.cfcEnabled);
+    m_tx->multiband().setPunch(s.cfcPunch);
+    m_tx->limiter().setEnabled(s.limiterEnabled);
+    m_tx->limiter().setCeilingDb(s.limiterCeilingDb);
+    setTxDrive(s.drive);
+
+    m_applyingProfile = false;
+
+    emit dynamicsChanged();
+    emit cfcChanged();
+    emit txEqChanged();
+    emit txProfileChanged();
+    emit txChanged();
+}
+
+void SessionManager::syncTxProfileToMode()
+{
+    if (!m_txProfiles)
+        return;
+
+    const ChannelEntry *entry = m_channels.at(m_channels.currentIndex());
+    const DemodMode mode = entry ? entry->settings.mode : DemodMode::Usb;
+    const auto wanted = m_txProfiles->profileForMode(mode);
+    if (wanted == m_txProfiles->current()) {
+        emit txProfileChanged();
+        return;
+    }
+
+    // Si esce da un profilo salvandolo. È la regola che rende i profili una
+    // memoria invece di una tassa: uno regola la propria voce in SSB, prova un
+    // FT8, torna in SSB e ritrova quello che aveva lasciato.
+    captureTxProfile();
+    m_txProfiles->save();
+    applyTxProfile(static_cast<int>(wanted));
+
+    qCInfo(dsdrCore) << "TX: profilo" << TxProfiles::name(wanted);
+}
+
+bool SessionManager::txEqEnabled() const
+{
+    return m_tx && m_tx->equalizer().isEnabled();
+}
+
+void SessionManager::setTxEqEnabled(bool enabled)
+{
+    if (!m_tx || m_tx->equalizer().isEnabled() == enabled)
+        return;
+    m_tx->equalizer().setEnabled(enabled);
+    emit txEqChanged();
+}
+
+int SessionManager::txEqBandCount() const
+{
+    return dsp::ParametricEq::kBands;
+}
+
+void SessionManager::setTxEqBand(int index, double frequencyHz, double gainDb, double q)
+{
+    if (!m_tx)
+        return;
+    m_tx->equalizer().setBand(index, frequencyHz, gainDb, q);
+    emit txEqChanged();
+}
+
+double SessionManager::txEqFrequency(int index) const
+{
+    return m_tx ? m_tx->equalizer().bandFrequency(index) : 0.0;
+}
+
+double SessionManager::txEqGainDb(int index) const
+{
+    return m_tx ? m_tx->equalizer().bandGainDb(index) : 0.0;
+}
+
+double SessionManager::txEqQ(int index) const
+{
+    return m_tx ? m_tx->equalizer().bandQ(index) : 1.0;
+}
+
+double SessionManager::txEqResponseDb(double frequencyHz) const
+{
+    return m_tx ? m_tx->equalizer().responseDb(frequencyHz) : 0.0;
+}
+
+void SessionManager::resetTxEq()
+{
+    if (!m_tx)
+        return;
+    m_tx->equalizer().reset();
+    for (int i = 0; i < dsp::ParametricEq::kBands; ++i) {
+        m_tx->equalizer().setBand(i, m_tx->equalizer().bandFrequency(i), 0.0,
+                                  m_tx->equalizer().bandQ(i));
+    }
+    emit txEqChanged();
 }
 
 void SessionManager::setAudioEqBand(int index, double frequencyHz, double gainDb, double q)
@@ -2031,6 +2249,12 @@ void SessionManager::setChannelMode(int row, int mode)
     m_channels.updateRds(entry->id, false, QString(), -1, -1, -1, QString(),
                          QString(), QString(), QString(), QString());
     pushChannelToEngine(row);
+
+    // Il profilo della catena di trasmissione segue il modo. Solo per il
+    // canale che si sta guardando: cambiare il modo di un canale di ascolto in
+    // secondo piano non è un cambio di mestiere.
+    if (row == m_channels.currentIndex())
+        syncTxProfileToMode();
 }
 
 void SessionManager::setChannelFilter(int row, int lowHz, int highHz)

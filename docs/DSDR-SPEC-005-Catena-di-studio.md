@@ -73,9 +73,6 @@ e le misure che sappiamo fare.
 ## 4. Quello che manca (disegnato)
 
 ### 4.1 Gli stadi nuovi della catena TX
-> Resta l'**EQ parametrico sulla trasmissione**: quello d'ascolto è fatto, e il
-> componente a curve si riusa. Manca il posto in cui metterlo — fra il
-> compressore e il multibanda — e i suoi cinque parametri sul percorso TX.
 
 
 - ~~**Gate**~~: fatto. Tre tempi — attacco immediato per non mangiare la prima
@@ -83,11 +80,14 @@ e le misure che sappiamo fare.
   lento per non tagliare la coda delle parole.
 - ~~**Leveller**~~: fatto. AGC lento prima della compressione, con il tetto al
   guadagno: senza, nelle pause alzerebbe il rumore fino al livello della voce.
-- ~~**EQ parametrico**~~: fatto sul percorso di ricezione — cinque campane
-  RBJ sull'ascolto, con la curva trascinabile sopra lo spettro vivo. Sulla
-  catena di trasmissione resta da fare: là serve prima il resto della catena,
-  perché un equalizzatore prima di un gate e di un leveller equalizza il
-  respiro della stanza insieme alla voce.
+- ~~**EQ parametrico**~~: fatto su **entrambe** le catene. Cinque campane RBJ,
+  la stessa curva trascinabile, lo stesso componente — su quella di
+  trasmissione la curva sta sopra lo spettro della propria voce.
+
+  Sulla catena TX sta **dopo** gate, leveller e compressore, e l'ordine è la
+  cosa che conta: in testa equalizzerebbe il respiro della stanza insieme alla
+  voce, e quello che alza lo alzerebbe per tutti e due. Lì dov'è, davanti
+  trova una voce già ripulita e a livello, e quello che tocca è solo il timbro.
 - ~~**CFC — compressore multibanda**~~: fatto. Quattro bande — 50–250 il corpo,
   250–700 il calore, 700–1800 la parola, 1800–4000 la presenza — separate con
   Linkwitz-Riley del quarto ordine e ricostruite esatte, così che a riposo non
@@ -159,12 +159,37 @@ ricevitore. Il pannello lo sostituisce.
   lettura non darebbe un errore, darebbe un riascolto cucito con due prese
   diverse — il modo peggiore di essere rotti, perché sembra funzionare.
 
-### 4.4 I profili per modo
+### 4.4 I profili per modo — **fatto**
 
-`SSB chiacchierata`, `SSB DX/contest`, `DATI piatto`. Commutati **con il
-modo**, automaticamente. Thetis ce li ha e li tiene sepolti; qui il profilo è
-la prima cosa che si sceglie, e cambia da sé quando cambia il modo — perché è
-quello che l'operatore intende quando passa da una chiacchierata a un pile-up.
+`SSB chiacchierata`, `SSB DX/contest`, `Dati e CW`. Commutati **con il modo**,
+automaticamente: chi passa a un pile-up non sta chiedendo un preset, sta
+cambiando mestiere.
+
+**L'insidia è tutta in una riga.** Commutare un profilo automaticamente vuol
+dire sovrascrivere quello che l'operatore ha appena regolato a mano, e se
+succede in silenzio è un furto: uno passa mezz'ora a sistemare la propria voce
+in SSB, prova un FT8, torna in SSB e trova tutto com'era prima.
+
+Quindi **prima di uscire da un profilo lo si salva** — e lo si salva anche
+chiudendo il programma. Il profilo non è un preset di fabbrica da cui si esce:
+è la memoria di come piace quel modo. Le impostazioni di fabbrica restano, e ci
+si torna con un comando esplicito.
+
+Due scelte di merito, che sono il motivo per cui i profili sono tre e non
+dieci.
+
+**Sui dati e in CW non c'è una scelta da offrire.** La catena si spegne tutta,
+e il livello parte più basso. Non è una precauzione: un compressore davanti a
+un modulatore FT8 allarga il segnale e non aggiunge un decibel di rapporto
+segnale-rumore a chi decodifica. È l'errore più diffuso che ci sia, e dare
+un'opzione suggerirebbe che esista un caso in cui accendere la catena convenga.
+
+**Il profilo DX non è la chiacchierata più forte.** Quello che fa capire in un
+pile-up non è il volume: è la banda 1–3 kHz, dove stanno le consonanti. Sotto
+i 300 Hz si toglie senza pietà — quel che c'è là sotto occupa potenza e non
+porta nessuna informazione. Se i due profili differissero solo per la
+compressione sarebbero lo stesso profilo con una manopola diversa, e c'è un
+test che lo presidia.
 
 ### 4.5 Fase 2: il blocco «Plugin»
 
