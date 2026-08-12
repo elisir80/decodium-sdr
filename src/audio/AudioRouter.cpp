@@ -125,10 +125,13 @@ private:
     dsp::SpscRing<float> *m_ring = nullptr;
     std::vector<float> m_scratch;
     std::atomic<float> m_gain{1.0f};
-    dsp::ParametricEq *m_equalizer = nullptr;
     std::atomic<quint64> m_underruns{0};
     bool m_useFloat = true;
     int m_outputChannels = 2;
+    // Dopo `m_outputChannels` e non prima: l'ordine dei membri deve essere
+    // quello della lista di inizializzazione, o il compilatore lo segnala — e
+    // in CI i warning sono errori.
+    dsp::ParametricEq *m_equalizer = nullptr;
 };
 
 AudioRouter::AudioRouter(QObject *parent)
