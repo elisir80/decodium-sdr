@@ -34,6 +34,8 @@ set(DSDR_QML_FILES
     qml/Markers.qml
     qml/SpectrumCursor.qml
     qml/NetworkQuality.qml
+    qml/AudioStudioPanel.qml
+    qml/PanelSwitchboard.qml
     qml/FrequencyPanel.qml
     qml/FrequencyGrid.qml
     qml/LevelScale.qml

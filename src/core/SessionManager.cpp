@@ -304,6 +304,14 @@ SessionManager::SessionManager(QObject *parent)
                 emit replayChanged();
             });
 
+    // Il tono dominante dell'audio, cinque volte al secondo.
+    connect(m_engine, &DspEngine::audioToneMeasured, this,
+            [this](double frequencyHz, double levelDb) {
+                m_audioToneHz = frequencyHz;
+                m_audioToneDb = levelDb;
+                emit audioToneChanged();
+            });
+
     // Una volta al secondo il motore dice quanti campioni sono arrivati e
     // quanti ne aspettava: da lì la salute del collegamento.
     connect(m_engine, &DspEngine::streamRateMeasured, this,
@@ -380,6 +388,14 @@ SessionManager::SessionManager(QObject *parent)
         setStatus(message);
         emit errorReported(message, false);
     });
+
+    // Il tono dominante dell'audio, cinque volte al secondo.
+    connect(m_engine, &DspEngine::audioToneMeasured, this,
+            [this](double frequencyHz, double levelDb) {
+                m_audioToneHz = frequencyHz;
+                m_audioToneDb = levelDb;
+                emit audioToneChanged();
+            });
 
     // Una volta al secondo il motore dice quanti campioni sono arrivati e
     // quanti ne aspettava: da lì la salute del collegamento.
@@ -563,6 +579,11 @@ SpectrumFeed *SessionManager::txSpectrum() const
 SpectrumFeed *SessionManager::spectrum() const
 {
     return m_engine ? m_engine->spectrumFeed() : nullptr;
+}
+
+SpectrumFeed *SessionManager::audioSpectrum() const
+{
+    return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
 }
 
 void SessionManager::setStatus(const QString &message)

@@ -46,6 +46,19 @@ public:
 
     SpectrumFeed *spectrumFeed() const noexcept { return m_spectrum; }
 
+    /// Lo spettro dell'audio che si sta ascoltando, non della banda.
+    ///
+    /// È un secondo feed con la stessa forma del primo — stesso ring, stesso
+    /// contratto — ma alimentato dal mix audio finale, quello che esce dagli
+    /// altoparlanti: passa dai filtri del canale, dall'AGC, dalla riduzione di
+    /// rumore. È lì che si vede se il notch ha preso il fischio, se il filtro
+    /// taglia dove si crede, se la riduzione di rumore sta mangiando le
+    /// consonanti insieme al fruscio.
+    ///
+    /// Solo la metà positiva: l'audio è un segnale reale e la sua trasformata
+    /// è simmetrica, quindi la metà sotto lo zero è la stessa cosa specchiata.
+    SpectrumFeed *audioSpectrumFeed() const noexcept { return m_audioSpectrum; }
+
     /// Aggancia la sorgente IQ. Thread-safe: il thread DSP recepisce il
     /// cambiamento al frame successivo, senza fermare nulla a mano.
     void setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz);
@@ -174,6 +187,15 @@ signals:
     /// chiederebbe di correggere il guadagno (0 se non chiede nulla).
     void overloadStateChanged(bool overloaded, double peakDbfs, double requestDb);
 
+    /// La riga più forte dello spettro audio, in hertz, e il suo livello.
+    ///
+    /// È il tono che si sente. Serve a due cose che si fanno di continuo e che
+    /// finora si facevano a orecchio: portare una CW al passo giusto — quella
+    /// nota che si sceglie una volta e si insegue per anni — e verificare che
+    /// una portante stia dove si crede. Zero quando non c'è niente che
+    /// emerga: un tono inventato è peggio di nessun tono.
+    void audioToneMeasured(double frequencyHz, double levelDb);
+
     /// Quanti campioni al secondo sono arrivati davvero, e quanti se ne
     /// aspettavano. Una volta al secondo, dallo stesso punto in cui il motore
     /// tira le somme per il log.
@@ -186,6 +208,11 @@ signals:
 
 private:
     void reconfigure();
+
+    /// Trasforma il mix audio e ne ricava spettro e tono dominante.
+    /// Gira sul thread DSP, dentro il ciclo di elaborazione.
+    void analyzeAudio(std::size_t frames);
+
     void processAvailable();
     void attachSource(dsp::SpscRing<float> *ring, double sampleRate,
                       qint64 centerFrequencyHz);
@@ -246,6 +273,18 @@ private:
     SpectrumFeed *m_spectrum = nullptr;
     dsp::SpectrumAnalyzer m_analyzer;
     int m_fftSize = 4096;
+
+    // ── Analisi dell'audio ───────────────────────────────────────────────
+    //
+    // Un secondo analizzatore, alla frequenza dell'audio e con una FFT molto
+    // più corta: 2048 punti su 48 kHz danno poco più di venti hertz di
+    // risoluzione, che su una passata di tre kilohertz è quello che serve —
+    // si distingue una nota dall'altra senza spendere un millisecondo per
+    // trasformata.
+    SpectrumFeed *m_audioSpectrum = nullptr;
+    dsp::SpectrumAnalyzer m_audioAnalyzer;
+    std::vector<dsp::Complex> m_audioScratch;  ///< il mix, in forma complessa
+    qint64 m_lastToneNs = 0;
 
     // unordered_map e non QHash: Channel possiede un ChannelProcessor via
     // unique_ptr ed è solo movable, mentre i contenitori Qt richiedono la copia.

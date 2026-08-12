@@ -38,12 +38,51 @@ Rectangle {
 
         ListElement { key: "sintonia" }
         ListElement { key: "strumento" }
+        ListElement { key: "audio" }
         ListElement { key: "tempo" }
         ListElement { key: "catena" }
         ListElement { key: "trasmissione" }
         ListElement { key: "device" }
         ListElement { key: "waterfall" }
         ListElement { key: "canali" }
+    }
+
+    /// Il nome e il glifo di ogni pannello, per la fila di icone.
+    ///
+    /// Sta qui e non nel modello dell'ordine perché quello lo si riordina e lo
+    /// si salva: un'etichetta tradotta dentro un ListModel che finisce in una
+    /// stringa di preferenze è un modo di ritrovarsela in italiano su un
+    /// programma in inglese.
+    readonly property var panelInfo: [
+        { key: "sintonia",     glyph: "⌗", label: qsTr("Sintonia") },
+        { key: "strumento",    glyph: "◔", label: qsTr("Strumento") },
+        { key: "audio",        glyph: "♫", label: qsTr("Studio audio") },
+        { key: "tempo",        glyph: "⏱", label: qsTr("Macchina del tempo") },
+        { key: "catena",       glyph: "⨍", label: qsTr("Catena RX") },
+        { key: "trasmissione", glyph: "▲", label: qsTr("Trasmissione") },
+        { key: "device",       glyph: "⚙", label: qsTr("Device") },
+        { key: "waterfall",    glyph: "▤", label: qsTr("Waterfall") },
+        { key: "canali",       glyph: "≡", label: qsTr("Canali") },
+    ]
+
+    // ── Pannelli spenti ──────────────────────────────────────────────────
+    //
+    // Chiuso e spento sono due cose diverse: chiuso è ridotto a una riga di
+    // titolo, spento è via. Nove righe di titolo sono comunque nove righe, e
+    // chi opera in fonia non ha bisogno della macchina del tempo.
+    property string hiddenPanels: ""
+
+    readonly property var hiddenKeys:
+        hiddenPanels === "" ? [] : hiddenPanels.split(",")
+
+    function togglePanel(key) {
+        const keys = hiddenKeys.slice()
+        const at = keys.indexOf(key)
+        if (at >= 0)
+            keys.splice(at, 1)
+        else
+            keys.push(key)
+        hiddenPanels = keys.join(",")
     }
 
     /// L'ordine corrente, per chi lo presidia con un test.
@@ -55,6 +94,7 @@ Rectangle {
     Settings {
         category: "panels"
         property alias order: root.savedOrder
+        property alias hidden: root.hiddenPanels
     }
 
     Component.onCompleted: restoreOrder()
@@ -113,6 +153,13 @@ Rectangle {
     /// altezza zero, slot invisibile, pannello invisibile, altezza zero — da
     /// cui non si esce più. Qui il Loader non crea nemmeno l'oggetto.
     function slotActive(key) {
+        // Spento vuol dire che non viene proprio creato: un pannello invisibile
+        // ma vivo continuerebbe a tenere i suoi binding e, nel caso dello
+        // studio audio, un secondo rendering su GPU per qualcosa che nessuno
+        // sta guardando.
+        if (hiddenKeys.indexOf(key) >= 0)
+            return false
+
         switch (key) {
         case "waterfall": return root.panadapter !== null
         case "canali":    return true
@@ -120,6 +167,8 @@ Rectangle {
         // — il segnale o la potenza — lo decide il pannello, e la colonna non
         // ha motivo di saperlo.
         case "strumento": return Session.connected
+        // Lo studio audio ha senso solo con dell'audio che scorra.
+        case "audio":     return Session.connected
         case "device":    return Session.connected
                               && Session.capabilities.nativePanels.length > 0
         // Su un ricevitore puro il pannello TX non viene creato: la UI si
@@ -133,6 +182,7 @@ Rectangle {
         switch (key) {
         case "sintonia":  return tuningPanel
         case "strumento": return sMeterPanel
+        case "audio":     return audioStudioPanel
         case "tempo":     return timeMachinePanel
         case "catena":    return rxChainPanel
         case "trasmissione": return txPanel
@@ -143,12 +193,43 @@ Rectangle {
         }
     }
 
+    // ── La fila di icone ─────────────────────────────────────────────────
+    //
+    // Fuori dall'area che scorre: è l'indice della colonna, e un indice che
+    // scorre via insieme al contenuto non è un indice.
+    PanelSwitchboard {
+        id: switchboard
+
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: Theme.spacing
+
+        panels: root.panelInfo
+        hidden: root.hiddenKeys
+        onToggled: (key) => root.togglePanel(key)
+    }
+
+    Rectangle {
+        anchors.top: switchboard.bottom
+        anchors.topMargin: Theme.spacingTight
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: Theme.spacing
+        height: 1
+        color: Theme.border
+    }
+
     // ── La colonna ───────────────────────────────────────────────────────
     Flickable {
         id: flick
 
-        anchors.fill: parent
+        anchors.top: switchboard.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         anchors.margins: Theme.spacing
+        anchors.topMargin: Theme.spacingLoose
         contentWidth: width
         contentHeight: column.implicitHeight
         clip: true
@@ -220,6 +301,12 @@ Rectangle {
         id: sMeterPanel
 
         SMeterPanel {}
+    }
+
+    Component {
+        id: audioStudioPanel
+
+        AudioStudioPanel {}
     }
 
     Component {

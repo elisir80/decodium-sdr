@@ -22,6 +22,15 @@ namespace {
 constexpr std::size_t kAudioRingFloats = 1 << 17;
 constexpr std::size_t kAudioChannels = 2;
 
+/// Punti della trasformata usata per analizzare l'audio.
+///
+/// Duemilaquarantotto su quarantottomila danno poco più di venti hertz di
+/// risoluzione: su una passata di tre kilohertz è quello che serve — si
+/// distingue una nota dall'altra — e costa una frazione di quanto costa la
+/// trasformata della banda, che è due volte più lunga su un flusso che va
+/// quattro volte più veloce.
+constexpr int kAudioFftSize = 2048;
+
 /// Quanti campioni IQ si elaborano per giro. Coincide con il blocco massimo
 /// dei ChannelProcessor: nessuna suddivisione ulteriore, nessuna allocazione.
 constexpr std::size_t kProcessBlock = dsp::kMaxBlockFrames;
@@ -66,6 +75,7 @@ DspEngine::DspEngine(QObject *parent)
     : QObject(parent)
     , m_audioRing(std::make_unique<dsp::SpscRing<float>>(kAudioRingFloats))
     , m_spectrum(new SpectrumFeed(this))
+    , m_audioSpectrum(new SpectrumFeed(this))
 {
     m_interleaved.resize(kProcessBlock * 2);
     m_iq.resize(kProcessBlock);
@@ -331,6 +341,20 @@ void DspEngine::reconfigure()
     m_analyzer.setOverlap(0.5f);
 
     m_spectrum->configure(m_fftSize, m_activeRate, m_centerHz.load(std::memory_order_acquire));
+
+    // L'analizzatore dell'audio non dipende dal device: la frequenza
+    // dell'audio interno è fissa, e la sua geometria non cambia con la banda.
+    // Si configura qui lo stesso perché è il punto in cui si allocano i
+    // buffer, e allocare nel percorso caldo è vietato (CONSTITUTION §5).
+    if (m_audioAnalyzer.configure(kAudioFftSize, kInternalAudioRate)) {
+        m_audioScratch.assign(static_cast<std::size_t>(kProcessBlock), dsp::Complex{});
+        // Metà bin e metà banda: la trasformata di un segnale reale è
+        // simmetrica, e la metà negativa non aggiunge niente. Il centro sta a
+        // un quarto della frequenza di campionamento, così l'asse va da zero
+        // alla Nyquist come chiunque si aspetta da un analizzatore audio.
+        m_audioSpectrum->configure(kAudioFftSize / 2, kInternalAudioRate / 2.0,
+                                   static_cast<qint64>(kInternalAudioRate / 4.0));
+    }
     const std::size_t expectedAudioFrames = static_cast<std::size_t>(std::ceil(
         static_cast<double>(kProcessBlock) * kInternalAudioRate / m_activeRate)) + 8;
     m_mix.assign(expectedAudioFrames * kAudioChannels,
@@ -465,6 +489,90 @@ void DspEngine::onIqFrameReady(const hal::IqFrame &frame)
         }
     }
     processAvailable();
+}
+
+void DspEngine::analyzeAudio(std::size_t frames)
+{
+    if (frames == 0 || m_audioScratch.size() < frames)
+        return;
+
+    // Mono: la somma dei due canali diviso due. Analizzare un canale solo
+    // perderebbe metà del segnale su una sorgente che li usa in modo diverso,
+    // e analizzarli separati raddoppierebbe il costo per mostrare due volte la
+    // stessa cosa — l'audio di un ricevitore è mono in tutto tranne che nel
+    // formato.
+    for (std::size_t i = 0; i < frames; ++i) {
+        const float mono = 0.5f * (m_mix[i * kAudioChannels] + m_mix[i * kAudioChannels + 1]);
+        m_audioScratch[i] = dsp::Complex{mono, 0.0f};
+    }
+
+    if (!m_audioAnalyzer.push(m_audioScratch.data(), frames))
+        return;
+
+    const std::vector<float> &mags = m_audioAnalyzer.magnitudesDb();
+    if (static_cast<int>(mags.size()) < kAudioFftSize)
+        return;
+
+    // Solo la metà positiva. Dopo il fftshift le frequenze crescenti partono
+    // da metà tabella: da lì in avanti c'è da zero alla Nyquist.
+    const float *positive = mags.data() + kAudioFftSize / 2;
+    m_audioSpectrum->publish(positive);
+
+    // ── Il tono dominante ────────────────────────────────────────────────
+    //
+    // Una volta ogni tanto e non a ogni trasformata: è un numero che si legge,
+    // e un numero che cambia sessanta volte al secondo non si legge.
+    const qint64 now = m_uptime.nsecsElapsed();
+    if (now - m_lastToneNs < 200'000'000)
+        return;
+    m_lastToneNs = now;
+
+    const int bins = kAudioFftSize / 2;
+    // Sotto i cinquanta hertz c'è il residuo di continua e il rumore di
+    // alimentazione, e sono sempre i più forti di tutti: cercare il tono
+    // partendo da zero vuol dire trovare sempre e solo quelli.
+    const double binWidth = kInternalAudioRate / static_cast<double>(kAudioFftSize);
+    const int first = static_cast<int>(50.0 / binWidth) + 1;
+
+    int peak = -1;
+    float peakDb = -200.0f;
+    for (int bin = first; bin < bins; ++bin) {
+        if (positive[bin] > peakDb) {
+            peakDb = positive[bin];
+            peak = bin;
+        }
+    }
+
+    // Deve emergere dal fondo, altrimenti non è un tono: è il bin che ha vinto
+    // per caso fra mille bin di rumore. Dodici decibel sopra la mediana sono
+    // la soglia oltre la quale una nota si sente davvero.
+    float median = -120.0f;
+    if (peak >= 0) {
+        std::vector<float> sorted(positive + first, positive + bins);
+        const std::size_t middle = sorted.size() / 2;
+        std::nth_element(sorted.begin(), sorted.begin() + middle, sorted.end());
+        median = sorted[middle];
+    }
+
+    if (peak < 0 || peakDb - median < 12.0f) {
+        emit audioToneMeasured(0.0, static_cast<double>(peakDb));
+        return;
+    }
+
+    // Interpolazione parabolica sui tre bin attorno al massimo: senza, la
+    // lettura salta di venti hertz alla volta, e su una CW venti hertz sono la
+    // differenza fra essere in nota e non esserlo.
+    double offset = 0.0;
+    if (peak > 0 && peak + 1 < bins) {
+        const double left = positive[peak - 1];
+        const double centre = positive[peak];
+        const double right = positive[peak + 1];
+        const double denom = left - 2.0 * centre + right;
+        if (std::abs(denom) > 1e-6)
+            offset = 0.5 * (left - right) / denom;
+    }
+
+    emit audioToneMeasured((peak + offset) * binWidth, static_cast<double>(peakDb));
 }
 
 void DspEngine::processAvailable()
@@ -727,6 +835,14 @@ void DspEngine::processAvailable()
         // Se il consumatore audio è in ritardo scartiamo il campione più
         // vecchio: meglio un micro-salto che una latenza che cresce senza fine.
         const std::size_t audioSamples = audioFrames * kAudioChannels;
+        // ── Ramo analisi dell'audio ─────────────────────────────────────
+        //
+        // Il tap sta qui, sul mix finale: è esattamente quello che esce dagli
+        // altoparlanti — filtri del canale, AGC e riduzione di rumore
+        // compresi. Prenderlo prima significherebbe mostrare un audio che
+        // nessuno sta ascoltando.
+        analyzeAudio(audioFrames);
+
         if (IqRecorder *recorder = m_audioRecorder.load(std::memory_order_acquire))
             recorder->feed(m_mix.data(), audioSamples);
         if (m_audioRing->space() < audioSamples)

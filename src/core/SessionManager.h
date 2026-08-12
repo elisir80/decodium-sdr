@@ -63,6 +63,11 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::ChannelModel *channels READ channels CONSTANT)
     Q_PROPERTY(dsdr::core::CapabilitiesInfo *capabilities READ capabilities CONSTANT)
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
+    Q_PROPERTY(dsdr::core::SpectrumFeed *audioSpectrum READ audioSpectrum CONSTANT)
+
+    // ── Analisi dell'audio ──────────────────────────────────────────────
+    Q_PROPERTY(double audioToneHz READ audioToneHz NOTIFY audioToneChanged)
+    Q_PROPERTY(double audioToneDb READ audioToneDb NOTIFY audioToneChanged)
 
     /// Lo spettro di ciò che si sta trasmettendo. In mezzo duplex la radio si
     /// assorda mentre trasmette: senza questo, il panadattatore resterebbe una
@@ -229,6 +234,17 @@ public:
     ChannelModel *channels() { return &m_channels; }
     CapabilitiesInfo *capabilities() { return &m_capabilities; }
     SpectrumFeed *spectrum() const;
+
+    /// Lo spettro dell'audio che si sta ascoltando: passa dai filtri del
+    /// canale, dall'AGC e dalla riduzione di rumore, quindi mostra quello che
+    /// esce dagli altoparlanti e non quello che arriva dall'antenna.
+    SpectrumFeed *audioSpectrum() const;
+
+    /// La riga più forte dello spettro audio, e il suo livello. Zero quando
+    /// non c'è niente che emerga dal fondo: un tono inventato è peggio di
+    /// nessun tono.
+    double audioToneHz() const { return m_audioToneHz; }
+    double audioToneDb() const { return m_audioToneDb; }
     SpectrumFeed *txSpectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
     IqRecorder *recorder() { return &m_recorder; }
@@ -511,6 +527,7 @@ signals:
     void replayChanged();
     void noiseBlankerChanged();
     void streamHealthChanged();
+    void audioToneChanged();
     void neuralChanged();
     void overloadChanged();
     void spectrumAveragingChanged();
@@ -579,6 +596,8 @@ private:
     bool m_nbEnabled = false;
     bool m_neuralEnabled = false;
     double m_streamHealth = -1.0;
+    double m_audioToneHz = 0.0;
+    double m_audioToneDb = -140.0;
     bool m_overloaded = false;
 
     bool m_txMetersAvailable = false;
