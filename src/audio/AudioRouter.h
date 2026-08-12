@@ -57,6 +57,18 @@ public:
     /// alimenta i decoder si è già staccato prima e resta lineare.
     dsdr::dsp::ParametricEq &equalizer() noexcept { return m_equalizer; }
 
+    /// La sorgente che **prende il posto** della ricezione, finché ha
+    /// campioni.
+    ///
+    /// Serve al riascolto della propria voce e, più avanti, al monitor: sono
+    /// le due cose che si vogliono sentire *invece* della banda, non sopra. Un
+    /// riascolto mescolato al fruscio dei 40 metri non si giudica.
+    ///
+    /// La ricezione continua a scorrere sotto: si legge e si butta, tanti
+    /// campioni quanti se ne consumano. Lasciarla ferma vorrebbe dire trovarsi
+    /// alla fine del riascolto con un ring pieno di passato da smaltire.
+    void setInterruptSource(dsp::SpscRing<float> *ring);
+
     /// Numero di underrun dall'avvio: se cresce, il DSP non sta stando dietro.
     quint64 underrunCount() const;
 
@@ -80,6 +92,7 @@ private:
     float m_volume = 0.8f;
     int m_latencyMs = 0;
     dsdr::dsp::ParametricEq m_equalizer;
+    dsp::SpscRing<float> *m_interruptSource = nullptr;
     QTimer *m_primeTimer = nullptr;
     int m_primeAttempts = 0;
     bool m_muted = false;

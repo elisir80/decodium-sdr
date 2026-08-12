@@ -47,6 +47,9 @@ constexpr float kTestAmplitude = 0.8f;
 /// cercano segnali deboli in mezzo al rumore, si guarda la forma del proprio
 /// segnale, e una risoluzione più grossa la disegna con meno ritardo.
 constexpr int kMonitorFftSize = 2048;
+
+/// Capienza del ring del riascolto, in frame stereo.
+constexpr std::size_t kPlaybackRingFrames = 24000;
 } // namespace
 
 TxEngine::TxEngine(QObject *parent)
@@ -61,6 +64,13 @@ TxEngine::TxEngine(QObject *parent)
     m_modulator.configure(m_audioRate);
     m_cfc.configure(m_audioRate);
     m_gate.configure(m_audioRate);
+    // Il registratore con gli altri: dieci secondi di due tracce sono meno di
+    // quattro megabyte, e nascono qui perché nel percorso caldo non si alloca.
+    m_recorder.configure(m_audioRate);
+    m_dry.assign(kAudioBlockFrames, 0.0f);
+    m_playbackMono.assign(kAudioBlockFrames, 0.0f);
+    m_playbackStereo.assign(kAudioBlockFrames * 2, 0.0f);
+    m_playback.reset(kPlaybackRingFrames * 2);
     m_leveller.configure(m_audioRate);
     m_limiter.configure(m_audioRate);
     m_keyer.configure(m_audioRate);
@@ -286,6 +296,12 @@ void TxEngine::configureMonitor()
 
 void TxEngine::pump()
 {
+    // Il riascolto viene prima, e gira anche a PTT libero: è proprio in quel
+    // momento che serve. Il timer c'è già, e il registratore vive su questo
+    // thread — farlo pompare da qualcun altro vorrebbe dire un secondo thread
+    // e un lucchetto per niente.
+    pumpPlayback();
+
     if (!m_transmitting.load(std::memory_order_acquire) || !m_chainReady)
         return;
 
@@ -331,6 +347,102 @@ void TxEngine::pump()
                              << (m_domain == Domain::Audio ? "audio" : "banda base");
         }
     }
+}
+
+void TxEngine::pumpPlayback()
+{
+    const bool wasPlaying = m_playbackActive;
+
+    if (!m_recorder.isPlaying()) {
+        if (wasPlaying) {
+            m_playbackActive = false;
+            emit playbackChanged();
+        }
+        return;
+    }
+
+    // Si riempie il ring fino a lasciarlo mezzo pieno: abbastanza da coprire
+    // un giro di timer perso, poco abbastanza che «ferma» fermi subito e non
+    // mezzo secondo dopo.
+    const std::size_t target = m_playback.capacity() / 2;
+    while (m_playback.available() < target) {
+        const std::size_t room = (m_playback.space() / 2);
+        const std::size_t want = std::min(kAudioBlockFrames, room);
+        if (want == 0)
+            break;
+
+        const std::size_t got = m_recorder.pull(m_playbackMono.data(), want);
+        if (got == 0)
+            break;
+
+        // Il registratore tiene una traccia mono, l'uscita audio vuole due
+        // canali: si duplica. La voce riascoltata sta in mezzo alla testa, che
+        // è dove sta anche quando la si sente parlando.
+        for (std::size_t i = 0; i < got; ++i) {
+            m_playbackStereo[i * 2] = m_playbackMono[i];
+            m_playbackStereo[i * 2 + 1] = m_playbackMono[i];
+        }
+        m_playback.write(m_playbackStereo.data(), got * 2);
+    }
+
+    if (!wasPlaying) {
+        m_playbackActive = true;
+        m_playbackCountdown = 0;
+    }
+
+    // Mentre si riascolta non si trasmette, quindi gli indicatori non battono:
+    // senza questo, la barra del riascolto resterebbe ferma sull'inizio.
+    if (--m_playbackCountdown <= 0) {
+        m_playbackCountdown = kMeterEvery;
+        emit playbackChanged();
+    }
+}
+
+void TxEngine::playRecording(int source)
+{
+    if (m_transmitting.load(std::memory_order_acquire)) {
+        emit refused(tr("Non ci si può riascoltare mentre si trasmette."));
+        return;
+    }
+    if (!m_recorder.hasContent()) {
+        emit refused(tr("Non c'è ancora niente da riascoltare: la registrazione "
+                        "si riempie mentre si trasmette."));
+        return;
+    }
+
+    // Il ring si svuota prima: quello che c'era dentro è la coda del riascolto
+    // precedente, e sentirla in testa a quello nuovo sarebbe un salto.
+    m_playback.clear();
+    m_recorder.startPlayback(source == 0 ? dsp::VoiceRecorder::Source::Dry
+                                         : dsp::VoiceRecorder::Source::Wet);
+    pumpPlayback();
+}
+
+void TxEngine::stopRecordingPlayback()
+{
+    m_recorder.stopPlayback();
+    m_playback.clear();
+    if (m_playbackActive) {
+        m_playbackActive = false;
+        emit playbackChanged();
+    }
+}
+
+void TxEngine::setPlaybackSource(int source)
+{
+    const auto wanted = source == 0 ? dsp::VoiceRecorder::Source::Dry
+                                    : dsp::VoiceRecorder::Source::Wet;
+    if (m_recorder.playbackSource() == wanted)
+        return;
+
+    m_recorder.setPlaybackSource(wanted);
+
+    // Il ring va svuotato, altrimenti si continuerebbe a sentire la traccia di
+    // prima per il tempo che ci sta dentro — mezzo secondo di ritardo fra il
+    // gesto e l'effetto, che è quanto basta a non capire più quale sia quale.
+    m_playback.clear();
+    pumpPlayback();
+    emit playbackChanged();
 }
 
 void TxEngine::produce(std::size_t audioFrames)
@@ -413,6 +525,10 @@ void TxEngine::produce(std::size_t audioFrames)
         // il leveller, che insegue la distanza dal microfono in secondi, e
         // solo dopo il compressore, che doma le punte in millisecondi — una
         // costante di tempo sola non può fare bene entrambe.
+        // La voce com'è, prima che la catena la tocchi. Va copiata adesso:
+        // ogni stadio lavora sul posto, e dopo il gate l'originale non c'è più.
+        std::copy_n(m_audio.data(), audioFrames, m_dry.data());
+
         m_gate.process(m_audio.data(), audioFrames);
         m_leveller.process(m_audio.data(), audioFrames);
 
@@ -426,6 +542,12 @@ void TxEngine::produce(std::size_t audioFrames)
         // lui lavora sul fondo scala. Oltre il tetto il modulatore tosa, e
         // tosare in banda base vuol dire allargarsi sui vicini.
         m_limiter.process(m_audio.data(), audioFrames);
+
+        // Le due tracce finiscono qui, sempre, senza che nessuno abbia dovuto
+        // premere «registra» prima di parlare: ci si accorge di voler
+        // riascoltare solo dopo aver parlato.
+        m_recorder.record(m_dry.data(), m_audio.data(), audioFrames);
+
         m_micPeak.store(m_speech.lastInputPeak(), std::memory_order_relaxed);
         m_compressionDb.store(m_speech.lastCompressionDb(), std::memory_order_relaxed);
     }

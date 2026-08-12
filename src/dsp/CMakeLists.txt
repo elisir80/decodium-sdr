@@ -72,6 +72,8 @@ add_library(dsdr_dsp STATIC
     Modulator.cpp
     SpeechProcessor.h
     SpeechProcessor.cpp
+    VoiceRecorder.h
+    VoiceRecorder.cpp
     CwKeyer.h
     CwKeyer.cpp
     AudioHighPass.h

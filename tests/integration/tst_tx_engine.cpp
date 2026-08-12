@@ -69,6 +69,7 @@ private slots:
     void aRateThatIsNotAMultipleIsRefusedOutLoud();
     void theTuneCarrierIsSteady();
     void twoTonesStayTwo();
+    void whatWasSaidComesBack();
 };
 
 void TestTxEngine::nothingLeavesWithThePttUp()
@@ -251,6 +252,76 @@ void TestTxEngine::twoTonesStayTwo()
                  qPrintable(QStringLiteral("intermodulazione nostra a %1 Hz: %2")
                                 .arg(product).arg(level)));
     }
+}
+
+void TestTxEngine::whatWasSaidComesBack()
+{
+    // Il registratore ha il suo test, che prova il buffer circolare. Questo
+    // prova l'altra metà, che nessun test di unità può vedere: che la voce
+    // passi davvero dal microfono al registratore mentre si trasmette, e che
+    // ne esca dal ring del riascolto quando il PTT è libero. Sono due
+    // travasi e un thread, ed è esattamente il tipo di collegamento che si
+    // dimentica di fare e non se ne accorge nessuno finché non serve.
+    dsp::SpscRing<float> ring(1 << 20);
+    dsp::SpscRing<float> mic(1 << 16);
+
+    TxEngine engine;
+    engine.attach(&ring, kDeviceRate);
+    engine.setMicSource(&mic, 48000.0);
+    engine.start();
+
+    // Un tono al posto della voce: qui non interessa il suono, interessa che
+    // qualcosa di diverso da zero faccia tutto il giro.
+    //
+    // Il microfono si alimenta **mentre** si trasmette e non prima: premendo il
+    // PTT il motore svuota la coda del microfono, perché quel che c'è dentro è
+    // entrato mentre non si trasmetteva e mandarlo in aria adesso vorrebbe dire
+    // trasmettere il passato. Riempirla prima darebbe una registrazione di
+    // mezzo secondo di silenzio, e sarebbe il test a essere sbagliato.
+    std::vector<float> block(4800);
+    std::size_t phase = 0;
+
+    engine.setTransmitting(true);
+    for (int round = 0; round < 5; ++round) {
+        for (std::size_t i = 0; i < block.size(); ++i, ++phase) {
+            block[i] = 0.4f * static_cast<float>(
+                std::sin(dsp::kTwoPi * 700.0 * static_cast<double>(phase) / 48000.0));
+        }
+        mic.write(block.data(), block.size());
+        spin(90);
+    }
+    engine.setTransmitting(false);
+    spin(20);
+
+    QVERIFY2(engine.recorder().hasContent(),
+             "il registratore non ha visto passare la voce");
+    QVERIFY(engine.recorder().recordedSeconds() > 0.2);
+
+    // Ora il riascolto. Il ring si riempie dal timer del motore, quindi si
+    // lascia girare un po' e poi si guarda se ne è uscito qualcosa che suona.
+    engine.playRecording(1);
+    spin(120);
+
+    QVERIFY(engine.recorder().isPlaying());
+
+    std::vector<float> heard(8192);
+    const std::size_t got = engine.playbackStream()->read(heard.data(), heard.size());
+    QVERIFY2(got > 0, "dal ring del riascolto non è uscito niente");
+
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < got; ++i)
+        peak = std::max(peak, std::abs(heard[i]));
+    QVERIFY2(peak > 0.05f,
+             qPrintable(QStringLiteral("il riascolto esce a %1: è silenzio").arg(peak)));
+
+    // Stereo: i due canali portano la stessa cosa. Se ne uscisse uno solo, la
+    // voce arriverebbe a metà livello e da un orecchio solo.
+    QCOMPARE(heard[0], heard[1]);
+    QCOMPARE(heard[2], heard[3]);
+
+    // E si ferma quando glielo si dice.
+    engine.stopRecordingPlayback();
+    QVERIFY(!engine.recorder().isPlaying());
 }
 
 QTEST_MAIN(TestTxEngine)

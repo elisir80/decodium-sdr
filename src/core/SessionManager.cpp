@@ -172,6 +172,13 @@ SessionManager::SessionManager(QObject *parent)
     connect(m_txThread, &QThread::started, m_tx, &TxEngine::start);
     connect(m_txThread, &QThread::finished, m_tx, &QObject::deleteLater);
     connect(m_tx, &TxEngine::metersUpdated, this, &SessionManager::txMetersChanged);
+    connect(m_tx, &TxEngine::playbackChanged, this, &SessionManager::voicePlaybackChanged);
+
+    // Il riascolto prende il posto della ricezione nell'uscita audio. Si
+    // aggancia una volta sola e per sempre: il router lo terrà anche se il
+    // dispositivo audio cambia sotto.
+    if (m_audio)
+        m_audio->setInterruptSource(m_tx->playbackStream());
     connect(m_tx, &TxEngine::refused, this, [this](const QString &reason) {
         // Il PTT torna su da solo: lasciarlo premuto mentre non esce nulla è
         // il modo migliore per far cercare il guasto nell'antenna.
@@ -602,6 +609,61 @@ SpectrumFeed *SessionManager::spectrum() const
 SpectrumFeed *SessionManager::audioSpectrum() const
 {
     return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
+}
+
+bool SessionManager::voiceRecordingReady() const
+{
+    return m_tx && m_tx->recorder().hasContent();
+}
+
+double SessionManager::voiceRecordedSeconds() const
+{
+    return m_tx ? m_tx->recorder().recordedSeconds() : 0.0;
+}
+
+double SessionManager::voiceRecordingCapacitySeconds() const
+{
+    return dsp::VoiceRecorder::kDefaultSeconds;
+}
+
+bool SessionManager::voicePlaying() const
+{
+    return m_tx && m_tx->recorder().isPlaying();
+}
+
+double SessionManager::voicePlaybackPosition() const
+{
+    return m_tx ? m_tx->recorder().positionSeconds() : 0.0;
+}
+
+int SessionManager::voicePlaybackSource() const
+{
+    if (!m_tx)
+        return 1;
+    return m_tx->recorder().playbackSource() == dsp::VoiceRecorder::Source::Dry ? 0 : 1;
+}
+
+void SessionManager::setVoicePlaybackSource(int source)
+{
+    if (!m_tx || voicePlaybackSource() == source)
+        return;
+    // Il motore vive su un thread suo: la commutazione va fatta là, dove il
+    // registratore è di casa.
+    QMetaObject::invokeMethod(m_tx, [this, source] { m_tx->setPlaybackSource(source); });
+}
+
+void SessionManager::playVoiceRecording(int source)
+{
+    if (!m_tx)
+        return;
+    QMetaObject::invokeMethod(m_tx, [this, source] { m_tx->playRecording(source); });
+}
+
+void SessionManager::stopVoiceRecording()
+{
+    if (!m_tx)
+        return;
+    QMetaObject::invokeMethod(m_tx, [this] { m_tx->stopRecordingPlayback(); });
 }
 
 bool SessionManager::gateEnabled() const

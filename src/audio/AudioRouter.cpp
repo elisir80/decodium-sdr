@@ -39,6 +39,15 @@ public:
     }
 
     void setGain(float gain) noexcept { m_gain.store(gain, std::memory_order_relaxed); }
+
+    /// Chiamato dal thread della UI mentre la callback audio gira. Il
+    /// puntatore è atomico per questo: la callback lo legge una volta sola per
+    /// giro e poi lavora sulla copia.
+    void setInterrupt(dsp::SpscRing<float> *ring) noexcept
+    {
+        m_interrupt.store(ring, std::memory_order_release);
+    }
+
     quint64 underruns() const noexcept { return m_underruns.load(std::memory_order_relaxed); }
 
     bool isSequential() const override { return true; }
@@ -59,16 +68,37 @@ protected:
         frames = std::min(frames, m_scratch.size() / kSourceChannels);
 
         const std::size_t requestedSamples = frames * kSourceChannels;
-        const std::size_t gotSamples = m_ring
-            ? m_ring->read(m_scratch.data(), requestedSamples) : 0;
+
+        // Se qualcosa ha preso il posto della ricezione — il riascolto della
+        // propria voce, il monitor — si suona quello. La ricezione si legge lo
+        // stesso e si butta: fermarla vorrebbe dire ritrovarsi, alla fine, con
+        // un ring pieno di roba vecchia da smaltire prima di tornare in banda.
+        auto *interrupt = m_interrupt.load(std::memory_order_acquire);
+        const bool interrupted = interrupt && interrupt->available() > 0;
+
+        std::size_t gotSamples = 0;
+        if (interrupted) {
+            gotSamples = interrupt->read(m_scratch.data(), requestedSamples);
+            if (m_ring)
+                m_ring->discard(requestedSamples);
+        } else {
+            gotSamples = m_ring ? m_ring->read(m_scratch.data(), requestedSamples) : 0;
+        }
+
         const std::size_t gotFrames = gotSamples / kSourceChannels;
-        if (gotFrames < frames) {
+        if (gotFrames < frames && !interrupted) {
             // Underrun: silenzio, mai campioni vecchi ripetuti (creerebbero
             // un ronzio periodico molto più fastidioso di un buco).
             std::fill(m_scratch.begin() + gotFrames * kSourceChannels,
                       m_scratch.begin() + frames * kSourceChannels, 0.0f);
             if (m_ring)
                 m_underruns.fetch_add(1, std::memory_order_relaxed);
+        } else if (gotFrames < frames) {
+            // Il riascolto è finito a metà blocco: si completa con silenzio, e
+            // non si conta come underrun — non è il DSP che è rimasto
+            // indietro, è la registrazione che è arrivata in fondo.
+            std::fill(m_scratch.begin() + gotFrames * kSourceChannels,
+                      m_scratch.begin() + frames * kSourceChannels, 0.0f);
         }
 
         // L'equalizzatore prima del volume: si equalizza il segnale, non la
@@ -123,6 +153,7 @@ private:
     }
 
     dsp::SpscRing<float> *m_ring = nullptr;
+    std::atomic<dsp::SpscRing<float> *> m_interrupt{nullptr};
     std::vector<float> m_scratch;
     std::atomic<float> m_gain{1.0f};
     std::atomic<quint64> m_underruns{0};
@@ -210,6 +241,9 @@ bool AudioRouter::start(dsp::SpscRing<float> *source)
     m_source = std::make_unique<RingSource>(source, useFloat, format.channelCount(),
                                             &m_equalizer);
     m_source->open(QIODevice::ReadOnly);
+    // Se qualcosa aveva già preso il posto della ricezione, lo riprende: un
+    // cambio di dispositivo audio non deve zittire un riascolto in corso.
+    m_source->setInterrupt(m_interruptSource);
     applyVolume();
 
     m_latencyMs = m_sink->bufferSize() > 0
@@ -304,6 +338,13 @@ void AudioRouter::applyVolume()
     // uniforme invece di concentrare tutto nell'ultimo quarto di corsa.
     const float gain = m_muted ? 0.0f : m_volume * m_volume;
     m_source->setGain(gain);
+}
+
+void AudioRouter::setInterruptSource(dsp::SpscRing<float> *ring)
+{
+    m_interruptSource = ring;
+    if (m_source)
+        m_source->setInterrupt(ring);
 }
 
 quint64 AudioRouter::underrunCount() const

@@ -114,8 +114,29 @@ ricevitore. Il pannello lo sostituisce.
 - **Monitor in cuffia**, un tasto.
 - **Generatore di toni** — uno per accordare, due per l'intermodulazione (c'è
   già nel motore TX, va portato nel diagramma).
-- **Registra e riascolta**: dieci secondi della propria voce processata,
-  riascoltati subito. È il modo in cui un TX si regola davvero.
+- ~~**Registra e riascolta**~~: **fatto**. Dieci secondi, due tracce — la voce
+  com'è e quella che parte verso la radio — riascoltabili subito.
+
+  Tre decisioni che valgono più del componente.
+
+  **Non c'è niente da armare.** Registra da sé mentre si trasmette, sempre. Un
+  registratore che va acceso prima arriva sempre tardi: ci si accorge di voler
+  riascoltare solo *dopo* aver parlato.
+
+  **Si commuta prima/dopo mentre suona, senza perdere il punto.** Si passa da
+  una traccia all'altra a metà parola e si sente la stessa sillaba nei due
+  modi, di seguito. Fermarsi e ripartire costringerebbe a ricordare com'era, e
+  il ricordo di un suono dura meno di un secondo — è il motivo per cui i
+  confronti A/B fatti a memoria non decidono niente.
+
+  **Il riascolto prende il posto della ricezione, non ci si somma.** Un
+  riascolto mescolato al fruscio dei quaranta metri non si giudica. La
+  ricezione continua a scorrere sotto e si butta, così alla fine non c'è un
+  ring pieno di passato da smaltire prima di tornare in banda.
+
+  Tornare a premere il PTT ferma il riascolto: scrivere sotto la testina di
+  lettura non darebbe un errore, darebbe un riascolto cucito con due prese
+  diverse — il modo peggiore di essere rotti, perché sembra funzionare.
 
 ### 4.4 I profili per modo
 

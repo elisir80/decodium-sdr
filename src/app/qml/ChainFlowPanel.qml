@@ -301,6 +301,112 @@ PanelFrame {
         }
     }
 
+    // ── Riascoltarsi (SPEC-005 §4.3) ─────────────────────────────────────
+    //
+    // Il pezzo che manca a ogni stazione che non ha un secondo ricevitore, e
+    // sono quasi tutte. Mentre si parla si sente la propria voce per
+    // conduzione ossea: qualunque giudizio dato in quel momento è dato sul
+    // suono sbagliato, ed è il motivo per cui la maggior parte delle catene
+    // audio in aria sono regolate male da persone convinte del contrario.
+    //
+    // Non c'è niente da armare prima: gli ultimi dieci secondi ci sono sempre,
+    // perché ci si accorge di voler riascoltare solo dopo aver parlato.
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacingTight
+        visible: Session.capabilities.canTransmit
+        spacing: Theme.spacingTight
+
+        DsdrButton {
+            implicitWidth: 96
+            implicitHeight: 26
+            text: Session.voicePlaying ? qsTr("FERMA") : qsTr("RIASCOLTA")
+            enabled: Session.voiceRecordingReady && !Session.transmitting
+            onClicked: Session.voicePlaying ? Session.stopVoiceRecording()
+                                            : Session.playVoiceRecording(1)
+        }
+
+        // Prima e dopo, commutabili **mentre suona**: si passa da una traccia
+        // all'altra a metà parola e si sente la stessa sillaba nei due modi, di
+        // seguito. Fermarsi e ripartire costringerebbe a ricordare com'era, e
+        // il ricordo di un suono dura meno di un secondo.
+        DsdrButton {
+            implicitWidth: 62
+            implicitHeight: 26
+            text: qsTr("PRIMA")
+            enabled: Session.voiceRecordingReady && !Session.transmitting
+            checkable: true
+            checked: Session.voicePlaybackSource === 0
+            onClicked: {
+                Session.voicePlaybackSource = 0
+                if (!Session.voicePlaying)
+                    Session.playVoiceRecording(0)
+            }
+        }
+
+        DsdrButton {
+            implicitWidth: 62
+            implicitHeight: 26
+            text: qsTr("DOPO")
+            enabled: Session.voiceRecordingReady && !Session.transmitting
+            checkable: true
+            checked: Session.voicePlaybackSource === 1
+            onClicked: {
+                Session.voicePlaybackSource = 1
+                if (!Session.voicePlaying)
+                    Session.playVoiceRecording(1)
+            }
+        }
+
+        // La barra dice due cose in una: quanto c'è registrato, e dove si è
+        // arrivati a riascoltarlo.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            implicitHeight: 6
+            radius: 3
+            color: Theme.surfaceSunken
+
+            Rectangle {
+                width: parent.width * Math.max(0, Math.min(1,
+                    Session.voiceRecordedSeconds / Session.voiceRecordingCapacitySeconds))
+                height: parent.height
+                radius: parent.radius
+                color: Theme.border
+            }
+
+            Rectangle {
+                visible: Session.voicePlaying
+                width: parent.width * Math.max(0, Math.min(1,
+                    Session.voicePlaybackPosition / Session.voiceRecordingCapacitySeconds))
+                height: parent.height
+                radius: parent.radius
+                color: Theme.accent
+            }
+        }
+
+        Text {
+            text: Session.voiceRecordingReady
+                  ? qsTr("%1 s").arg(Session.voiceRecordedSeconds.toFixed(1))
+                  : qsTr("—")
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Session.voiceRecordingReady ? Theme.textSecondary : Theme.textDisabled
+        }
+    }
+
+    // Perché il tasto è spento: senza questa riga resta un comando grigio e
+    // nessuna spiegazione, che è il modo in cui una funzione buona non viene
+    // mai trovata.
+    Text {
+        Layout.fillWidth: true
+        visible: Session.capabilities.canTransmit && !Session.voiceRecordingReady
+        text: qsTr("Il riascolto si riempie da sé mentre si trasmette: parla, e poi risentiti.")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textDisabled
+        wrapMode: Text.WordWrap
+    }
+
     Rectangle {
         Layout.fillWidth: true
         Layout.topMargin: Theme.spacingTight

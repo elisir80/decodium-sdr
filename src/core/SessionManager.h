@@ -92,6 +92,24 @@ class SessionManager : public QObject
     Q_PROPERTY(int cfcBandCount READ cfcBandCount CONSTANT)
     Q_PROPERTY(QVariantList cfcReduction READ cfcReduction NOTIFY txMetersChanged)
 
+    // ── Registra e riascolta (SPEC-005 §4.3) ────────────────────────────
+    //
+    // Un trasmettitore non si regola ascoltandosi: mentre si parla si sente la
+    // propria voce per conduzione ossea, non quella che esce dall'antenna. Il
+    // rimedio classico è un secondo ricevitore; qui sono gli ultimi dieci
+    // secondi, registrati da sé mentre si trasmette, riascoltabili prima e
+    // dopo la catena.
+    Q_PROPERTY(bool voiceRecordingReady READ voiceRecordingReady NOTIFY voicePlaybackChanged)
+    Q_PROPERTY(double voiceRecordedSeconds READ voiceRecordedSeconds
+                   NOTIFY voicePlaybackChanged)
+    Q_PROPERTY(double voiceRecordingCapacitySeconds READ voiceRecordingCapacitySeconds
+                   CONSTANT)
+    Q_PROPERTY(bool voicePlaying READ voicePlaying NOTIFY voicePlaybackChanged)
+    Q_PROPERTY(double voicePlaybackPosition READ voicePlaybackPosition
+                   NOTIFY voicePlaybackChanged)
+    Q_PROPERTY(int voicePlaybackSource READ voicePlaybackSource
+                   WRITE setVoicePlaybackSource NOTIFY voicePlaybackChanged)
+
     // ── Equalizzatore dell'ascolto (SPEC-005 §4.1) ──────────────────────
     //
     // Cinque campane sul percorso che arriva alle cuffie. Non su quello dei
@@ -335,6 +353,20 @@ public:
     /// Tre numeri e non un oggetto perché sono i tre gradi di libertà di un
     /// punto trascinabile su una curva — dove sta, quanto è alto, quanto è
     /// stretto — ed è così che li manda l'editor.
+    bool voiceRecordingReady() const;
+    double voiceRecordedSeconds() const;
+    double voiceRecordingCapacitySeconds() const;
+    bool voicePlaying() const;
+    double voicePlaybackPosition() const;
+    int voicePlaybackSource() const;
+    void setVoicePlaybackSource(int source);
+
+    /// Riascolta gli ultimi secondi: 0 la voce com'era, 1 quella che parte
+    /// verso la radio. Mentre suona, la ricezione tace — un riascolto
+    /// mescolato al fruscio della banda non si giudica.
+    Q_INVOKABLE void playVoiceRecording(int source = 1);
+    Q_INVOKABLE void stopVoiceRecording();
+
     Q_INVOKABLE void setAudioEqBand(int index, double frequencyHz, double gainDb, double q);
     Q_INVOKABLE double audioEqFrequency(int index) const;
     Q_INVOKABLE double audioEqGainDb(int index) const;
@@ -656,6 +688,7 @@ signals:
     void audioToneChanged();
     void audioEqChanged();
     void cfcChanged();
+    void voicePlaybackChanged();
     void dynamicsChanged();
     void audioLevelsChanged();
     void neuralChanged();

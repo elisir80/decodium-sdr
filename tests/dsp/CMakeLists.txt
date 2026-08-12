@@ -20,6 +20,13 @@ dsdr_add_test(tst_tx_dynamics
     SOURCES tst_tx_dynamics.cpp
     LIBRARIES dsdr::dsp)
 
+# Il registratore della propria voce. Un buffer circolare non sbaglia mai con un
+# errore: sbaglia con dell'audio, e chi lo sente va a cercare il difetto nella
+# catena invece che nell'indice.
+dsdr_add_test(tst_voice_recorder
+    SOURCES tst_voice_recorder.cpp
+    LIBRARIES dsdr::dsp)
+
 # Il multibanda: la prova che conta e' che a riposo non si senta. Se le
 # separazioni non sommano piatto, colora la voce prima ancora di comprimere.
 dsdr_add_test(tst_multiband

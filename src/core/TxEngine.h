@@ -30,6 +30,7 @@
 #include "dsp/Nco.h"
 #include "dsp/SpeechProcessor.h"
 #include "dsp/SpscRing.h"
+#include "dsp/VoiceRecorder.h"
 
 #include <QElapsedTimer>
 #include <QObject>
@@ -99,6 +100,17 @@ public:
     /// Letture per gli indicatori. Sono atomiche perché la UI le legge dal
     /// proprio thread mentre il motore gira: un segnale per ogni blocco
     /// costerebbe più dell'elaborazione.
+    /// Gli ultimi dieci secondi della propria voce, prima e dopo la catena.
+    ///
+    /// Non è un accessorio: è il solo modo di regolare un trasmettitore senza
+    /// avere un secondo ricevitore in stazione. Vedi `dsp::VoiceRecorder`.
+    dsp::VoiceRecorder &recorder() noexcept { return m_recorder; }
+    const dsp::VoiceRecorder &recorder() const noexcept { return m_recorder; }
+
+    /// Il ring da cui esce il riascolto, in stereo interlacciato come l'uscita
+    /// audio se lo aspetta. Vive quanto il motore: chi lo aggancia lo tiene.
+    dsp::SpscRing<float> *playbackStream() noexcept { return &m_playback; }
+
     float micPeak() const { return m_micPeak.load(std::memory_order_relaxed); }
     float compressionDb() const { return m_compressionDb.load(std::memory_order_relaxed); }
     float outputPeak() const { return m_outputPeak.load(std::memory_order_relaxed); }
@@ -153,6 +165,15 @@ public slots:
     /// La frequenza a cui il monitor va ancorato: quella su cui si trasmette.
     void setMonitorCenter(qint64 hz);
 
+    /// Riascolta quello che c'è: 0 la voce com'era, 1 quella che parte verso
+    /// la radio. Rifiutato mentre si trasmette — non si può stare in due posti.
+    void playRecording(int source);
+    void stopRecordingPlayback();
+
+    /// Commuta fra prima e dopo **senza perdere il punto**: è così che il
+    /// confronto smette di dipendere dalla memoria di com'era.
+    void setPlaybackSource(int source);
+
 signals:
     /// La trasmissione non può partire, e perché. La UI lo mostra invece di
     /// lasciare l'operatore davanti a un PTT premuto che non trasmette.
@@ -161,12 +182,20 @@ signals:
     /// Emesso a bassa cadenza per gli indicatori.
     void metersUpdated();
 
+    /// Il riascolto è partito, o è finito. Serve alla UI per non lasciare un
+    /// tasto premuto su una riproduzione che si è già chiusa da sola.
+    void playbackChanged();
+
 private slots:
     void pump();
 
 private:
     bool rebuildChain();
     void produce(std::size_t audioFrames);
+
+    /// Travasa il riascolto dal registratore al suo ring. Gira a ogni giro di
+    /// timer, anche a PTT libero.
+    void pumpPlayback();
     void configureMonitor();
 
     dsp::SpeechProcessor m_speech;
@@ -189,6 +218,19 @@ private:
     dsp::SpectrumAnalyzer m_analyzer;
     SpectrumFeed *m_spectrum = nullptr;
     qint64 m_monitorCenterHz = 0;
+
+    dsp::VoiceRecorder m_recorder;
+
+    /// Il ring del riascolto. Mezzo secondo è più che sufficiente: lo riempie
+    /// lo stesso timer che produce la trasmissione, e tenerlo corto vuol dire
+    /// che «ferma» ferma davvero, e non mezzo secondo dopo.
+    dsp::SpscRing<float> m_playback;
+
+    /// La copia della voce prima della catena. Va presa qui perché la catena
+    /// lavora sul posto: dopo il gate, l'originale non esiste più.
+    std::vector<float> m_dry;
+    std::vector<float> m_playbackMono;
+    std::vector<float> m_playbackStereo;
 
     dsp::SpscRing<float> *m_txRing = nullptr;
     dsp::SpscRing<float> *m_micRing = nullptr;
@@ -223,6 +265,8 @@ private:
     std::atomic<quint64> m_starved{0};
     bool m_keyDown = false;
     bool m_chainReady = false;
+    bool m_playbackActive = false;
+    int m_playbackCountdown = 0;
 };
 
 } // namespace dsdr::core
