@@ -1,7 +1,8 @@
 # DSDR-SPEC-005 — La catena di studio
 
-> Stato: **in corso**. §3 è implementato; il resto è disegnato e non ancora
-> costruito. Le parti non costruite non compaiono nell'interfaccia: un blocco
+> Stato: **§3 e §4.1–§4.4 sono costruiti.** Resta la fase 2 — il blocco
+> «Plugin» di §4.5 — che ha una questione di licenza aperta prima di poter
+> cominciare. Le parti non costruite non compaiono nell'interfaccia: un blocco
 > che non fa niente è peggio di un blocco che manca (CONSTITUTION §7).
 
 ## 1. La tesi
@@ -97,7 +98,7 @@ e le misure che sappiamo fare.
 - ~~**Limiter**~~: fatto, con due millisecondi di anticipo — dichiarati, perché
   chi somma le latenze della catena deve poterli leggere.
 
-### 4.2 Le curve
+### 4.2 Le curve — **fatto**
 
 EQ e CFC si regolano **trascinando punti su una curva**, non con file di
 cursori numerati (la lezione di Thetis), e la curva è disegnata **sopra lo
@@ -105,7 +106,7 @@ spettro vivo del segnale** (la lezione di SDR Console). Si trascina il punto e
 si vede la voce cambiare forma sotto la curva: il legame fra il gesto e
 l'effetto smette di passare dalla memoria.
 
-### 4.3 Il contesto di misura
+### 4.3 Il contesto di misura — **fatto**
 
 Regolare un trasmettitore ascoltandosi non si può: serve un secondo
 ricevitore. Il pannello lo sostituisce.
