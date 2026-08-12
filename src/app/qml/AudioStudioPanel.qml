@@ -16,6 +16,7 @@
 // Il tap sta sul mix finale, non prima: quello che si guarda è esattamente
 // quello che si sente.
 import QtCore
+import QtQml
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -173,40 +174,51 @@ PanelFrame {
     // sopra lo spettro — se la traccia scende prima o dopo, si vede a colpo
     // d'occhio e non c'è niente da calcolare.
     //
-    // Il modo si legge dal canale scelto, e lo si prende con un Repeater sul
-    // modello invece di tenerne una copia: è l'unico modo di restare allineati
-    // a un valore che l'operatore cambia da tre posti diversi.
+    // I due bordi si leggono dal canale scelto invece di tenerne una copia:
+    // è l'unico modo di restare allineati a un valore che l'operatore cambia
+    // da tre posti diversi.
     property int filterLowHz: 0
     property int filterHighHz: 0
 
-    Repeater {
+    // Un Instantiator e non un Repeater: il delegate di un Repeater è un Item,
+    // e un Item dentro un ColumnLayout è un figlio del layout — invisibile o
+    // no, il layout gli faceva posto, e in cima al pannello restava una fascia
+    // vuota alta quanto i canali aperti. Qui il delegate è un QtObject: non è
+    // un oggetto visuale, non entra nel layout, e serve solo a srotolare la
+    // riga del canale in proprietà leggibili.
+    Instantiator {
         model: Session.channels
 
-        delegate: Item {
+        delegate: QtObject {
             id: channelRow
 
             required property int index
             required property int filterLowHz
             required property int filterHighHz
 
-            // Per id e non per `parent`: un Binding non è un Item e non ha un
-            // genitore visuale, quindi `parent` dentro di lui è nulla — e i
-            // due bordi restavano a zero senza che niente lo dicesse.
-            Binding {
-                target: root
-                property: "filterLowHz"
-                value: channelRow.filterLowHz
-                when: Session.channels.currentIndex === channelRow.index
-                restoreMode: Binding.RestoreNone
-            }
-
-            Binding {
-                target: root
-                property: "filterHighHz"
-                value: channelRow.filterHighHz
-                when: Session.channels.currentIndex === channelRow.index
-                restoreMode: Binding.RestoreNone
-            }
+            // Per id e non per `parent`: un Binding non ha un genitore
+            // visuale, e `parent` dentro di lui è nullo — i due bordi
+            // restavano a zero senza che niente lo dicesse.
+            //
+            // E in una lista, perché un QtObject non ha una proprietà
+            // predefinita in cui infilare figli.
+            property list<QtObject> wiring: [
+                Binding {
+                    target: root
+                    property: "filterLowHz"
+                    value: channelRow.filterLowHz
+                    when: Session.channels.currentIndex === channelRow.index
+                    restoreMode: Binding.RestoreNone
+                },
+    
+                Binding {
+                    target: root
+                    property: "filterHighHz"
+                    value: channelRow.filterHighHz
+                    when: Session.channels.currentIndex === channelRow.index
+                    restoreMode: Binding.RestoreNone
+                }
+            ]
         }
     }
 

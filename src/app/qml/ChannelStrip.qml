@@ -40,6 +40,7 @@ Rectangle {
         ListElement { key: "sintonia" }
         ListElement { key: "strumento" }
         ListElement { key: "audio" }
+        ListElement { key: "flusso" }
         ListElement { key: "tempo" }
         ListElement { key: "catena" }
         ListElement { key: "trasmissione" }
@@ -58,6 +59,7 @@ Rectangle {
         { key: "sintonia",     glyph: "⌗", label: qsTr("Sintonia") },
         { key: "strumento",    glyph: "◔", label: qsTr("Strumento") },
         { key: "audio",        glyph: "♫", label: qsTr("Studio audio") },
+        { key: "flusso",       glyph: "⇉", label: qsTr("Flusso") },
         { key: "tempo",        glyph: "⏱", label: qsTr("Macchina del tempo") },
         { key: "catena",       glyph: "⨍", label: qsTr("Catena RX") },
         { key: "trasmissione", glyph: "▲", label: qsTr("Trasmissione") },
@@ -229,6 +231,9 @@ Rectangle {
         case "strumento": return Session.connected
         // Lo studio audio ha senso solo con dell'audio che scorra.
         case "audio":     return Session.connected
+        // Il diagramma di flusso vale solo con una catena viva: senza, i
+        // blocchi ci sarebbero e le misure no.
+        case "flusso":    return Session.connected
         case "device":    return Session.connected
                               && Session.capabilities.nativePanels.length > 0
         // Su un ricevitore puro il pannello TX non viene creato: la UI si
@@ -243,6 +248,7 @@ Rectangle {
         case "sintonia":  return tuningPanel
         case "strumento": return sMeterPanel
         case "audio":     return audioStudioPanel
+        case "flusso":    return chainFlowPanel
         case "tempo":     return timeMachinePanel
         case "catena":    return rxChainPanel
         case "trasmissione": return txPanel
@@ -398,6 +404,12 @@ Rectangle {
         id: audioStudioPanel
 
         AudioStudioPanel {}
+    }
+
+    Component {
+        id: chainFlowPanel
+
+        ChainFlowPanel {}
     }
 
     Component {

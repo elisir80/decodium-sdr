@@ -1,0 +1,540 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Il diagramma di flusso: la catena disegnata come la si attraversa.
+//
+// È la tesi di DSDR-SPEC-005. Il concorrente di riferimento ha tutti questi
+// stadi e li tiene in schede e sotto-menù: chi regola un compressore in una
+// scheda e un equalizzatore in un'altra non ha modo di sapere quale dei due
+// viene prima, e l'ordine è tutto. Qui i blocchi stanno in fila nel verso in
+// cui il segnale li attraversa, con l'interruttore addosso e la misura in
+// mezzo. Si capisce dove si sta intervenendo prima di aver toccato qualcosa.
+//
+// Compaiono solo gli stadi che il DSP ha davvero. Gate, leveller, EQ a curve,
+// compressore multibanda e limiter sono disegnati nella specifica e non
+// costruiti: un blocco che non fa niente è peggio di un blocco che manca
+// (CONSTITUTION §7), e disegnarlo spento sarebbe una promessa da pagare al
+// primo operatore che ci clicca sopra.
+import QtQml
+import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Layouts
+import DecodiumSdr
+
+PanelFrame {
+    id: root
+
+    title: qsTr("FLUSSO")
+    draggable: true
+    collapsed: true
+    // La catena vuole larghezza: in una striscia di trecento punti i blocchi
+    // si accavallano e il diagramma smette di essere leggibile, che è l'unica
+    // cosa per cui esiste.
+    detachable: true
+
+    /// Il blocco di cui si stanno vedendo i comandi. Uno per volta: la catena
+    /// resta visibile mentre si regola, che è tutto il punto.
+    property string picked: ""
+
+    readonly property int row: Session.channels.currentIndex
+
+    // ── Lo stato del canale scelto ───────────────────────────────────────
+    //
+    // Le impostazioni per canale non si leggono dal modello se non attraverso
+    // un delegate: si srotola la riga corrente qui, una volta, invece di
+    // tenerne una copia da riallineare.
+    property bool nrEnabled: false
+    property real nrStrength: 0
+    property bool anfEnabled: false
+    property int notchCount: 0
+    property int filterLowHz: 0
+    property int filterHighHz: 0
+    property int agcMode: 0
+
+    // Un Instantiator e non un Repeater: il delegate di un Repeater è un Item,
+    // e un Item dentro un ColumnLayout è un figlio del layout — invisibile o
+    // no, il layout gli faceva posto, e in cima al pannello restava una fascia
+    // vuota alta quanto i canali aperti. Qui il delegate è un QtObject: non è
+    // un oggetto visuale, non entra nel layout, e serve solo a srotolare la
+    // riga del canale in proprietà leggibili.
+    Instantiator {
+        model: Session.channels
+
+        delegate: QtObject {
+            id: channelRow
+
+            required property int index
+            required property bool nrEnabled
+            required property real nrStrength
+            required property bool anfEnabled
+            required property var notches
+            required property int filterLowHz
+            required property int filterHighHz
+            required property int agcMode
+
+            readonly property bool current: Session.channels.currentIndex === index
+
+            // Un QtObject non ha una proprietà predefinita in cui
+            // infilare figli: i binding stanno in una lista, che è il
+            // modo di tenerli vivi senza un oggetto visuale attorno.
+            property list<QtObject> wiring: [
+                Binding { target: root; property: "nrEnabled"; value: channelRow.nrEnabled
+                          when: channelRow.current; restoreMode: Binding.RestoreNone },
+                Binding { target: root; property: "nrStrength"; value: channelRow.nrStrength
+                          when: channelRow.current; restoreMode: Binding.RestoreNone },
+                Binding { target: root; property: "anfEnabled"; value: channelRow.anfEnabled
+                          when: channelRow.current; restoreMode: Binding.RestoreNone },
+                Binding { target: root; property: "notchCount"; value: channelRow.notches.length
+                          when: channelRow.current; restoreMode: Binding.RestoreNone },
+                Binding { target: root; property: "filterLowHz"; value: channelRow.filterLowHz
+                          when: channelRow.current; restoreMode: Binding.RestoreNone },
+                Binding { target: root; property: "filterHighHz"; value: channelRow.filterHighHz
+                          when: channelRow.current; restoreMode: Binding.RestoreNone },
+                Binding { target: root; property: "agcMode"; value: channelRow.agcMode
+                          when: channelRow.current; restoreMode: Binding.RestoreNone }
+            ]
+        }
+    }
+
+    // ── L'alfabeto dei glifi ─────────────────────────────────────────────
+    //
+    // Ogni stadio porta addosso il disegno di quello che fa alla forma d'onda.
+    // Sono i tracciati del disegno di riferimento, in coordinate 72×26.
+    readonly property var glyphs: ({
+        "lev":   "M2,18 C20,6 40,15 70,12",          // livella
+        "lim":   "M2,20 C18,10 28,5 40,5 L70,5",     // tosa la cima
+        "band":  "M2,12 C14,12 18,18 28,18 C40,18 46,8 56,8 C62,8 66,12 70,12",
+        "nb":    "M2,14 L18,14 L20,4 L22,14 L44,14 L46,5 L48,14 L70,14",
+        "notch": "M2,9 C20,9 24,24 30,24 C36,24 40,9 70,9",
+        "nr":    "M2,17 C20,12 44,16 70,14",
+        "mon":   "M2,13 L10,13 L14,5 L20,21 L26,9 L32,17 L38,11 L46,14 L70,13",
+    })
+
+    /// Da dBFS a frazione di barretta. Sessanta decibel di scala: sotto non c'è
+    /// niente da vedere, ed è la stessa scala della barra dei livelli audio.
+    function fractionFromDb(db) {
+        if (!isFinite(db))
+            return -1
+        return Math.max(0, Math.min(1, (db + 60) / 60))
+    }
+
+    // ── La catena di trasmissione ────────────────────────────────────────
+    //
+    // Sopra, perché è quella che si costruisce: la ricezione la si ascolta.
+    // Compare solo dove c'è da trasmettere — la UI si genera dalle capability
+    // (CONSTITUTION §7) — e si spegne quando la catena è a riposo, invece di
+    // mostrare misure ferme che si crederebbero.
+    RowLayout {
+        Layout.fillWidth: true
+        visible: Session.capabilities.canTransmit
+        spacing: Theme.spacing
+
+        Text {
+            text: qsTr("TX · CATENA MICROFONO")
+            font.pixelSize: Theme.fontSmall
+            font.bold: true
+            font.letterSpacing: 1.4
+            color: Theme.textDisabled
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Text {
+            text: Session.transmitting ? qsTr("IN ARIA")
+                : Session.micActive ? qsTr("PRONTA") : qsTr("A RIPOSO")
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Session.transmitting ? Theme.danger
+                 : Session.micActive ? Theme.accent : Theme.textDisabled
+        }
+    }
+
+    Flow {
+        Layout.fillWidth: true
+        // L'arco del bypass sale sopra il blocco: senza questo respiro
+        // toccherebbe l'intestazione della corsia.
+        Layout.topMargin: Theme.spacingTight
+        visible: Session.capabilities.canTransmit
+        spacing: 0
+        // A riposo la corsia si smorza: c'è, e non sta lavorando.
+        opacity: Session.transmitting || Session.micActive ? 1.0 : 0.45
+
+        Behavior on opacity {
+            NumberAnimation { duration: Theme.animationNormal }
+        }
+
+        ChainEndpoint {
+            anchors.verticalCenter: undefined
+            label: qsTr("MIC")
+            live: Session.micActive
+        }
+
+        ChainLink {
+            level: Session.micActive ? root.fractionFromDb(Session.micLevel) : -1
+            tint: Session.micLevel > -3 ? Theme.danger
+                : Session.micLevel > -12 ? Theme.spectrumPeak : Theme.success
+        }
+
+        ChainBlock {
+            title: qsTr("Compressore")
+            glyph: root.glyphs.lev
+            readout: qsTr("%1 dB").arg(Math.round(Session.txCompressionDb))
+            on: Session.txCompressionDb > 0.5
+            warning: Session.transmitting && Session.txCompressionMeter > 12
+            selected: root.picked === "comp"
+            // Escludere il compressore vuol dire portarlo a zero: non c'è un
+            // interruttore separato, e inventarne uno vorrebbe dire tenere due
+            // stati per la stessa cosa.
+            onToggled: Session.txCompressionDb = Session.txCompressionDb > 0.5 ? 0 : 6
+            onPicked: root.picked = root.picked === "comp" ? "" : "comp"
+        }
+
+        ChainLink {
+            level: Session.transmitting
+                   ? Math.min(1, Session.txCompressionMeter / 20) : -1
+            tint: Session.txCompressionMeter > 12 ? Theme.spectrumPeak : Theme.success
+        }
+
+        ChainBlock {
+            title: qsTr("Filtro TX")
+            glyph: root.glyphs.band
+            readout: qsTr("%1 Hz").arg(Math.abs(root.filterHighHz - root.filterLowHz))
+            switchable: false
+            selected: root.picked === "txfilter"
+            onPicked: root.picked = root.picked === "txfilter" ? "" : "txfilter"
+        }
+
+        ChainLink {}
+
+        ChainBlock {
+            title: qsTr("Drive")
+            glyph: root.glyphs.lim
+            readout: qsTr("%1%").arg(Math.round(Session.txDrive * 100))
+            switchable: false
+            warning: Session.transmitting && Session.txLevel > -1
+            selected: root.picked === "drive"
+            onPicked: root.picked = root.picked === "drive" ? "" : "drive"
+        }
+
+        ChainLink {
+            level: Session.transmitting ? root.fractionFromDb(Session.txLevel) : -1
+            tint: Session.txLevel > -1 ? Theme.danger : Theme.success
+        }
+
+        ChainEndpoint {
+            label: qsTr("TX")
+            live: Session.transmitting
+        }
+    }
+
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacingTight
+        Layout.bottomMargin: Theme.spacingTight
+        visible: Session.capabilities.canTransmit
+        height: 1
+        color: Theme.border
+    }
+
+    // ── La catena di ricezione ───────────────────────────────────────────
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacing
+
+        Text {
+            text: qsTr("RX · CATENA RICEZIONE")
+            font.pixelSize: Theme.fontSmall
+            font.bold: true
+            font.letterSpacing: 1.4
+            color: Theme.textDisabled
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Text {
+            text: Session.transmitting ? qsTr("IN ATTESA")
+                : Session.neuralEnabled ? qsTr("DECODIUM NR ATTIVO") : qsTr("IN ASCOLTO")
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Session.transmitting ? Theme.textDisabled
+                 : Session.neuralEnabled ? Theme.spectrumPeak : Theme.accent
+        }
+    }
+
+    Flow {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacingTight
+        spacing: 0
+        // In trasmissione la radio si assorda: la corsia di ricezione c'è ma
+        // non sta ricevendo, e mostrarla accesa sarebbe una bugia.
+        opacity: Session.transmitting ? 0.45 : 1.0
+
+        Behavior on opacity {
+            NumberAnimation { duration: Theme.animationNormal }
+        }
+
+        ChainEndpoint {
+            label: qsTr("RX")
+            live: !Session.transmitting
+        }
+
+        ChainLink {
+            level: root.fractionFromDb(Session.peakDbfs)
+            tint: Session.overloaded ? Theme.danger : Theme.success
+        }
+
+        ChainBlock {
+            title: qsTr("NB")
+            glyph: root.glyphs.nb
+            readout: Session.noiseBlanker
+                     ? qsTr("%1×").arg(Session.noiseBlankerThreshold.toFixed(1)) : ""
+            on: Session.noiseBlanker
+            warning: Session.noiseBlanker && Session.noiseBlankerActivity > 0.02
+            selected: root.picked === "nb"
+            onToggled: Session.setNoiseBlanker(!Session.noiseBlanker,
+                                               Session.noiseBlankerThreshold)
+            onPicked: root.picked = root.picked === "nb" ? "" : "nb"
+        }
+
+        ChainLink {
+            // Quanto sta lavorando il soppressore: la frazione di campioni che
+            // ha toccato, e dice se la soglia è troppo bassa.
+            level: Session.noiseBlanker ? Math.min(1, Session.noiseBlankerActivity * 20) : -1
+            tint: Session.noiseBlankerActivity > 0.02 ? Theme.spectrumPeak : Theme.success
+        }
+
+        ChainBlock {
+            title: qsTr("Filtro")
+            glyph: root.glyphs.band
+            readout: qsTr("%1 Hz").arg(Math.abs(root.filterHighHz - root.filterLowHz))
+            switchable: false
+            selected: root.picked === "rxfilter"
+            onPicked: root.picked = root.picked === "rxfilter" ? "" : "rxfilter"
+        }
+
+        ChainLink {}
+
+        ChainBlock {
+            title: qsTr("NR")
+            glyph: root.glyphs.nr
+            readout: root.nrEnabled ? root.nrStrength.toFixed(0) : ""
+            on: root.nrEnabled
+            selected: root.picked === "nr"
+            onToggled: Session.setChannelNoiseReduction(root.row, !root.nrEnabled,
+                                                        root.nrStrength)
+            onPicked: root.picked = root.picked === "nr" ? "" : "nr"
+        }
+
+        ChainLink {}
+
+        ChainBlock {
+            title: qsTr("Notch")
+            glyph: root.glyphs.notch
+            readout: root.notchCount > 0 ? qsTr("%1 + ANF").arg(root.notchCount)
+                   : root.anfEnabled ? qsTr("ANF") : ""
+            on: root.anfEnabled || root.notchCount > 0
+            selected: root.picked === "notch"
+            onToggled: Session.setChannelAutoNotch(root.row, !root.anfEnabled)
+            onPicked: root.picked = root.picked === "notch" ? "" : "notch"
+        }
+
+        ChainLink {}
+
+        ChainBlock {
+            title: qsTr("Decodium NR")
+            neural: true
+            neuralTag: Session.neuralEnabled
+                       ? qsTr("%1 ms").arg(Session.neuralLatencyMs.toFixed(0)) : ""
+            on: Session.neuralEnabled
+            unavailable: !Session.neuralAvailable
+            selected: root.picked === "dnr"
+            onToggled: Session.setNeuralNr(!Session.neuralEnabled)
+            onPicked: root.picked = root.picked === "dnr" ? "" : "dnr"
+        }
+
+        ChainLink {
+            level: Session.neuralEnabled ? Math.min(1, Session.neuralLoad) : -1
+            tint: Session.neuralLoad > 0.7 ? Theme.danger
+                : Session.neuralLoad > 0.4 ? Theme.spectrumPeak : Theme.success
+        }
+
+        ChainBlock {
+            title: qsTr("AGC")
+            glyph: root.glyphs.lev
+            readout: {
+                const names = Session.agcModeNames()
+                return (root.agcMode >= 0 && root.agcMode < names.length)
+                       ? names[root.agcMode] : ""
+            }
+            switchable: false
+            selected: root.picked === "agc"
+            onPicked: root.picked = root.picked === "agc" ? "" : "agc"
+        }
+
+        ChainLink {
+            level: root.fractionFromDb(Session.audioPeakDb)
+            tint: Session.audioPeakDb > -1 ? Theme.danger
+                : Session.audioPeakDb > -6 ? Theme.spectrumPeak : Theme.success
+        }
+
+        ChainEndpoint {
+            label: qsTr("CUFFIE")
+            live: !Session.transmitting
+        }
+    }
+
+    // ── L'interlock ──────────────────────────────────────────────────────
+    //
+    // Va detto qui e non in una nota di rilascio: questa catena è per le
+    // orecchie e per la voce. Un compressore prima di un decodificatore non
+    // migliora niente e rovina la stima del rapporto segnale-rumore.
+    Text {
+        Layout.fillWidth: true
+        text: root.picked === ""
+              ? qsTr("Premi un blocco per aprirne i comandi. Il percorso dei decoder non passa di qui: resta lineare.")
+              : qsTr("Il percorso dei decoder non passa di qui: resta lineare.")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textDisabled
+        wrapMode: Text.WordWrap
+    }
+
+    // ── I comandi del blocco scelto ──────────────────────────────────────
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.preferredHeight: detail.implicitHeight + 2 * Theme.spacing
+        visible: root.picked !== ""
+        radius: Theme.radiusSmall
+        color: Theme.surfaceSunken
+        border.width: 1
+        border.color: Theme.borderStrong
+
+        ColumnLayout {
+            id: detail
+
+            anchors.fill: parent
+            anchors.margins: Theme.spacing
+            spacing: Theme.spacingTight
+
+            Text {
+                Layout.fillWidth: true
+                text: root.detailTitle
+                font.pixelSize: Theme.fontSmall
+                font.bold: true
+                color: Theme.accent
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: root.detailHint
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+                wrapMode: Text.WordWrap
+            }
+
+            // Un cursore solo, quello che quel blocco ha davvero. I blocchi
+            // con più di una regolazione — l'AGC, il filtro — mandano al loro
+            // pannello: duplicare qui dieci comandi vorrebbe dire tenerne due
+            // copie, e due copie divergono.
+            RowLayout {
+                Layout.fillWidth: true
+                visible: root.detailFrom < root.detailTo
+                spacing: Theme.spacing
+
+                DsdrSlider {
+                    id: detailSlider
+
+                    Layout.fillWidth: true
+                    from: root.detailFrom
+                    to: root.detailTo
+                    value: root.detailValue
+                    onMoved: root.applyDetail(value)
+                }
+
+                Text {
+                    text: root.detailReadout
+                    font.pixelSize: Theme.fontSmall
+                    font.family: Theme.monoFamily
+                    color: Theme.textPrimary
+                }
+            }
+        }
+    }
+
+    // ── Che cosa sa dire ogni blocco ─────────────────────────────────────
+    //
+    // Una tabella sola invece di un ramo per blocco sparso nel file: quando se
+    // ne aggiunge uno si tocca un posto, e quando se ne sbaglia uno si vede
+    // accanto agli altri.
+    readonly property var detailTitle: ({
+        "mic": qsTr("Microfono"),
+        "comp": qsTr("Compressore"),
+        "txfilter": qsTr("Filtro di trasmissione"),
+        "drive": qsTr("Drive"),
+        "input": qsTr("Ingresso RF"),
+        "nb": qsTr("Soppressore di impulsi"),
+        "rxfilter": qsTr("Filtro di canale"),
+        "nr": qsTr("Riduzione di rumore"),
+        "notch": qsTr("Notch"),
+        "dnr": qsTr("DECODIUM NR"),
+        "agc": qsTr("AGC"),
+    })[picked] || ""
+
+    readonly property var detailHint: ({
+        "mic": qsTr("Il guadagno d'ingresso. Si alza finché il livello tocca il giallo sui picchi della voce, non oltre: sopra si tosa, e tosare qui vuol dire mandarlo in aria."),
+        "comp": qsTr("Quanto stringe la dinamica. Sei decibel si sentono in più senza sentirsi; oltre i dodici la voce diventa piatta e il rumore della stanza sale con lei."),
+        "txfilter": qsTr("La banda che si occupa. 300–2700 è il compromesso classico; più larga si è più naturali e più si dà fastidio ai vicini."),
+        "drive": qsTr("Quanto del fondo scala si consegna alla radio. Non è la potenza del finale: quella la conosce solo lei."),
+        "input": qsTr("Il picco all'ingresso del convertitore. Quando satura è lo spettro a mentire per primo: il fondo si alza e i deboli spariscono."),
+        "nb": qsTr("La soglia oltre la quale un campione è considerato un impulso. Troppo bassa e comincia a bucare il segnale insieme al disturbo."),
+        "rxfilter": qsTr("La larghezza del canale. Si regola dalla targa o dal pannello dei canali, dove ci sono anche le larghezze pronte per il modo."),
+        "nr": qsTr("Quanto aggressivamente si toglie il fondo. Alzandola troppo la voce diventa metallica: è il rumore che manca, non la voce che migliora."),
+        "notch": qsTr("Il notch automatico toglie i fischi. Quelli a mano si piazzano con il tasto destro sullo spettro."),
+        "dnr": qsTr("Lo stadio neurale. Costa un thread e qualche millisecondo di ritardo, e agisce solo sull'ascolto: il flusso verso i decoder resta lineare."),
+        "agc": qsTr("Il modo e la soglia si scelgono dalla targa o dal pannello dei canali: sono due comandi, e qui ce ne sta uno."),
+    })[picked] || ""
+
+    readonly property real detailFrom: ({
+        "mic": 0, "comp": 0, "drive": 0, "nb": 1, "nr": 0, "dnr": 0,
+    })[picked] !== undefined ? ({
+        "mic": 0, "comp": 0, "drive": 0, "nb": 1, "nr": 0, "dnr": 0,
+    })[picked] : 0
+
+    readonly property real detailTo: ({
+        "mic": 40, "comp": 20, "drive": 1, "nb": 12, "nr": 10, "dnr": 1,
+    })[picked] !== undefined ? ({
+        "mic": 40, "comp": 20, "drive": 1, "nb": 12, "nr": 10, "dnr": 1,
+    })[picked] : 0
+
+    readonly property real detailValue: {
+        switch (picked) {
+        case "mic":   return Session.micGainDb
+        case "comp":  return Session.txCompressionDb
+        case "drive": return Session.txDrive
+        case "nb":    return Session.noiseBlankerThreshold
+        case "nr":    return nrStrength
+        case "dnr":   return Session.neuralIntensity
+        }
+        return 0
+    }
+
+    readonly property string detailReadout: {
+        switch (picked) {
+        case "mic":   return qsTr("%1 dB").arg(Session.micGainDb.toFixed(0))
+        case "comp":  return qsTr("%1 dB").arg(Session.txCompressionDb.toFixed(0))
+        case "drive": return qsTr("%1%").arg(Math.round(Session.txDrive * 100))
+        case "nb":    return qsTr("%1×").arg(Session.noiseBlankerThreshold.toFixed(1))
+        case "nr":    return nrStrength.toFixed(0)
+        case "dnr":   return qsTr("%1%").arg(Math.round(Session.neuralIntensity * 100))
+        }
+        return ""
+    }
+
+    function applyDetail(value) {
+        switch (picked) {
+        case "mic":   Session.micGainDb = value; break
+        case "comp":  Session.txCompressionDb = value; break
+        case "drive": Session.txDrive = value; break
+        case "nb":    Session.setNoiseBlanker(Session.noiseBlanker, value); break
+        case "nr":    Session.setChannelNoiseReduction(row, nrEnabled, value); break
+        case "dnr":   Session.neuralIntensity = value; break
+        }
+    }
+}

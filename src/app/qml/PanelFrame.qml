@@ -269,7 +269,11 @@ Rectangle {
             // dimensiona su di sé, perché lì l'altezza la decide il contenuto
             // e non il contenitore.
             Layout.fillHeight: root.detached
-            Layout.preferredHeight: root.detached ? -1
+            // In cima e non al centro: staccato il contenuto è più corto della
+            // finestra, e senza questo restava una fascia vuota sopra il primo
+            // comando — la si leggeva come «manca qualcosa».
+            Layout.alignment: Qt.AlignTop
+            Layout.preferredHeight: root.detached ? implicitHeight
                                   : (root.collapsed ? 0 : implicitHeight)
             spacing: Theme.spacingTight
             opacity: root.collapsed ? 0 : 1

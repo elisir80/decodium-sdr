@@ -37,6 +37,11 @@ set(DSDR_QML_FILES
     qml/AudioStudioPanel.qml
     qml/AudioScope.qml
     qml/AudioLevelBar.qml
+    qml/ChainBlock.qml
+    qml/ChainGlyph.qml
+    qml/ChainEndpoint.qml
+    qml/ChainLink.qml
+    qml/ChainFlowPanel.qml
     qml/PanelSwitchboard.qml
     qml/PanelWindow.qml
     qml/FrequencyPanel.qml
