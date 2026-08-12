@@ -110,8 +110,21 @@ l'effetto smette di passare dalla memoria.
 Regolare un trasmettitore ascoltandosi non si può: serve un secondo
 ricevitore. Il pannello lo sostituisce.
 
-- **Spettro prima/dopo**, affiancati o sovrapposti (dry/wet).
-- **Monitor in cuffia**, un tasto.
+- ~~**Spettro prima/dopo**~~: **fatto**, e **sovrapposti**, non affiancati.
+  Due grafici accanto costringono a spostare lo sguardo, e fra uno sguardo e
+  l'altro si mette in mezzo la memoria — che di un'immagine dura poco più che
+  di un suono. Sovrapposti, la differenza fra le due catene è l'area fra le
+  curve: si legge in un colpo, e non c'è niente da ricordare. Il «prima» sotto
+  e spento, perché è il riferimento e non il risultato.
+
+  L'orecchio dice se una voce è bella; questo dice *perché*.
+
+- ~~**Monitor in cuffia**~~: **fatto**, un tasto. Suona **solo mentre si
+  trasmette**, e non c'è modo di lasciarlo acceso per sbaglio: in mezzo duplex
+  la ricezione tace comunque, quindi non si scontra con niente, e ad alzare il
+  PTT smette da sé. Se chi ascolta resta indietro si butta il vecchio e non il
+  nuovo — sentirsi con mezzo secondo di ritardo fa inciampare chi parla, ed è
+  peggio di non sentirsi affatto.
 - **Generatore di toni** — uno per accordare, due per l'intermodulazione (c'è
   già nel motore TX, va portato nel diagramma).
 - ~~**Registra e riascolta**~~: **fatto**. Dieci secondi, due tracce — la voce

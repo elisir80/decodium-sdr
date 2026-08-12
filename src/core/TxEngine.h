@@ -107,9 +107,43 @@ public:
     dsp::VoiceRecorder &recorder() noexcept { return m_recorder; }
     const dsp::VoiceRecorder &recorder() const noexcept { return m_recorder; }
 
-    /// Il ring da cui esce il riascolto, in stereo interlacciato come l'uscita
+    /// Il ring di quello che si sente **al posto della banda**: il monitor
+    /// mentre si trasmette, il riascolto quando il PTT è libero.
+    ///
+    /// Uno solo, e non due, perché i due casi non possono capitare insieme —
+    /// non ci si riascolta mentre si parla. Stereo interlacciato, come l'uscita
     /// audio se lo aspetta. Vive quanto il motore: chi lo aggancia lo tiene.
-    dsp::SpscRing<float> *playbackStream() noexcept { return &m_playback; }
+    dsp::SpscRing<float> *localAudioStream() noexcept { return &m_playback; }
+
+    // ── Lo spettro della voce, prima e dopo la catena ────────────────────
+    //
+    // È l'altra metà del confronto: l'orecchio dice se una voce è bella, lo
+    // spettro dice *perché*. Una gobba a 200 Hz che l'orecchio chiama «calda»
+    // qui si vede, e si vede anche che occupa il doppio della banda.
+
+    /// Quante barre. Con la trasformata a 2048 punti su 48 kHz coprono da zero
+    /// a poco meno di quattro chilohertz: tutta la banda di una SSB e niente
+    /// di più, perché sopra non c'è niente da guardare.
+    static constexpr int kVoiceBins = 160;
+    static constexpr int kVoiceFftSize = 2048;
+
+    double voiceSpectrumSpanHz() const noexcept
+    {
+        return m_audioRate * kVoiceBins / kVoiceFftSize;
+    }
+
+    /// La barra `index` in dBFS. Atomica perché la legge la UI dal suo thread
+    /// mentre il motore la scrive: un segnale per barra costerebbe più della
+    /// trasformata.
+    float voiceBinDb(bool wet, int index) const noexcept
+    {
+        if (index < 0 || index >= kVoiceBins)
+            return -140.0f;
+        return (wet ? m_wetBins : m_dryBins)[index].load(std::memory_order_relaxed);
+    }
+
+    bool monitorEnabled() const { return m_monitor.load(std::memory_order_relaxed); }
+    double monitorLevel() const { return m_monitorLevel.load(std::memory_order_relaxed); }
 
     float micPeak() const { return m_micPeak.load(std::memory_order_relaxed); }
     float compressionDb() const { return m_compressionDb.load(std::memory_order_relaxed); }
@@ -174,6 +208,14 @@ public slots:
     /// confronto smette di dipendere dalla memoria di com'era.
     void setPlaybackSource(int source);
 
+    /// Il monitor: sentire in cuffia quello che si sta mandando alla radio.
+    ///
+    /// Suona **solo mentre si trasmette**, e non c'è modo di lasciarlo acceso
+    /// per sbaglio: in mezzo duplex la ricezione tace comunque, quindi non si
+    /// scontra con niente, e a PTT alzato smette da sé.
+    void setMonitorEnabled(bool enabled);
+    void setMonitorLevel(double level);
+
 signals:
     /// La trasmissione non può partire, e perché. La UI lo mostra invece di
     /// lasciare l'operatore davanti a un PTT premuto che non trasmette.
@@ -196,6 +238,12 @@ private:
     /// Travasa il riascolto dal registratore al suo ring. Gira a ogni giro di
     /// timer, anche a PTT libero.
     void pumpPlayback();
+
+    /// Le due trasformate del confronto prima/dopo.
+    void analyzeVoice(std::size_t audioFrames);
+
+    /// Manda in cuffia quello che sta andando alla radio.
+    void pumpMonitor(std::size_t audioFrames);
     void configureMonitor();
 
     dsp::SpeechProcessor m_speech;
@@ -220,6 +268,19 @@ private:
     qint64 m_monitorCenterHz = 0;
 
     dsp::VoiceRecorder m_recorder;
+
+    /// Le due trasformate del confronto. Costano due FFT a 2048 punti ogni
+    /// blocco, e solo mentre si trasmette: meno dell'interpolazione che c'è
+    /// già subito dopo.
+    dsp::SpectrumAnalyzer m_dryAnalyzer;
+    dsp::SpectrumAnalyzer m_wetAnalyzer;
+    std::vector<dsp::Complex> m_dryComplex;
+    std::vector<dsp::Complex> m_wetComplex;
+    std::atomic<float> m_dryBins[kVoiceBins];
+    std::atomic<float> m_wetBins[kVoiceBins];
+
+    std::atomic<bool> m_monitor{false};
+    std::atomic<float> m_monitorLevel{0.5f};
 
     /// Il ring del riascolto. Mezzo secondo è più che sufficiente: lo riempie
     /// lo stesso timer che produce la trasmissione, e tenerlo corto vuol dire

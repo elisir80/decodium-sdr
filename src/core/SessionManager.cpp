@@ -178,7 +178,7 @@ SessionManager::SessionManager(QObject *parent)
     // aggancia una volta sola e per sempre: il router lo terrà anche se il
     // dispositivo audio cambia sotto.
     if (m_audio)
-        m_audio->setInterruptSource(m_tx->playbackStream());
+        m_audio->setInterruptSource(m_tx->localAudioStream());
     connect(m_tx, &TxEngine::refused, this, [this](const QString &reason) {
         // Il PTT torna su da solo: lasciarlo premuto mentre non esce nulla è
         // il modo migliore per far cercare il guasto nell'antenna.
@@ -609,6 +609,62 @@ SpectrumFeed *SessionManager::spectrum() const
 SpectrumFeed *SessionManager::audioSpectrum() const
 {
     return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
+}
+
+bool SessionManager::monitorEnabled() const
+{
+    return m_tx && m_tx->monitorEnabled();
+}
+
+void SessionManager::setMonitorEnabled(bool enabled)
+{
+    if (!m_tx || m_tx->monitorEnabled() == enabled)
+        return;
+    QMetaObject::invokeMethod(m_tx, [this, enabled] { m_tx->setMonitorEnabled(enabled); });
+}
+
+double SessionManager::monitorLevel() const
+{
+    return m_tx ? m_tx->monitorLevel() : 0.5;
+}
+
+void SessionManager::setMonitorLevel(double level)
+{
+    if (!m_tx)
+        return;
+    QMetaObject::invokeMethod(m_tx, [this, level] { m_tx->setMonitorLevel(level); });
+}
+
+int SessionManager::voiceSpectrumBins() const
+{
+    return TxEngine::kVoiceBins;
+}
+
+double SessionManager::voiceSpectrumSpanHz() const
+{
+    return m_tx ? m_tx->voiceSpectrumSpanHz() : 0.0;
+}
+
+QVariantList SessionManager::voiceSpectrumDry() const
+{
+    QVariantList out;
+    if (!m_tx)
+        return out;
+    out.reserve(TxEngine::kVoiceBins);
+    for (int i = 0; i < TxEngine::kVoiceBins; ++i)
+        out.append(static_cast<double>(m_tx->voiceBinDb(false, i)));
+    return out;
+}
+
+QVariantList SessionManager::voiceSpectrumWet() const
+{
+    QVariantList out;
+    if (!m_tx)
+        return out;
+    out.reserve(TxEngine::kVoiceBins);
+    for (int i = 0; i < TxEngine::kVoiceBins; ++i)
+        out.append(static_cast<double>(m_tx->voiceBinDb(true, i)));
+    return out;
 }
 
 bool SessionManager::voiceRecordingReady() const

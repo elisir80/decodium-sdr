@@ -70,6 +70,8 @@ private slots:
     void theTuneCarrierIsSteady();
     void twoTonesStayTwo();
     void whatWasSaidComesBack();
+    void theMonitorOnlySoundsWhileTransmitting();
+    void theTwoCurvesSeeTwoDifferentThings();
 };
 
 void TestTxEngine::nothingLeavesWithThePttUp()
@@ -305,7 +307,7 @@ void TestTxEngine::whatWasSaidComesBack()
     QVERIFY(engine.recorder().isPlaying());
 
     std::vector<float> heard(8192);
-    const std::size_t got = engine.playbackStream()->read(heard.data(), heard.size());
+    const std::size_t got = engine.localAudioStream()->read(heard.data(), heard.size());
     QVERIFY2(got > 0, "dal ring del riascolto non è uscito niente");
 
     float peak = 0.0f;
@@ -322,6 +324,102 @@ void TestTxEngine::whatWasSaidComesBack()
     // E si ferma quando glielo si dice.
     engine.stopRecordingPlayback();
     QVERIFY(!engine.recorder().isPlaying());
+}
+
+/// Trasmette `rounds` blocchi di tono al posto della voce, alimentando il
+/// microfono mentre si trasmette — che è l'unico ordine che funzioni: premendo
+/// il PTT il motore svuota la coda del microfono.
+static void speak(TxEngine &engine, dsp::SpscRing<float> &mic, double amplitude,
+                  int rounds = 5)
+{
+    std::vector<float> block(4800);
+    std::size_t phase = 0;
+    engine.setTransmitting(true);
+    for (int round = 0; round < rounds; ++round) {
+        for (std::size_t i = 0; i < block.size(); ++i, ++phase) {
+            block[i] = static_cast<float>(amplitude
+                * std::sin(dsp::kTwoPi * 700.0 * static_cast<double>(phase) / 48000.0));
+        }
+        mic.write(block.data(), block.size());
+        spin(90);
+    }
+}
+
+void TestTxEngine::theMonitorOnlySoundsWhileTransmitting()
+{
+    dsp::SpscRing<float> ring(1 << 20);
+    dsp::SpscRing<float> mic(1 << 16);
+
+    TxEngine engine;
+    engine.attach(&ring, kDeviceRate);
+    engine.setMicSource(&mic, 48000.0);
+    engine.start();
+
+    // Acceso ma con il PTT alzato: non deve uscire un campione. Un monitor che
+    // suona a riposo si porterebbe dietro il rientro acustico su un
+    // altoparlante, e chi lo sente non ha modo di collegarlo a questo tasto.
+    engine.setMonitorEnabled(true);
+    spin(80);
+    std::vector<float> heard(8192);
+    QCOMPARE(engine.localAudioStream()->read(heard.data(), heard.size()), std::size_t(0));
+
+    speak(engine, mic, 0.4);
+
+    const std::size_t got = engine.localAudioStream()->read(heard.data(), heard.size());
+    QVERIFY2(got > 0, "il monitor è acceso e non esce niente");
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < got; ++i)
+        peak = std::max(peak, std::abs(heard[i]));
+    QVERIFY2(peak > 0.02f,
+             qPrintable(QStringLiteral("il monitor esce a %1: è silenzio").arg(peak)));
+
+    // Alzando il PTT il ring si svuota: quello che era in coda non deve
+    // continuare a suonare dopo che si è smesso di parlare.
+    engine.setTransmitting(false);
+    spin(30);
+    QCOMPARE(engine.localAudioStream()->available(), std::size_t(0));
+}
+
+void TestTxEngine::theTwoCurvesSeeTwoDifferentThings()
+{
+    dsp::SpscRing<float> ring(1 << 20);
+    dsp::SpscRing<float> mic(1 << 16);
+
+    TxEngine engine;
+    engine.attach(&ring, kDeviceRate);
+    engine.setMicSource(&mic, 48000.0);
+    engine.start();
+
+    // A riposo le due curve stanno sul fondo: uno spettro fermo su una misura
+    // vecchia è indistinguibile da uno spettro giusto.
+    QVERIFY(engine.voiceBinDb(false, 30) < -100.0f);
+    QVERIFY(engine.voiceBinDb(true, 30) < -100.0f);
+
+    // Il compressore acceso e spinto: è il caso in cui le due curve devono
+    // separarsi, perché è quello che il confronto esiste per mostrare.
+    engine.setCompressionDb(20.0);
+    speak(engine, mic, 0.05);
+    engine.setTransmitting(false);
+
+    // La barra del tono di prova: 700 Hz su bin da 23,4 Hz è la trentesima.
+    const int bin = static_cast<int>(std::lround(
+        700.0 / (48000.0 / TxEngine::kVoiceFftSize)));
+    const float dry = engine.voiceBinDb(false, bin);
+    const float wet = engine.voiceBinDb(true, bin);
+
+    QVERIFY2(dry > -100.0f,
+             qPrintable(QStringLiteral("la curva «prima» non ha visto niente: %1").arg(dry)));
+    QVERIFY2(wet > -100.0f,
+             qPrintable(QStringLiteral("la curva «dopo» non ha visto niente: %1").arg(wet)));
+
+    // Venti decibel di compressione su una voce debole: il «dopo» deve stare
+    // sopra il «prima». Se le due curve coincidessero, il confronto starebbe
+    // guardando due volte lo stesso punto della catena — ed è un difetto che
+    // nessuno noterebbe, perché due curve sovrapposte sembrano una catena
+    // trasparente.
+    QVERIFY2(wet > dry + 6.0f,
+             qPrintable(QStringLiteral("prima %1 dB, dopo %2 dB: la catena non si vede")
+                            .arg(dry).arg(wet)));
 }
 
 QTEST_MAIN(TestTxEngine)

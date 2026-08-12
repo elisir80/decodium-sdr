@@ -301,6 +301,50 @@ PanelFrame {
         }
     }
 
+    // ── Prima e dopo, sullo stesso grafico (SPEC-005 §4.3) ───────────────
+    VoiceCompare {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacingTight
+        visible: Session.capabilities.canTransmit
+    }
+
+    // ── Il monitor (SPEC-005 §4.3) ───────────────────────────────────────
+    //
+    // Sentire quello che si sta mandando alla radio, mentre lo si manda. Suona
+    // solo a PTT premuto e non c'è modo di lasciarlo acceso per sbaglio: in
+    // mezzo duplex la ricezione tace comunque, quindi non si scontra con
+    // niente, e ad alzare il PTT smette da sé.
+    RowLayout {
+        Layout.fillWidth: true
+        visible: Session.capabilities.canTransmit
+        spacing: Theme.spacingTight
+
+        DsdrButton {
+            implicitWidth: 96
+            implicitHeight: 26
+            text: qsTr("MONITOR")
+            checkable: true
+            checked: Session.monitorEnabled
+            onClicked: Session.monitorEnabled = checked
+        }
+
+        DsdrSlider {
+            Layout.fillWidth: true
+            enabled: Session.monitorEnabled
+            from: 0
+            to: 1
+            value: Session.monitorLevel
+            onMoved: Session.monitorLevel = value
+        }
+
+        Text {
+            text: qsTr("%1%").arg(Math.round(Session.monitorLevel * 100))
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Session.monitorEnabled ? Theme.textSecondary : Theme.textDisabled
+        }
+    }
+
     // ── Riascoltarsi (SPEC-005 §4.3) ─────────────────────────────────────
     //
     // Il pezzo che manca a ogni stazione che non ha un secondo ricevitore, e

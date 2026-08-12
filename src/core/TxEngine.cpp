@@ -75,6 +75,23 @@ TxEngine::TxEngine(QObject *parent)
     m_limiter.configure(m_audioRate);
     m_keyer.configure(m_audioRate);
 
+    // Finestra di Hann e non Blackman-Harris: qui non si cercano segnali
+    // deboli accanto a segnali forti — si guarda la forma di una voce — e la
+    // Hann la disegna con lobi più stretti, cioè con più dettaglio dove serve.
+    m_dryAnalyzer.configure(kVoiceFftSize, m_audioRate, dsp::WindowType::Hann);
+    m_wetAnalyzer.configure(kVoiceFftSize, m_audioRate, dsp::WindowType::Hann);
+    // Una voce salta troppo perché una trasformata sola si legga: la media
+    // esponenziale la tiene ferma abbastanza da poterla confrontare con
+    // l'altra, che è tutto il senso di averne due.
+    m_dryAnalyzer.setAveraging(0.35f);
+    m_wetAnalyzer.setAveraging(0.35f);
+    m_dryComplex.resize(kAudioBlockFrames);
+    m_wetComplex.resize(kAudioBlockFrames);
+    for (int i = 0; i < kVoiceBins; ++i) {
+        m_dryBins[i].store(-140.0f, std::memory_order_relaxed);
+        m_wetBins[i].store(-140.0f, std::memory_order_relaxed);
+    }
+
     m_audio.resize(kAudioBlockFrames);
     m_baseband.resize(kAudioBlockFrames);
 }
@@ -244,7 +261,14 @@ void TxEngine::setTransmitting(bool transmitting)
         m_framesSent = 0;
         m_starved.store(0, std::memory_order_relaxed);
         m_clock.restart();
+        // Il monitor parte pulito: quel che c'è nel ring è la coda dell'ultima
+        // volta, e sentirla in testa alla propria voce sarebbe uno scoppiettio.
+        m_recorder.stopPlayback();
+        m_playback.clear();
+        m_dryAnalyzer.reset();
+        m_wetAnalyzer.reset();
     } else {
+        m_playback.clear();
         m_outputPeak.store(0.0f, std::memory_order_relaxed);
         m_compressionDb.store(0.0f, std::memory_order_relaxed);
     }
@@ -347,6 +371,78 @@ void TxEngine::pump()
                              << (m_domain == Domain::Audio ? "audio" : "banda base");
         }
     }
+}
+
+void TxEngine::analyzeVoice(std::size_t audioFrames)
+{
+    // Le due trasformate vogliono campioni complessi, e questi sono reali: si
+    // mette il campione nella parte reale e si legge la metà positiva. È lo
+    // stesso mestiere che fa il motore di ricezione sull'audio, e farlo allo
+    // stesso modo vuol dire che le due scale coincidono.
+    for (std::size_t i = 0; i < audioFrames; ++i) {
+        m_dryComplex[i] = dsp::Complex(m_dry[i], 0.0f);
+        m_wetComplex[i] = dsp::Complex(m_audio[i], 0.0f);
+    }
+
+    const auto publish = [](const dsp::SpectrumAnalyzer &analyzer,
+                            std::atomic<float> *bins) {
+        const auto &magnitudes = analyzer.magnitudesDb();
+        // Lo spettro esce già in ordine di frequenza crescente, quindi lo zero
+        // sta in mezzo: le frequenze positive — le sole che esistano per un
+        // segnale reale — cominciano da lì.
+        const std::size_t offset = magnitudes.size() / 2;
+        for (int i = 0; i < kVoiceBins; ++i) {
+            const std::size_t index = offset + static_cast<std::size_t>(i);
+            bins[i].store(index < magnitudes.size() ? magnitudes[index] : -140.0f,
+                          std::memory_order_relaxed);
+        }
+    };
+
+    if (m_dryAnalyzer.push(m_dryComplex.data(), audioFrames))
+        publish(m_dryAnalyzer, m_dryBins);
+    if (m_wetAnalyzer.push(m_wetComplex.data(), audioFrames))
+        publish(m_wetAnalyzer, m_wetBins);
+}
+
+void TxEngine::pumpMonitor(std::size_t audioFrames)
+{
+    if (!m_monitor.load(std::memory_order_relaxed))
+        return;
+
+    const float level = m_monitorLevel.load(std::memory_order_relaxed);
+
+    // Se chi ascolta è rimasto indietro si butta il vecchio, non il nuovo: un
+    // monitor in ritardo sulla propria voce è peggio di nessun monitor, perché
+    // sentirsi con mezzo secondo di ritardo fa inciampare chi parla.
+    const std::size_t wanted = audioFrames * 2;
+    if (m_playback.space() < wanted)
+        m_playback.discard(wanted - m_playback.space());
+
+    for (std::size_t i = 0; i < audioFrames; ++i) {
+        const float sample = m_audio[i] * level;
+        m_playbackStereo[i * 2] = sample;
+        m_playbackStereo[i * 2 + 1] = sample;
+    }
+    m_playback.write(m_playbackStereo.data(), wanted);
+}
+
+void TxEngine::setMonitorEnabled(bool enabled)
+{
+    if (m_monitor.load(std::memory_order_relaxed) == enabled)
+        return;
+    m_monitor.store(enabled, std::memory_order_relaxed);
+    // Spegnendolo si butta quel che era già in coda: lasciarlo suonare fino in
+    // fondo vorrebbe dire un monitor che continua dopo che è stato spento.
+    if (!enabled)
+        m_playback.clear();
+    emit playbackChanged();
+}
+
+void TxEngine::setMonitorLevel(double level)
+{
+    m_monitorLevel.store(static_cast<float>(std::clamp(level, 0.0, 1.0)),
+                         std::memory_order_relaxed);
+    emit playbackChanged();
 }
 
 void TxEngine::pumpPlayback()
@@ -547,10 +643,13 @@ void TxEngine::produce(std::size_t audioFrames)
         // premere «registra» prima di parlare: ci si accorge di voler
         // riascoltare solo dopo aver parlato.
         m_recorder.record(m_dry.data(), m_audio.data(), audioFrames);
+        analyzeVoice(audioFrames);
 
         m_micPeak.store(m_speech.lastInputPeak(), std::memory_order_relaxed);
         m_compressionDb.store(m_speech.lastCompressionDb(), std::memory_order_relaxed);
     }
+
+    pumpMonitor(audioFrames);
 
     if (m_domain == Domain::Audio) {
         // La radio ha già il suo modulatore, il suo filtro di banda e il suo

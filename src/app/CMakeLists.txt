@@ -37,6 +37,7 @@ set(DSDR_QML_FILES
     qml/AudioStudioPanel.qml
     qml/AudioScope.qml
     qml/EqCurve.qml
+    qml/VoiceCompare.qml
     qml/AudioLevelBar.qml
     qml/ChainBlock.qml
     qml/ChainGlyph.qml

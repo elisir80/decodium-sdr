@@ -110,6 +110,20 @@ class SessionManager : public QObject
     Q_PROPERTY(int voicePlaybackSource READ voicePlaybackSource
                    WRITE setVoicePlaybackSource NOTIFY voicePlaybackChanged)
 
+    // ── Monitor e confronto prima/dopo (SPEC-005 §4.3) ──────────────────
+    //
+    // Il monitor suona solo mentre si trasmette: in mezzo duplex la ricezione
+    // tace comunque, quindi non si scontra con niente e non c'è modo di
+    // lasciarlo acceso per sbaglio.
+    Q_PROPERTY(bool monitorEnabled READ monitorEnabled WRITE setMonitorEnabled
+                   NOTIFY voicePlaybackChanged)
+    Q_PROPERTY(double monitorLevel READ monitorLevel WRITE setMonitorLevel
+                   NOTIFY voicePlaybackChanged)
+    Q_PROPERTY(int voiceSpectrumBins READ voiceSpectrumBins CONSTANT)
+    Q_PROPERTY(double voiceSpectrumSpanHz READ voiceSpectrumSpanHz CONSTANT)
+    Q_PROPERTY(QVariantList voiceSpectrumDry READ voiceSpectrumDry NOTIFY txMetersChanged)
+    Q_PROPERTY(QVariantList voiceSpectrumWet READ voiceSpectrumWet NOTIFY txMetersChanged)
+
     // ── Equalizzatore dell'ascolto (SPEC-005 §4.1) ──────────────────────
     //
     // Cinque campane sul percorso che arriva alle cuffie. Non su quello dei
@@ -353,6 +367,15 @@ public:
     /// Tre numeri e non un oggetto perché sono i tre gradi di libertà di un
     /// punto trascinabile su una curva — dove sta, quanto è alto, quanto è
     /// stretto — ed è così che li manda l'editor.
+    bool monitorEnabled() const;
+    void setMonitorEnabled(bool enabled);
+    double monitorLevel() const;
+    void setMonitorLevel(double level);
+    int voiceSpectrumBins() const;
+    double voiceSpectrumSpanHz() const;
+    QVariantList voiceSpectrumDry() const;
+    QVariantList voiceSpectrumWet() const;
+
     bool voiceRecordingReady() const;
     double voiceRecordedSeconds() const;
     double voiceRecordingCapacitySeconds() const;
