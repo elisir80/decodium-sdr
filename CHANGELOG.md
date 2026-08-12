@@ -4,6 +4,40 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.13] — 2026-08-12
+
+### Aggiunto
+
+- **Backend FlexRadio serie 6000.** Mette insieme le due metà che c'erano già —
+  il canale di comando su TCP 4992 e il decodificatore VITA-49 — e in mezzo ci
+  mette la sequenza che apre il flusso DAX IQ. Quattro velocità: 24, 48, 96 e
+  192 kS/s. L'IQ arriva da questa parte e si demodula qui, con tutta la catena
+  di ricezione.
+
+  **Non è mai stato provato su una radio vera**, e lo dice. Il legame fra
+  fetta, panadapter e canale DAX cambia fra le versioni maggiori del firmware:
+  se la sequenza non passa, il backend nomina il comando su cui si è fermato e
+  il codice con cui la radio ha risposto; se passa e dopo tre secondi non
+  arriva un pacchetto, lo dice e nomina le due cause possibili — il firewall di
+  questa macchina o un firmware che vuole una sequenza diversa — perché si
+  risolvono in modi opposti. Le due forme documentate del comando di creazione
+  si provano in sequenza invece di sceglierne una a memoria.
+
+  Chi ha un Flex davanti chiude la questione senza ricompilare:
+  `flex.status` dice a che passo si è arrivati e quanti pacchetti sono giunti,
+  `flex.send` manda una riga a mano sul canale di comando.
+
+  La trasmissione non c'è e non si finge: passa da DAX MIC, che è un'altra metà
+  di protocollo, e le capability dichiarano che non si trasmette — così la UI
+  non mostra un PTT che non farebbe niente.
+
+### Corretto
+
+- **Un `-Wreorder` nel percorso audio**: la build di casa e quella di CI
+  avevano due severità diverse, e la differenza si è vista solo dopo aver
+  taggato una versione. Da qui in poi si prova con i warning come errori prima
+  di taggare.
+
 ## [1.1.12] — 2026-08-12
 
 ### Aggiunto
