@@ -9,6 +9,7 @@
 // aperto quello che sta usando e chiude il resto.
 import QtCore
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import DecodiumSdr
 
@@ -38,11 +39,25 @@ Rectangle {
     /// dentro finestre staccate.
     property bool draggable: false
 
+    /// Il pannello si può staccare in una finestra sua.
+    ///
+    /// Non tutti ne hanno bisogno: una pulsantiera di bande in una finestra da
+    /// sola è una finestra sprecata. Lo dichiara chi il pannello lo scrive,
+    /// perché è lui a sapere se ha qualcosa da fare con lo spazio.
+    property bool detachable: false
+
+    /// Vero quando il pannello *è* in una finestra sua. Chi ha contenuti che
+    /// crescono lo guarda per decidere quanto prendersi.
+    property bool detached: false
+
+    signal detachRequested()
     signal dragStarted()
     signal dragMoved(real sceneY)
     signal dragEnded()
 
     implicitHeight: layout.implicitHeight + 2 * Theme.spacing
+    // In finestra la cornice si prende tutto lo spazio che le danno.
+    anchors.fill: detached ? parent : undefined
     radius: Theme.radius
     color: Theme.surfaceRaised
     border.width: 1
@@ -160,6 +175,38 @@ Rectangle {
                 }
             }
 
+            // ── Stacca ───────────────────────────────────────────────────
+            //
+            // Prima del chevron e con il suo gesto: l'intestazione tutta
+            // apre e chiude, e un bersaglio dentro di essa deve prendersi il
+            // proprio tocco prima che lo faccia lei.
+            Rectangle {
+                visible: root.detachable && !root.detached
+                implicitWidth: 18
+                implicitHeight: 16
+                radius: Theme.radiusSmall
+                color: detachHover.hovered ? Theme.surface : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "\u2197"
+                    font.pixelSize: Theme.fontSmall
+                    color: detachHover.hovered ? Theme.accent : Theme.textDisabled
+                }
+
+                HoverHandler {
+                    id: detachHover
+                    cursorShape: Qt.PointingHandCursor
+                }
+
+                TapHandler {
+                    onTapped: root.detachRequested()
+                }
+
+                ToolTip.visible: detachHover.hovered
+                ToolTip.text: qsTr("Stacca in una finestra")
+            }
+
             // Chevron: punta in basso quando è aperto, a sinistra quando è
             // chiuso. La rotazione dice da sola in che verso andrà il clic.
             Canvas {
@@ -218,7 +265,12 @@ Rectangle {
             id: contentColumn
 
             Layout.fillWidth: true
-            Layout.preferredHeight: root.collapsed ? 0 : implicitHeight
+            // Staccato il contenuto riempie la finestra; in colonna si
+            // dimensiona su di sé, perché lì l'altezza la decide il contenuto
+            // e non il contenitore.
+            Layout.fillHeight: root.detached
+            Layout.preferredHeight: root.detached ? -1
+                                  : (root.collapsed ? 0 : implicitHeight)
             spacing: Theme.spacingTight
             opacity: root.collapsed ? 0 : 1
             visible: opacity > 0

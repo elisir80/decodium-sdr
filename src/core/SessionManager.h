@@ -68,6 +68,8 @@ class SessionManager : public QObject
     // ── Analisi dell'audio ──────────────────────────────────────────────
     Q_PROPERTY(double audioToneHz READ audioToneHz NOTIFY audioToneChanged)
     Q_PROPERTY(double audioToneDb READ audioToneDb NOTIFY audioToneChanged)
+    Q_PROPERTY(double audioPeakDb READ audioPeakDb NOTIFY audioLevelsChanged)
+    Q_PROPERTY(double audioRmsDb READ audioRmsDb NOTIFY audioLevelsChanged)
 
     /// Lo spettro di ciò che si sta trasmettendo. In mezzo duplex la radio si
     /// assorda mentre trasmette: senza questo, il panadattatore resterebbe una
@@ -245,6 +247,23 @@ public:
     /// nessun tono.
     double audioToneHz() const { return m_audioToneHz; }
     double audioToneDb() const { return m_audioToneDb; }
+
+    /// Picco e valore efficace dell'audio, in dBFS. La distanza fra i due è il
+    /// fattore di cresta: su una voce sta attorno ai dodici decibel, su una
+    /// portante a tre.
+    double audioPeakDb() const { return m_audioPeakDb; }
+    double audioRmsDb() const { return m_audioRmsDb; }
+
+    /// Gli ultimi campioni audio, ridotti a `points` valori fra −1 e 1.
+    ///
+    /// Non è una decimazione: di ogni gruppo si prende il campione di modulo
+    /// maggiore, così una punta che dura un campione solo resta visibile.
+    /// Prendendo un campione ogni N — la decimazione vera — un oscilloscopio
+    /// mostrerebbe una forma d'onda più pulita di quella che c'è, e sarebbe
+    /// una bugia proprio sul dettaglio che si sta cercando.
+    ///
+    /// Il ring lo si svuota qui, sul thread GUI: è il suo unico consumatore.
+    Q_INVOKABLE QVariantList audioWaveform(int points = 512);
     SpectrumFeed *txSpectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
     IqRecorder *recorder() { return &m_recorder; }
@@ -528,6 +547,7 @@ signals:
     void noiseBlankerChanged();
     void streamHealthChanged();
     void audioToneChanged();
+    void audioLevelsChanged();
     void neuralChanged();
     void overloadChanged();
     void spectrumAveragingChanged();
@@ -598,6 +618,13 @@ private:
     double m_streamHealth = -1.0;
     double m_audioToneHz = 0.0;
     double m_audioToneDb = -140.0;
+    double m_audioPeakDb = -140.0;
+    double m_audioRmsDb = -140.0;
+
+    /// Finestra scorrevole degli ultimi campioni audio, per l'oscilloscopio.
+    /// Vive sul thread GUI e si riempie svuotando il ring del motore.
+    std::vector<float> m_scopeWindow;
+    std::vector<float> m_scopeScratch;
     bool m_overloaded = false;
 
     bool m_txMetersAvailable = false;

@@ -59,6 +59,18 @@ public:
     /// è simmetrica, quindi la metà sotto lo zero è la stessa cosa specchiata.
     SpectrumFeed *audioSpectrumFeed() const noexcept { return m_audioSpectrum; }
 
+    /// L'audio nel dominio del tempo, per l'oscilloscopio.
+    ///
+    /// Un ring a parte e non quello che alimenta la scheda audio: quello ha un
+    /// consumatore solo — è il contratto SPSC — e leggerlo in due vorrebbe
+    /// dire rubarsi i campioni a vicenda, cioè far saltare l'ascolto per
+    /// disegnare una traccia.
+    ///
+    /// Chi guarda può restare indietro: il ring è piccolo e chi scrive scarta
+    /// il più vecchio. Un oscilloscopio in ritardo di mezzo secondo non è un
+    /// oscilloscopio.
+    dsp::SpscRing<float> *audioScopeRing() const noexcept { return m_scopeRing.get(); }
+
     /// Aggancia la sorgente IQ. Thread-safe: il thread DSP recepisce il
     /// cambiamento al frame successivo, senza fermare nulla a mano.
     void setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz);
@@ -196,6 +208,15 @@ signals:
     /// emerga: un tono inventato è peggio di nessun tono.
     void audioToneMeasured(double frequencyHz, double levelDb);
 
+    /// Picco e valore efficace dell'audio nel blocco appena mixato, in dBFS.
+    ///
+    /// Sono due misure diverse e servono a due cose diverse: il picco dice se
+    /// si sta tosando, il valore efficace dice quanto è forte davvero. La
+    /// distanza fra i due è il fattore di cresta, che su una voce sta attorno
+    /// ai dodici decibel e su una portante a tre — ed è il numero che dice se
+    /// il compressore sta esagerando.
+    void audioLevelsMeasured(double peakDb, double rmsDb);
+
     /// Quanti campioni al secondo sono arrivati davvero, e quanti se ne
     /// aspettavano. Una volta al secondo, dallo stesso punto in cui il motore
     /// tira le somme per il log.
@@ -282,9 +303,11 @@ private:
     // si distingue una nota dall'altra senza spendere un millisecondo per
     // trasformata.
     SpectrumFeed *m_audioSpectrum = nullptr;
+    std::unique_ptr<dsp::SpscRing<float>> m_scopeRing;
     dsp::SpectrumAnalyzer m_audioAnalyzer;
     std::vector<dsp::Complex> m_audioScratch;  ///< il mix, in forma complessa
     qint64 m_lastToneNs = 0;
+    qint64 m_lastLevelNs = 0;
 
     // unordered_map e non QHash: Channel possiede un ChannelProcessor via
     // unique_ptr ed è solo movable, mentre i contenitori Qt richiedono la copia.

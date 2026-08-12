@@ -304,6 +304,14 @@ SessionManager::SessionManager(QObject *parent)
                 emit replayChanged();
             });
 
+    // Picco e valore efficace dell'audio, cinque volte al secondo.
+    connect(m_engine, &DspEngine::audioLevelsMeasured, this,
+            [this](double peakDb, double rmsDb) {
+                m_audioPeakDb = peakDb;
+                m_audioRmsDb = rmsDb;
+                emit audioLevelsChanged();
+            });
+
     // Il tono dominante dell'audio, cinque volte al secondo.
     connect(m_engine, &DspEngine::audioToneMeasured, this,
             [this](double frequencyHz, double levelDb) {
@@ -388,6 +396,14 @@ SessionManager::SessionManager(QObject *parent)
         setStatus(message);
         emit errorReported(message, false);
     });
+
+    // Picco e valore efficace dell'audio, cinque volte al secondo.
+    connect(m_engine, &DspEngine::audioLevelsMeasured, this,
+            [this](double peakDb, double rmsDb) {
+                m_audioPeakDb = peakDb;
+                m_audioRmsDb = rmsDb;
+                emit audioLevelsChanged();
+            });
 
     // Il tono dominante dell'audio, cinque volte al secondo.
     connect(m_engine, &DspEngine::audioToneMeasured, this,
@@ -584,6 +600,60 @@ SpectrumFeed *SessionManager::spectrum() const
 SpectrumFeed *SessionManager::audioSpectrum() const
 {
     return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
+}
+
+QVariantList SessionManager::audioWaveform(int points)
+{
+    QVariantList out;
+    points = std::clamp(points, 16, 4096);
+
+    dsp::SpscRing<float> *ring = m_engine ? m_engine->audioScopeRing() : nullptr;
+    if (!ring)
+        return out;
+
+    // La finestra è lunga il doppio dei punti chiesti: sotto questa soglia una
+    // punta cadrebbe fra due gruppi e il disegno perderebbe proprio quello che
+    // si stava cercando.
+    const std::size_t wanted = static_cast<std::size_t>(points) * 8;
+    if (m_scopeWindow.size() != wanted)
+        m_scopeWindow.assign(wanted, 0.0f);
+
+    // Si svuota tutto quello che c'è: chi guarda vede l'ultimo istante, non la
+    // storia, e lasciare campioni nel ring vorrebbe dire disegnare in ritardo
+    // crescente.
+    const std::size_t available = ring->available();
+    if (available > 0) {
+        m_scopeScratch.resize(available);
+        const std::size_t read = ring->read(m_scopeScratch.data(), available);
+        if (read >= wanted) {
+            // Più campioni della finestra: si tiene la coda, che è l'adesso.
+            std::copy(m_scopeScratch.end() - static_cast<long>(wanted),
+                      m_scopeScratch.end(), m_scopeWindow.begin());
+        } else if (read > 0) {
+            // Si fa scorrere la finestra: il vecchio esce da sinistra.
+            std::move(m_scopeWindow.begin() + static_cast<long>(read), m_scopeWindow.end(),
+                      m_scopeWindow.begin());
+            std::copy_n(m_scopeScratch.begin(), read,
+                        m_scopeWindow.end() - static_cast<long>(read));
+        }
+    }
+
+    // Un punto per gruppo, e di ogni gruppo il campione di modulo maggiore:
+    // decimare — prenderne uno ogni N — mostrerebbe una forma d'onda più
+    // pulita di quella che c'è, e sarebbe una bugia proprio sul dettaglio che
+    // si sta cercando.
+    const std::size_t group = wanted / static_cast<std::size_t>(points);
+    out.reserve(points);
+    for (int i = 0; i < points; ++i) {
+        const std::size_t from = static_cast<std::size_t>(i) * group;
+        float strongest = 0.0f;
+        for (std::size_t j = from; j < from + group && j < m_scopeWindow.size(); ++j) {
+            if (std::abs(m_scopeWindow[j]) > std::abs(strongest))
+                strongest = m_scopeWindow[j];
+        }
+        out.append(static_cast<double>(strongest));
+    }
+    return out;
 }
 
 void SessionManager::setStatus(const QString &message)

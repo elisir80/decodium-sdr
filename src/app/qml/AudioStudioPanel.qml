@@ -27,6 +27,11 @@ PanelFrame {
     title: qsTr("STUDIO AUDIO")
     draggable: true
     collapsed: true
+    // In colonna è una striscia larga trecento punti: uno spettro alto un
+    // dito, una banda di tre kilohertz in venti pixel, una forma d'onda che è
+    // una linea. Staccato si prende lo spazio che gli serve, e su un secondo
+    // schermo diventa lo strumento che si guarda mentre si fa altro.
+    detachable: true
 
     Settings {
         id: prefs
@@ -42,9 +47,15 @@ PanelFrame {
     // un'economia: è la stessa cosa: uno spettro con la sua storia sotto, e
     // averne due che si comportano in modo diverso vorrebbe dire imparare due
     // strumenti per leggere la stessa grandezza.
+    // In colonna un'altezza fissa, che è tutto quello che la striscia
+    // concede; staccato prende quello che avanza, che è il motivo per cui lo
+    // si stacca. Due terzi allo spettro e un terzo all'oscilloscopio: la
+    // forma d'onda si legge anche bassa, lo spettro no.
     Item {
         Layout.fillWidth: true
-        Layout.preferredHeight: 150
+        Layout.fillHeight: root.detached
+        Layout.preferredHeight: root.detached ? -1 : 150
+        Layout.minimumHeight: 120
 
         PanadapterView {
             id: audioView
@@ -135,6 +146,86 @@ PanelFrame {
             ticks.push(hz)
         }
         return ticks
+    }
+
+    // ── L'oscilloscopio ──────────────────────────────────────────────────
+    //
+    // Quello che lo spettro non dice: la tosatura, l'inviluppo di una voce, il
+    // battimento fra due portanti vicine. Tre cose che nello spettro sono un
+    // tappeto di armoniche indistinguibile dal rumore, e qui saltano all'occhio.
+    AudioScope {
+        id: scope
+
+        Layout.fillWidth: true
+        Layout.fillHeight: root.detached
+        Layout.preferredHeight: root.detached ? -1 : 70
+        Layout.minimumHeight: 56
+        gain: scopeGain.value
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacing
+
+        Text {
+            text: qsTr("GUADAGNO")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textSecondary
+        }
+
+        DsdrSlider {
+            id: scopeGain
+
+            Layout.fillWidth: true
+            from: 1; to: 40
+            value: 1
+        }
+
+        Text {
+            text: qsTr("×%1").arg(scopeGain.value.toFixed(1))
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Theme.textSecondary
+        }
+    }
+
+    // ── I livelli ────────────────────────────────────────────────────────
+    //
+    // Picco e valore efficace sulla stessa barra: la loro distanza è il
+    // fattore di cresta, e su una barra sola si legge senza sottrazioni.
+    AudioLevelBar {
+        Layout.fillWidth: true
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacing
+
+        Text {
+            text: qsTr("PICCO %1 dB").arg(Session.audioPeakDb.toFixed(1))
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Session.audioPeakDb > -0.5 ? Theme.danger : Theme.textPrimary
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: qsTr("RMS %1 dB").arg(Session.audioRmsDb.toFixed(1))
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Theme.textSecondary
+        }
+
+        // Il fattore di cresta. Su una voce sta attorno ai dodici decibel; se
+        // scende sotto i sei il compressore sta schiacciando tutto, e questo
+        // nello spettro non si vede affatto.
+        Text {
+            text: qsTr("CRESTA %1 dB")
+                  .arg((Session.audioPeakDb - Session.audioRmsDb).toFixed(1))
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            color: Theme.accent
+        }
     }
 
     // ── Il tono ──────────────────────────────────────────────────────────

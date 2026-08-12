@@ -31,6 +31,11 @@ constexpr std::size_t kAudioChannels = 2;
 /// quattro volte più veloce.
 constexpr int kAudioFftSize = 2048;
 
+/// Quanti campioni tiene il ring dell'oscilloscopio: un quinto di secondo a
+/// 48 kHz. Più lungo non serve — chi guarda vede l'ultimo istante, non la
+/// storia — e più corto non basterebbe a coprire un fotogramma lento.
+constexpr std::size_t kScopeRingFrames = 8192;
+
 /// Quanti campioni IQ si elaborano per giro. Coincide con il blocco massimo
 /// dei ChannelProcessor: nessuna suddivisione ulteriore, nessuna allocazione.
 constexpr std::size_t kProcessBlock = dsp::kMaxBlockFrames;
@@ -346,6 +351,9 @@ void DspEngine::reconfigure()
     // dell'audio interno è fissa, e la sua geometria non cambia con la banda.
     // Si configura qui lo stesso perché è il punto in cui si allocano i
     // buffer, e allocare nel percorso caldo è vietato (CONSTITUTION §5).
+    if (!m_scopeRing)
+        m_scopeRing = std::make_unique<dsp::SpscRing<float>>(kScopeRingFrames);
+
     if (m_audioAnalyzer.configure(kAudioFftSize, kInternalAudioRate)) {
         m_audioScratch.assign(static_cast<std::size_t>(kProcessBlock), dsp::Complex{});
         // Metà bin e metà banda: la trasformata di un segnale reale è
@@ -496,6 +504,13 @@ void DspEngine::analyzeAudio(std::size_t frames)
     if (frames == 0 || m_audioScratch.size() < frames)
         return;
 
+    // ── Picco e valore efficace ──────────────────────────────────────────
+    //
+    // Si contano qui, sul blocco appena mixato, perché è l'unico punto in cui
+    // i campioni sono già tutti insieme e non costano una seconda lettura.
+    double blockPeak = 0.0;
+    double sumSquares = 0.0;
+
     // Mono: la somma dei due canali diviso due. Analizzare un canale solo
     // perderebbe metà del segnale su una sorgente che li usa in modo diverso,
     // e analizzarli separati raddoppierebbe il costo per mostrare due volte la
@@ -504,6 +519,38 @@ void DspEngine::analyzeAudio(std::size_t frames)
     for (std::size_t i = 0; i < frames; ++i) {
         const float mono = 0.5f * (m_mix[i * kAudioChannels] + m_mix[i * kAudioChannels + 1]);
         m_audioScratch[i] = dsp::Complex{mono, 0.0f};
+
+        const double magnitude = std::abs(static_cast<double>(mono));
+        blockPeak = std::max(blockPeak, magnitude);
+        sumSquares += static_cast<double>(mono) * static_cast<double>(mono);
+    }
+
+    // Il ring dell'oscilloscopio riceve il mono, non lo stereo: raddoppiare i
+    // campioni per disegnare due tracce identiche sarebbe spesa pura.
+    //
+    // Chi guarda può restare indietro, e allora si scarta il più vecchio: un
+    // oscilloscopio in ritardo non è un oscilloscopio. Il ring vuole float
+    // contigui, e `m_audioScratch` è fatto di Complex: si passa dal mix, che
+    // è già float, prendendo un campione ogni due.
+    if (m_scopeRing) {
+        if (m_scopeRing->space() < frames)
+            m_scopeRing->discard(frames - m_scopeRing->space());
+        for (std::size_t i = 0; i < frames; ++i) {
+            const float mono = m_audioScratch[i].real();
+            m_scopeRing->write(&mono, 1);
+        }
+    }
+
+    // I livelli viaggiano cinque volte al secondo come il tono: sono numeri da
+    // leggere, e un numero che cambia a ogni blocco non si legge.
+    const qint64 levelNow = m_uptime.nsecsElapsed();
+    if (levelNow - m_lastLevelNs >= 200'000'000) {
+        m_lastLevelNs = levelNow;
+        const double rms = std::sqrt(sumSquares / static_cast<double>(frames));
+        const auto toDb = [](double linear) {
+            return 20.0 * std::log10(std::max(linear, 1e-7));
+        };
+        emit audioLevelsMeasured(toDb(blockPeak), toDb(rms));
     }
 
     if (!m_audioAnalyzer.push(m_audioScratch.data(), frames))

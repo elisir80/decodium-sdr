@@ -11,6 +11,7 @@
 // pannelli sopra si prendevano l'altezza che volevano: su uno schermo basso
 // gli ultimi comandi restavano sotto il bordo, irraggiungibili.
 import QtCore
+import QtQml
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -75,6 +76,32 @@ Rectangle {
     readonly property var hiddenKeys:
         hiddenPanels === "" ? [] : hiddenPanels.split(",")
 
+    // ── Pannelli staccati ────────────────────────────────────────────────
+    //
+    // Staccato vuol dire «sta in una finestra sua», non «non c'è più»: esce
+    // dalla colonna e la sua icona resta accesa, perché il pannello è vivo.
+    property string detachedPanels: ""
+
+    readonly property var detachedKeys:
+        detachedPanels === "" ? [] : detachedPanels.split(",")
+
+    function detachPanel(key) {
+        if (detachedKeys.indexOf(key) >= 0)
+            return
+        const keys = detachedKeys.slice()
+        keys.push(key)
+        detachedPanels = keys.join(",")
+    }
+
+    function reattachPanel(key) {
+        const keys = detachedKeys.slice()
+        const at = keys.indexOf(key)
+        if (at < 0)
+            return
+        keys.splice(at, 1)
+        detachedPanels = keys.join(",")
+    }
+
     function togglePanel(key) {
         const keys = hiddenKeys.slice()
         const at = keys.indexOf(key)
@@ -95,6 +122,7 @@ Rectangle {
         category: "panels"
         property alias order: root.savedOrder
         property alias hidden: root.hiddenPanels
+        property alias detached: root.detachedPanels
     }
 
     Component.onCompleted: restoreOrder()
@@ -158,6 +186,12 @@ Rectangle {
         // studio audio, un secondo rendering su GPU per qualcosa che nessuno
         // sta guardando.
         if (hiddenKeys.indexOf(key) >= 0)
+            return false
+
+        // Staccato è vivo, ma altrove: la colonna non lo costruisce una
+        // seconda volta. Due copie dello stesso pannello sarebbero due stati
+        // da tenere allineati, e non lo sarebbero mai.
+        if (detachedKeys.indexOf(key) >= 0)
             return false
 
         switch (key) {
@@ -276,9 +310,35 @@ Rectangle {
 
                         function onDragMoved(sceneY) { root.reorderTo(slot.index, sceneY) }
                         function onDragEnded() { root.storeOrder() }
+                        function onDetachRequested() { root.detachPanel(slot.key) }
                     }
                 }
             }
+        }
+    }
+
+    // ── Le finestre staccate ─────────────────────────────────────────────
+    //
+    // Un Instantiator e non un Repeater: le finestre non sono Item, e un
+    // Repeater sa creare solo figli visuali. Le chiavi staccate possono essere
+    // più d'una — chi stacca lo studio audio sul secondo schermo di solito ci
+    // mette accanto anche la catena RX — e serve una finestra per ciascuna.
+    Instantiator {
+        model: root.detachedKeys
+
+        delegate: PanelWindow {
+            required property string modelData
+
+            panelKey: modelData
+            panelTitle: {
+                for (const entry of root.panelInfo) {
+                    if (entry.key === modelData)
+                        return entry.label
+                }
+                return modelData
+            }
+            panelComponent: root.componentFor(modelData)
+            onReattachRequested: root.reattachPanel(modelData)
         }
     }
 
