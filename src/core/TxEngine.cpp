@@ -579,6 +579,11 @@ void TxEngine::produce(std::size_t audioFrames)
             }
         }
 
+        // Le due curve del confronto guardano la stessa cosa, ed è giusto che
+        // si sovrappongano: qui la catena non c'è, e vederle coincidere è la
+        // prova che non c'è davvero.
+        std::copy_n(m_audio.data(), audioFrames, m_dry.data());
+
         // Niente processore di voce: comprimere un tono non ha senso, e un
         // limitatore che intervenisse falserebbe proprio la misura per cui la
         // prova esiste.
@@ -604,6 +609,7 @@ void TxEngine::produce(std::size_t audioFrames)
             }
         }
 
+        std::copy_n(m_audio.data(), audioFrames, m_dry.data());
         m_micPeak.store(m_keyDown ? 1.0f : 0.0f, std::memory_order_relaxed);
         m_compressionDb.store(0.0f, std::memory_order_relaxed);
     } else {
@@ -643,12 +649,12 @@ void TxEngine::produce(std::size_t audioFrames)
         // premere «registra» prima di parlare: ci si accorge di voler
         // riascoltare solo dopo aver parlato.
         m_recorder.record(m_dry.data(), m_audio.data(), audioFrames);
-        analyzeVoice(audioFrames);
 
         m_micPeak.store(m_speech.lastInputPeak(), std::memory_order_relaxed);
         m_compressionDb.store(m_speech.lastCompressionDb(), std::memory_order_relaxed);
     }
 
+    analyzeVoice(audioFrames);
     pumpMonitor(audioFrames);
 
     if (m_domain == Domain::Audio) {

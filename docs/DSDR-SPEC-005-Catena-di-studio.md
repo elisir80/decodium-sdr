@@ -125,8 +125,16 @@ ricevitore. Il pannello lo sostituisce.
   PTT smette da sé. Se chi ascolta resta indietro si butta il vecchio e non il
   nuovo — sentirsi con mezzo secondo di ritardo fa inciampare chi parla, ed è
   peggio di non sentirsi affatto.
-- **Generatore di toni** — uno per accordare, due per l'intermodulazione (c'è
-  già nel motore TX, va portato nel diagramma).
+- ~~**Generatore di toni**~~: **fatto**, portato nel diagramma accanto alle
+  curve, che è il posto in cui serve — prima si raggiungeva solo dal pannello
+  della trasmissione.
+
+  Una precisazione che vale più del comando: le curve del confronto sono lo
+  spettro **audio**, quindi due toni che restano due dicono che *la nostra*
+  catena è lineare — che il drive non sta tosando e il limiter non sta
+  fabbricando armoniche. L'intermodulazione del finale è un'altra misura, sta
+  in radiofrequenza, e la si guarda sul monitor del panadattatore. Confonderle
+  vorrebbe dire dichiarare pulito un finale che non lo è.
 - ~~**Registra e riascolta**~~: **fatto**. Dieci secondi, due tracce — la voce
   com'è e quella che parte verso la radio — riascoltabili subito.
 

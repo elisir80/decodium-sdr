@@ -34,6 +34,11 @@ PanelFrame {
     /// resta visibile mentre si regola, che è tutto il punto.
     property string picked: ""
 
+    /// Quale dei due segnali di prova si è chiesto. Il motore sa quale sta
+    /// producendo ma non lo dice, e senza questo i due tasti si accenderebbero
+    /// tutti e due.
+    property bool twoTone: false
+
     readonly property int row: Session.channels.currentIndex
 
     // ── Lo stato del canale scelto ───────────────────────────────────────
@@ -298,6 +303,78 @@ PanelFrame {
         ChainEndpoint {
             label: qsTr("TX")
             live: Session.transmitting
+        }
+    }
+
+    // ── Il generatore di prova (SPEC-005 §4.3) ───────────────────────────
+    //
+    // C'era già nel motore e si raggiungeva solo dal pannello della
+    // trasmissione: qui sta accanto alle curve, che è il posto in cui serve.
+    // Un tono per accordare; due per la prova che nessuno fa mai.
+    //
+    // Attenzione a che cosa misurano le curve qui sotto: sono lo spettro
+    // **audio**, quindi due toni che restano due dicono che *la nostra* catena
+    // è lineare — che il drive non sta tosando e il limiter non sta
+    // fabbricando armoniche. L'intermodulazione del finale è un'altra misura,
+    // sta in radiofrequenza, e la si guarda sul monitor del panadattatore.
+    // Confonderle vorrebbe dire dichiarare pulito un finale che non lo è.
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacingTight
+        visible: Session.capabilities.canTransmit
+        spacing: Theme.spacingTight
+
+        Text {
+            text: qsTr("PROVA")
+            font.pixelSize: Theme.fontSmall
+            font.bold: true
+            font.letterSpacing: 1.4
+            color: Theme.textDisabled
+        }
+
+        DsdrButton {
+            implicitWidth: 92
+            implicitHeight: 26
+            text: qsTr("1 TONO")
+            enabled: Session.connected
+            checked: Session.tuning && !root.twoTone
+            onClicked: {
+                if (Session.tuning && !root.twoTone) {
+                    Session.stopTune()
+                } else {
+                    root.twoTone = false
+                    Session.startTune(false)
+                }
+            }
+        }
+
+        DsdrButton {
+            implicitWidth: 92
+            implicitHeight: 26
+            text: qsTr("2 TONI")
+            enabled: Session.connected
+            checked: Session.tuning && root.twoTone
+            onClicked: {
+                if (Session.tuning && root.twoTone) {
+                    Session.stopTune()
+                } else {
+                    root.twoTone = true
+                    Session.startTune(true)
+                }
+            }
+        }
+
+        // La sicura, detta a voce. Una portante è la cosa più facile da
+        // dimenticare accesa che ci sia: non si sente, non si vede, e chi
+        // accorda guarda il rosmetro e non lo schermo.
+        Text {
+            Layout.fillWidth: true
+            text: Session.tuning
+                  ? qsTr("in aria — si chiude da sé")
+                  : qsTr("due toni che restano due: la catena non distorce")
+            font.pixelSize: Theme.fontSmall
+            color: Session.tuning ? Theme.danger : Theme.textDisabled
+            elide: Text.ElideRight
         }
     }
 
