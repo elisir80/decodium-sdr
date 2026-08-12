@@ -129,6 +129,104 @@ PanelFrame {
                 }
             }
         }
+
+        // I bordi del filtro: dove *dovrebbe* tagliare.
+        Repeater {
+            model: root.filterEdges
+
+            delegate: Item {
+                required property var modelData
+
+                readonly property real fraction:
+                    (modelData - root.spanStartHz) / Math.max(1, root.spanWidthHz)
+
+                anchors.fill: parent
+                visible: fraction >= 0 && fraction <= 1
+
+                Rectangle {
+                    x: Math.round(parent.fraction * parent.width)
+                    width: 1
+                    height: parent.height
+                    color: Theme.spectrumPeak
+                    opacity: 0.8
+                }
+
+                Text {
+                    x: Math.min(parent.width - width - 2,
+                                Math.round(parent.fraction * parent.width) + 3)
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 2
+                    text: qsTr("%1 Hz").arg(Math.round(modelData))
+                    font.pixelSize: Theme.fontSmall
+                    font.family: Theme.monoFamily
+                    color: Theme.spectrumPeak
+                }
+            }
+        }
+    }
+
+    // ── Dov'è il filtro del canale ───────────────────────────────────────
+    //
+    // Il pannello esiste per rispondere a «il filtro taglia dove credo?», e
+    // finora mostrava solo dove taglia *davvero*: mancava il termine di
+    // paragone. Questi sono i due bordi che il filtro dichiara, disegnati
+    // sopra lo spettro — se la traccia scende prima o dopo, si vede a colpo
+    // d'occhio e non c'è niente da calcolare.
+    //
+    // Il modo si legge dal canale scelto, e lo si prende con un Repeater sul
+    // modello invece di tenerne una copia: è l'unico modo di restare allineati
+    // a un valore che l'operatore cambia da tre posti diversi.
+    property int filterLowHz: 0
+    property int filterHighHz: 0
+
+    Repeater {
+        model: Session.channels
+
+        delegate: Item {
+            id: channelRow
+
+            required property int index
+            required property int filterLowHz
+            required property int filterHighHz
+
+            // Per id e non per `parent`: un Binding non è un Item e non ha un
+            // genitore visuale, quindi `parent` dentro di lui è nulla — e i
+            // due bordi restavano a zero senza che niente lo dicesse.
+            Binding {
+                target: root
+                property: "filterLowHz"
+                value: channelRow.filterLowHz
+                when: Session.channels.currentIndex === channelRow.index
+                restoreMode: Binding.RestoreNone
+            }
+
+            Binding {
+                target: root
+                property: "filterHighHz"
+                value: channelRow.filterHighHz
+                when: Session.channels.currentIndex === channelRow.index
+                restoreMode: Binding.RestoreNone
+            }
+        }
+    }
+
+    /// I due bordi in frequenza audio.
+    ///
+    /// In banda laterale lo scostamento dalla portante *è* la frequenza audio,
+    /// quindi i due numeri passano tali e quali. In banda laterale inferiore
+    /// sono negativi e l'audio resta positivo: si prende il modulo. Nei modi
+    /// simmetrici — AM, FM — il bordo inferiore è sotto lo zero e l'audio
+    /// comincia da zero, e allora il solo bordo che significhi qualcosa è
+    /// quello superiore.
+    readonly property var filterEdges: {
+        const low = Math.abs(root.filterLowHz)
+        const high = Math.abs(root.filterHighHz)
+        const from = Math.min(low, high)
+        const to = Math.max(low, high)
+        if (!(to > 0))
+            return []
+        // Bordo inferiore sotto lo zero: nei modi simmetrici non c'è.
+        return root.filterLowHz < 0 && root.filterHighHz > 0 ? [to] : [from, to]
     }
 
     /// La porzione di audio in vista, in hertz. La banda analizzata va da zero
@@ -305,6 +403,21 @@ PanelFrame {
             font.pixelSize: Theme.fontSmall
             font.family: Theme.monoFamily
             color: Theme.textSecondary
+        }
+
+        // La distorsione armonica. Un tono puro ha una riga sola; quando la
+        // catena audio è sovrapilotata la sinusoide si tosa, e tosare una
+        // sinusoide vuol dire fabbricare armoniche. Sopra il cinque per cento
+        // si sente, sopra il dieci si sente da chi ascolta dall'altra parte.
+        Text {
+            visible: Session.audioThdPercent >= 0
+            text: qsTr("THD %1%").arg(Session.audioThdPercent.toFixed(1))
+            font.pixelSize: Theme.fontSmall
+            font.family: Theme.monoFamily
+            font.bold: Session.audioThdPercent > 5
+            color: Session.audioThdPercent > 10 ? Theme.danger
+                 : Session.audioThdPercent > 5 ? Theme.spectrumPeak
+                 : Theme.success
         }
     }
 

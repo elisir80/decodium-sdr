@@ -206,7 +206,11 @@ signals:
     /// nota che si sceglie una volta e si insegue per anni — e verificare che
     /// una portante stia dove si crede. Zero quando non c'è niente che
     /// emerga: un tono inventato è peggio di nessun tono.
-    void audioToneMeasured(double frequencyHz, double levelDb);
+    /// `thdPercent` è la distorsione armonica totale, o −1 quando non c'è un
+    /// tono su cui misurarla. Si misura solo dove ha senso: su del rumore le
+    /// «armoniche» sono altro rumore, e il numero che ne uscirebbe sarebbe
+    /// preciso e privo di significato.
+    void audioToneMeasured(double frequencyHz, double levelDb, double thdPercent);
 
     /// Picco e valore efficace dell'audio nel blocco appena mixato, in dBFS.
     ///

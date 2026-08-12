@@ -115,40 +115,49 @@ Item {
     /// dire, accanto al disegno, quanto manca al fondo scala.
     property real lastPeak: 0
 
+    // Il disegno si rifà anche quando cambia la misura del riquadro: il
+    // tracciato è fatto di punti in pixel, e dopo un ridimensionamento resta
+    // quello di prima — una traccia che occupa un terzo della larghezza e si
+    // ferma di netto, che è quello che si vedeva staccando la finestra e
+    // allargandola.
+    onWidthChanged: refresh()
+    onHeightChanged: refresh()
+
+    function refresh() {
+        const samples = Session.audioWaveform(root.points, root.spanMs, root.triggered)
+        if (samples.length === 0)
+            return
+
+        const w = root.width
+        const h = root.height
+        if (!(w > 0) || !(h > 0))
+            return
+
+        const middle = h / 2
+        const step = w / Math.max(1, samples.length - 1)
+        const scale = middle * root.gain
+
+        const next = []
+        let peak = 0
+        for (let i = 0; i < samples.length; ++i) {
+            const value = samples[i]
+            if (Math.abs(value) > peak)
+                peak = Math.abs(value)
+            // Il segno si rovescia perché sullo schermo la y cresce verso
+            // il basso, e un'onda disegnata a testa in giù è la stessa
+            // onda — ma chi la guarda ci mette un attimo a fidarsi.
+            next.push(Qt.point(i * step,
+                               Math.max(0, Math.min(h, middle - value * scale))))
+        }
+
+        polyline.path = next
+        root.lastPeak = peak
+    }
+
     Timer {
         interval: Math.max(20, 1000 / Math.max(1, root.refreshHz))
         running: root.running
         repeat: true
-
-        onTriggered: {
-            const samples = Session.audioWaveform(root.points, root.spanMs, root.triggered)
-            if (samples.length === 0)
-                return
-
-            const w = root.width
-            const h = root.height
-            if (!(w > 0) || !(h > 0))
-                return
-
-            const middle = h / 2
-            const step = w / Math.max(1, samples.length - 1)
-            const scale = middle * root.gain
-
-            const next = []
-            let peak = 0
-            for (let i = 0; i < samples.length; ++i) {
-                const value = samples[i]
-                if (Math.abs(value) > peak)
-                    peak = Math.abs(value)
-                // Il segno si rovescia perché sullo schermo la y cresce verso
-                // il basso, e un'onda disegnata a testa in giù è la stessa
-                // onda — ma chi la guarda ci mette un attimo a fidarsi.
-                next.push(Qt.point(i * step,
-                                   Math.max(0, Math.min(h, middle - value * scale))))
-            }
-
-            polyline.path = next
-            root.lastPeak = peak
-        }
+        onTriggered: root.refresh()
     }
 }

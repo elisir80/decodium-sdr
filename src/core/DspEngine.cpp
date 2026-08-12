@@ -602,7 +602,7 @@ void DspEngine::analyzeAudio(std::size_t frames)
     }
 
     if (peak < 0 || peakDb - median < 12.0f) {
-        emit audioToneMeasured(0.0, static_cast<double>(peakDb));
+        emit audioToneMeasured(0.0, static_cast<double>(peakDb), -1.0);
         return;
     }
 
@@ -619,7 +619,42 @@ void DspEngine::analyzeAudio(std::size_t frames)
             offset = 0.5 * (left - right) / denom;
     }
 
-    emit audioToneMeasured((peak + offset) * binWidth, static_cast<double>(peakDb));
+    const double toneHz = (peak + offset) * binWidth;
+
+    // ── Distorsione armonica ─────────────────────────────────────────────
+    //
+    // Un tono puro ha una riga sola. Quando la catena audio è sovrapilotata —
+    // il guadagno del microfono, l'AGC della radio, il volume della scheda —
+    // la sinusoide si tosa, e tosare una sinusoide vuol dire fabbricare
+    // armoniche: la seconda a due volte la frequenza, la terza a tre, e così
+    // via. Nello spettro si vedono come righe regolarmente spaziate, e a
+    // occhio somigliano a segnali; il rapporto fra la loro potenza e quella
+    // della fondamentale è un numero, ed è quello che dice quanto si sta
+    // esagerando.
+    //
+    // Si guarda un intorno di due bin attorno a ogni armonica: la fondamentale
+    // non cade mai esattamente su un bin, e le sue armoniche nemmeno.
+    double fundamental = std::pow(10.0, static_cast<double>(peakDb) / 10.0);
+    double harmonics = 0.0;
+    for (int order = 2; order <= 5; ++order) {
+        const int centre = static_cast<int>(std::lround(toneHz * order / binWidth));
+        if (centre + 2 >= bins)
+            break;
+
+        float strongest = -200.0f;
+        for (int bin = centre - 2; bin <= centre + 2; ++bin) {
+            if (bin > first && bin < bins)
+                strongest = std::max(strongest, positive[bin]);
+        }
+        if (strongest > -199.0f)
+            harmonics += std::pow(10.0, static_cast<double>(strongest) / 10.0);
+    }
+
+    const double thd = (fundamental > 0.0)
+        ? 100.0 * std::sqrt(harmonics / fundamental)
+        : -1.0;
+
+    emit audioToneMeasured(toneHz, static_cast<double>(peakDb), std::min(thd, 100.0));
 }
 
 void DspEngine::processAvailable()

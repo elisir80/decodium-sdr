@@ -103,12 +103,19 @@ Rectangle {
     }
 
     function togglePanel(key) {
-        // Un pannello staccato torna in colonna: è la via d'uscita quando la
-        // finestra è finita dietro qualcos'altro o su uno schermo che adesso
-        // non c'è più. Senza, l'icona accesa direbbe «c'è» e non ci sarebbe
-        // modo di raggiungerlo.
-        if (detachedKeys.indexOf(key) >= 0) {
-            reattachPanel(key)
+        // L'icona di un pannello staccato lo riporta davanti, non in colonna.
+        //
+        // È la domanda che ci si fa davvero: «dov'è finita quella finestra?».
+        // Riportarla in colonna sarebbe una risposta a una domanda diversa, e
+        // per quella c'è la croce della finestra stessa — che rimette il
+        // pannello dov'era.
+        const detachedAt = detachedKeys.indexOf(key)
+        if (detachedAt >= 0) {
+            const window = detachedWindows.objectAt(detachedAt)
+            if (window)
+                window.bringForward()
+            else
+                reattachPanel(key)   // la finestra non c'è più: si recupera
             return
         }
 
@@ -343,6 +350,8 @@ Rectangle {
     // più d'una — chi stacca lo studio audio sul secondo schermo di solito ci
     // mette accanto anche la catena RX — e serve una finestra per ciascuna.
     Instantiator {
+        id: detachedWindows
+
         model: root.detachedKeys
 
         delegate: PanelWindow {

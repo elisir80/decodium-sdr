@@ -68,6 +68,7 @@ class SessionManager : public QObject
     // ── Analisi dell'audio ──────────────────────────────────────────────
     Q_PROPERTY(double audioToneHz READ audioToneHz NOTIFY audioToneChanged)
     Q_PROPERTY(double audioToneDb READ audioToneDb NOTIFY audioToneChanged)
+    Q_PROPERTY(double audioThdPercent READ audioThdPercent NOTIFY audioToneChanged)
     Q_PROPERTY(double audioPeakDb READ audioPeakDb NOTIFY audioLevelsChanged)
     Q_PROPERTY(double audioRmsDb READ audioRmsDb NOTIFY audioLevelsChanged)
 
@@ -247,6 +248,11 @@ public:
     /// nessun tono.
     double audioToneHz() const { return m_audioToneHz; }
     double audioToneDb() const { return m_audioToneDb; }
+
+    /// Distorsione armonica totale in percentuale, o −1 quando non c'è un tono
+    /// su cui misurarla. Su del rumore le «armoniche» sono altro rumore, e il
+    /// numero che ne uscirebbe sarebbe preciso e privo di significato.
+    double audioThdPercent() const { return m_audioThdPercent; }
 
     /// Picco e valore efficace dell'audio, in dBFS. La distanza fra i due è il
     /// fattore di cresta: su una voce sta attorno ai dodici decibel, su una
@@ -628,6 +634,7 @@ private:
     double m_streamHealth = -1.0;
     double m_audioToneHz = 0.0;
     double m_audioToneDb = -140.0;
+    double m_audioThdPercent = -1.0;
     double m_audioPeakDb = -140.0;
     double m_audioRmsDb = -140.0;
 

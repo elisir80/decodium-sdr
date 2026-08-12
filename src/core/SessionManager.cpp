@@ -314,9 +314,10 @@ SessionManager::SessionManager(QObject *parent)
 
     // Il tono dominante dell'audio, cinque volte al secondo.
     connect(m_engine, &DspEngine::audioToneMeasured, this,
-            [this](double frequencyHz, double levelDb) {
+            [this](double frequencyHz, double levelDb, double thdPercent) {
                 m_audioToneHz = frequencyHz;
                 m_audioToneDb = levelDb;
+                m_audioThdPercent = thdPercent;
                 emit audioToneChanged();
             });
 
@@ -407,9 +408,10 @@ SessionManager::SessionManager(QObject *parent)
 
     // Il tono dominante dell'audio, cinque volte al secondo.
     connect(m_engine, &DspEngine::audioToneMeasured, this,
-            [this](double frequencyHz, double levelDb) {
+            [this](double frequencyHz, double levelDb, double thdPercent) {
                 m_audioToneHz = frequencyHz;
                 m_audioToneDb = levelDb;
+                m_audioThdPercent = thdPercent;
                 emit audioToneChanged();
             });
 

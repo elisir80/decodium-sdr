@@ -46,22 +46,51 @@ Window {
     minimumHeight: 260
     visible: true
 
-    // Una finestra vera, con il suo pulsante nella barra delle applicazioni.
+    // Sopra la finestra principale, sempre.
     //
-    // Senza il flag, una finestra dichiarata dentro un Item nasce come
-    // transiente della finestra principale: non compare nella barra, non entra
-    // nel giro di Alt-Tab, e se finisce dietro non c'è modo di riportarla
-    // davanti. Staccare un pannello e non trovarlo più è peggio che non poterlo
-    // staccare.
+    // È il punto su cui questa finestra è stata sbagliata due volte. Restando
+    // figlia — `transientParent` alla finestra che la contiene — il sistema la
+    // tiene sopra il genitore, che è quello che serve: la principale sta a
+    // tutto schermo, e una finestra che le finisce dietro è indistinguibile da
+    // una finestra che non si è aperta. Staccandola invece del tutto si
+    // guadagna il pulsante nella barra delle applicazioni e si perde proprio
+    // quella garanzia: nasce davanti e sparisce al primo clic sulla
+    // principale.
+    //
+    // Si tiene la parentela, e il modo di ritrovarla è un altro: l'icona del
+    // pannello, in colonna, la riporta davanti.
     flags: Qt.Window
 
-    // E nasce davanti. Chi ha appena premuto «stacca» si aspetta di vedere la
-    // finestra, non di doverla cercare: nasconderla dietro quella principale è
-    // indistinguibile dal non aver fatto niente.
-    Component.onCompleted: {
+    /// Porta la finestra davanti e dentro lo schermo.
+    ///
+    /// La seconda metà non è pignoleria: una finestra ricordata su un monitor
+    /// che adesso non c'è più si riapre a coordinate che non esistono, e
+    /// alzarla non la fa comparire. Succede ogni volta che si stacca un
+    /// portatile dalla scrivania.
+    function bringForward() {
+        const view = Qt.application.screens.length > 0 ? screen : null
+        if (view) {
+            const margin = 40
+            x = Math.max(view.virtualX,
+                         Math.min(view.virtualX + view.width - margin, x))
+            y = Math.max(view.virtualY,
+                         Math.min(view.virtualY + view.height - margin, y))
+        }
         show()
         raise()
         requestActivate()
+    }
+
+    // Nasce davanti. Chi ha appena premuto «stacca» si aspetta di vedere la
+    // finestra, non di doverla cercare.
+    //
+    // Il richiamo sta su `visible` e non su `Component.onCompleted`: alzare
+    // una finestra che il sistema non ha ancora mostrato non fa niente, e il
+    // momento in cui viene mostrata è più tardi di quello in cui l'oggetto è
+    // pronto.
+    onVisibleChanged: {
+        if (visible)
+            bringForward()
     }
 
     // La geometria si ricorda per pannello. Chi mette lo studio audio sul
