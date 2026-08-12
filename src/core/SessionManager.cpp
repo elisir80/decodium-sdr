@@ -602,7 +602,7 @@ SpectrumFeed *SessionManager::audioSpectrum() const
     return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
 }
 
-QVariantList SessionManager::audioWaveform(int points)
+QVariantList SessionManager::audioWaveform(int points, double spanMs, bool trigger)
 {
     QVariantList out;
     points = std::clamp(points, 16, 4096);
@@ -611,12 +611,13 @@ QVariantList SessionManager::audioWaveform(int points)
     if (!ring)
         return out;
 
-    // La finestra è lunga il doppio dei punti chiesti: sotto questa soglia una
-    // punta cadrebbe fra due gruppi e il disegno perderebbe proprio quello che
-    // si stava cercando.
-    const std::size_t wanted = static_cast<std::size_t>(points) * 8;
-    if (m_scopeWindow.size() != wanted)
-        m_scopeWindow.assign(wanted, 0.0f);
+    // La finestra di lavoro è fissa e larga: dentro ci sta la base dei tempi
+    // più lunga che si possa chiedere, e resta spazio per cercarci l'aggancio.
+    // Farla dipendere dalla base dei tempi vorrebbe dire riallocarla ogni
+    // volta che si muove un cursore.
+    constexpr std::size_t kWindow = 8192;   // ≈170 ms a 48 kHz
+    if (m_scopeWindow.size() != kWindow)
+        m_scopeWindow.assign(kWindow, 0.0f);
 
     // Si svuota tutto quello che c'è: chi guarda vede l'ultimo istante, non la
     // storia, e lasciare campioni nel ring vorrebbe dire disegnare in ritardo
@@ -625,9 +626,9 @@ QVariantList SessionManager::audioWaveform(int points)
     if (available > 0) {
         m_scopeScratch.resize(available);
         const std::size_t read = ring->read(m_scopeScratch.data(), available);
-        if (read >= wanted) {
+        if (read >= kWindow) {
             // Più campioni della finestra: si tiene la coda, che è l'adesso.
-            std::copy(m_scopeScratch.end() - static_cast<long>(wanted),
+            std::copy(m_scopeScratch.end() - static_cast<long>(kWindow),
                       m_scopeScratch.end(), m_scopeWindow.begin());
         } else if (read > 0) {
             // Si fa scorrere la finestra: il vecchio esce da sinistra.
@@ -638,14 +639,45 @@ QVariantList SessionManager::audioWaveform(int points)
         }
     }
 
-    // Un punto per gruppo, e di ogni gruppo il campione di modulo maggiore:
-    // decimare — prenderne uno ogni N — mostrerebbe una forma d'onda più
-    // pulita di quella che c'è, e sarebbe una bugia proprio sul dettaglio che
-    // si sta cercando.
-    const std::size_t group = wanted / static_cast<std::size_t>(points);
+    // ── La base dei tempi ────────────────────────────────────────────────
+    const double rate = static_cast<double>(kInternalAudioRate);
+    const auto span = static_cast<std::size_t>(
+        std::clamp(spanMs * rate / 1000.0, 32.0, static_cast<double>(kWindow / 2)));
+
+    // ── L'aggancio ───────────────────────────────────────────────────────
+    //
+    // La prima salita per lo zero, cercata dalla fine verso l'inizio: si vuole
+    // il tratto più recente che si possa mostrare intero. Su un segnale
+    // periodico la traccia sta ferma; senza, scivola di lato a ogni fotogramma
+    // e una sinusoide è indistinguibile da del rumore.
+    //
+    // Non trovandola si mostra la coda: meglio una traccia che scivola di una
+    // che non c'è. È il caso del rumore, dove un aggancio non esiste per
+    // definizione — e infatti lì non serve.
+    std::size_t start = kWindow - span;
+    if (trigger) {
+        for (std::size_t i = kWindow - span; i > 1; --i) {
+            if (m_scopeWindow[i - 1] < 0.0f && m_scopeWindow[i] >= 0.0f) {
+                start = i;
+                break;
+            }
+        }
+    }
+
+    // ── La riduzione ─────────────────────────────────────────────────────
     out.reserve(points);
+    if (span <= static_cast<std::size_t>(points)) {
+        // Meno campioni che punti: si disegnano tutti, uno per uno. Inventarne
+        // altri per riempire i punti chiesti sarebbe disegnare campioni che
+        // non sono stati misurati.
+        for (std::size_t i = 0; i < span; ++i)
+            out.append(static_cast<double>(m_scopeWindow[start + i]));
+        return out;
+    }
+
+    const std::size_t group = span / static_cast<std::size_t>(points);
     for (int i = 0; i < points; ++i) {
-        const std::size_t from = static_cast<std::size_t>(i) * group;
+        const std::size_t from = start + static_cast<std::size_t>(i) * group;
         float strongest = 0.0f;
         for (std::size_t j = from; j < from + group && j < m_scopeWindow.size(); ++j) {
             if (std::abs(m_scopeWindow[j]) > std::abs(strongest))

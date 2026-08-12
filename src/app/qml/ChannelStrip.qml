@@ -103,6 +103,15 @@ Rectangle {
     }
 
     function togglePanel(key) {
+        // Un pannello staccato torna in colonna: è la via d'uscita quando la
+        // finestra è finita dietro qualcos'altro o su uno schermo che adesso
+        // non c'è più. Senza, l'icona accesa direbbe «c'è» e non ci sarebbe
+        // modo di raggiungerlo.
+        if (detachedKeys.indexOf(key) >= 0) {
+            reattachPanel(key)
+            return
+        }
+
         const keys = hiddenKeys.slice()
         const at = keys.indexOf(key)
         if (at >= 0)
@@ -194,6 +203,16 @@ Rectangle {
         if (detachedKeys.indexOf(key) >= 0)
             return false
 
+        return panelIsRelevant(key)
+    }
+
+    /// Se il pannello ha qualcosa da mostrare, adesso.
+    ///
+    /// Separata da `slotActive` perché la stessa domanda la fa anche una
+    /// finestra staccata, dove «spento» e «staccato» non si applicano: senza
+    /// questa distinzione lo studio audio in finestra restava aperto e vuoto
+    /// con la radio scollegata, mentre in colonna sarebbe sparito.
+    function panelIsRelevant(key) {
         switch (key) {
         case "waterfall": return root.panadapter !== null
         case "canali":    return true
@@ -329,6 +348,9 @@ Rectangle {
         delegate: PanelWindow {
             required property string modelData
 
+            // La stessa domanda che si fa la colonna: un pannello che non ha
+            // niente da mostrare non lo mostra, e lo dice.
+            contentRelevant: root.panelIsRelevant(modelData)
             panelKey: modelData
             panelTitle: {
                 for (const entry of root.panelInfo) {

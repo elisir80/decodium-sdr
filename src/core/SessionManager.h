@@ -256,14 +256,24 @@ public:
 
     /// Gli ultimi campioni audio, ridotti a `points` valori fra −1 e 1.
     ///
-    /// Non è una decimazione: di ogni gruppo si prende il campione di modulo
-    /// maggiore, così una punta che dura un campione solo resta visibile.
-    /// Prendendo un campione ogni N — la decimazione vera — un oscilloscopio
-    /// mostrerebbe una forma d'onda più pulita di quella che c'è, e sarebbe
-    /// una bugia proprio sul dettaglio che si sta cercando.
+    /// `spanMs` è la base dei tempi: quanti millisecondi di audio stanno in
+    /// tutta la larghezza. Senza, un oscilloscopio mostra sempre la stessa
+    /// finestra e su un tono di ottocento hertz ci finiscono settanta cicli —
+    /// che a cinquecento punti diventano una banda piena, cioè niente.
+    ///
+    /// `trigger` aggancia il disegno alla prima salita per lo zero. Su un
+    /// segnale periodico la traccia sta ferma e si legge; senza, scivola di
+    /// lato a ogni fotogramma e non si distingue una forma d'onda dal rumore.
+    ///
+    /// La riduzione non è una decimazione: di ogni gruppo si prende il
+    /// campione di modulo maggiore, così una punta che dura un campione solo
+    /// resta visibile. Prendendone uno ogni N si mostrerebbe una forma d'onda
+    /// più pulita di quella che c'è, e sarebbe una bugia proprio sul dettaglio
+    /// che si sta cercando.
     ///
     /// Il ring lo si svuota qui, sul thread GUI: è il suo unico consumatore.
-    Q_INVOKABLE QVariantList audioWaveform(int points = 512);
+    Q_INVOKABLE QVariantList audioWaveform(int points = 512, double spanMs = 20.0,
+                                           bool trigger = true);
     SpectrumFeed *txSpectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
     IqRecorder *recorder() { return &m_recorder; }

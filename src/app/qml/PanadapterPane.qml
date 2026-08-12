@@ -582,6 +582,7 @@ Item {
                                          ? spectrumMouse.mouseX : -1
 
         cursorX: pointerX
+        cursorY: spectrumMouse.mouseY
         cursorHz: root.frequencyAt(pointerX)
         cursorLevelDb: {
             root.levelTick    // dipendenza voluta: vedi `levelTick`

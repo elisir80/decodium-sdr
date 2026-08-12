@@ -39,6 +39,8 @@ PanelFrame {
         property real viewSpan: 0.1
         property int paletteIndex: 5
         property bool peakHold: true
+        property real spanMs: 20
+        property bool triggered: true
     }
 
     // ── Lo spettro dell'audio ────────────────────────────────────────────
@@ -161,6 +163,8 @@ PanelFrame {
         Layout.preferredHeight: root.detached ? -1 : 70
         Layout.minimumHeight: 56
         gain: scopeGain.value
+        spanMs: prefs.spanMs
+        triggered: prefs.triggered
     }
 
     RowLayout {
@@ -186,6 +190,44 @@ PanelFrame {
             font.pixelSize: Theme.fontSmall
             font.family: Theme.monoFamily
             color: Theme.textSecondary
+        }
+    }
+
+    // ── La base dei tempi ────────────────────────────────────────────────
+    //
+    // Due millisecondi per contare i cicli di un tono, cinquanta per vedere le
+    // sillabe di una voce, duecento per l'inviluppo di una chiamata. Sono tre
+    // strumenti diversi con lo stesso disegno, e senza questo comando se ne ha
+    // uno solo — quello sbagliato per due casi su tre.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacingTight
+
+        Repeater {
+            model: [2, 5, 20, 50, 200]
+
+            delegate: DsdrButton {
+                required property int modelData
+
+                Layout.fillWidth: true
+                implicitWidth: 0
+                implicitHeight: 24
+                text: qsTr("%1 ms").arg(modelData)
+                checked: Math.abs(prefs.spanMs - modelData) < 0.5
+                onClicked: prefs.spanMs = modelData
+            }
+        }
+
+        // L'aggancio si spegne per guardare il rumore: lì una salita per lo
+        // zero non significa niente, e cercarla fa saltellare la traccia
+        // invece di fermarla.
+        DsdrButton {
+            implicitWidth: 62
+            implicitHeight: 24
+            text: qsTr("SYNC")
+            checkable: true
+            checked: prefs.triggered
+            onClicked: prefs.triggered = checked
         }
     }
 

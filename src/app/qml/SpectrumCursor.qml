@@ -19,6 +19,7 @@ Item {
 
     /// Dove sta il puntatore, in pixel dentro il pannello. Negativo = fuori.
     property real cursorX: -1
+    property real cursorY: 0
 
     /// La lettura, che il pannello sa fare perché conosce lo zoom.
     property real cursorHz: 0
@@ -112,16 +113,25 @@ Item {
 
     // ── Lettura ──────────────────────────────────────────────────────────
     //
-    // Sta accanto al puntatore e salta dall'altra parte quando il bordo è
-    // vicino: un riquadro che esce dalla finestra è un riquadro che si legge a
-    // metà proprio quando si sta misurando il segnale al margine della banda.
+    // Segue il puntatore invece di stare in cima al pannello.
+    //
+    // In cima c'era la targa del ricevitore, e la lettura le finiva sopra
+    // coprendo proprio la frequenza a cui si è sintonizzati — cioè il numero
+    // che si sta confrontando con quello sotto il puntatore. Attaccata al
+    // puntatore, invece, sta dove si sta già guardando.
+    //
+    // Salta dall'altra parte quando il bordo è vicino: un riquadro che esce
+    // dalla finestra si legge a metà proprio quando si misura il segnale al
+    // margine della banda.
     Rectangle {
         id: readout
 
         readonly property bool onTheRight: root.cursorX + width + 18 < root.width
 
-        x: onTheRight ? root.cursorX + 12 : root.cursorX - width - 12
-        y: Theme.spacing
+        x: onTheRight ? root.cursorX + 14 : root.cursorX - width - 14
+        y: Math.max(Theme.spacingTight,
+                    Math.min(root.height - height - Theme.spacingTight,
+                             root.cursorY + 18))
         width: column.implicitWidth + 2 * Theme.spacing
         height: column.implicitHeight + 2 * Theme.spacingTight
         radius: Theme.radiusSmall

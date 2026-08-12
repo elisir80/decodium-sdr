@@ -26,6 +26,11 @@ Window {
     required property string panelKey
     required property string panelTitle
 
+    /// Se il pannello ha qualcosa da mostrare adesso. La finestra resta —
+    /// l'ha aperta qualcuno, e chiuderla da soli sarebbe una sorpresa — ma
+    /// dentro non si tiene vivo un pannello che non ha dati.
+    property bool contentRelevant: true
+
     /// Chiudendo la finestra il pannello torna in colonna: non sparisce.
     /// Sparire sarebbe il comportamento di una finestra di documento, e questo
     /// non è un documento — è uno strumento che stava da un'altra parte.
@@ -41,6 +46,24 @@ Window {
     minimumHeight: 260
     visible: true
 
+    // Una finestra vera, con il suo pulsante nella barra delle applicazioni.
+    //
+    // Senza il flag, una finestra dichiarata dentro un Item nasce come
+    // transiente della finestra principale: non compare nella barra, non entra
+    // nel giro di Alt-Tab, e se finisce dietro non c'è modo di riportarla
+    // davanti. Staccare un pannello e non trovarlo più è peggio che non poterlo
+    // staccare.
+    flags: Qt.Window
+
+    // E nasce davanti. Chi ha appena premuto «stacca» si aspetta di vedere la
+    // finestra, non di doverla cercare: nasconderla dietro quella principale è
+    // indistinguibile dal non aver fatto niente.
+    Component.onCompleted: {
+        show()
+        raise()
+        requestActivate()
+    }
+
     // La geometria si ricorda per pannello. Chi mette lo studio audio sul
     // secondo schermo lo ritrova lì, e non al centro del primo.
     Settings {
@@ -53,6 +76,16 @@ Window {
 
     onClosing: root.reattachRequested()
 
+    // Quando non c'è niente da mostrare si dice, invece di lasciare una
+    // finestra vuota che sembra rotta.
+    Text {
+        anchors.centerIn: parent
+        visible: !root.contentRelevant
+        text: qsTr("Nessun ricevitore collegato.")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textDisabled
+    }
+
     // Il pannello riempie la finestra e cresce con lei: è tutto il senso di
     // averlo staccato. `PanelFrame` di suo si dimensiona sul contenuto —
     // giusto in colonna, sbagliato qui, dove il contenuto deve dimensionarsi
@@ -62,6 +95,7 @@ Window {
 
         anchors.fill: parent
         anchors.margins: Theme.spacing
+        active: root.contentRelevant
         sourceComponent: root.panelComponent
 
         onLoaded: {

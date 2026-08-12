@@ -37,6 +37,18 @@ Item {
     /// Guadagno verticale. Uno significa che il fondo scala tocca i bordi.
     property real gain: 1.0
 
+    /// La base dei tempi: quanti millisecondi stanno in tutta la larghezza.
+    ///
+    /// Venti sono il valore in cui una voce mostra le sue sillabe e un tono di
+    /// mille hertz venti cicli contabili. Senza una base dei tempi si guarda
+    /// sempre la stessa finestra, e su un tono ci finiscono settanta cicli:
+    /// una banda piena, cioè niente.
+    property real spanMs: 20
+
+    /// Aggancio alla prima salita per lo zero. Su un segnale periodico la
+    /// traccia sta ferma e si legge; senza scivola a ogni fotogramma.
+    property bool triggered: true
+
     /// Acceso solo quando si vede: un oscilloscopio dentro un pannello chiuso
     /// continuerebbe a svuotare il ring venticinque volte al secondo per
     /// disegnare niente.
@@ -109,7 +121,7 @@ Item {
         repeat: true
 
         onTriggered: {
-            const samples = Session.audioWaveform(root.points)
+            const samples = Session.audioWaveform(root.points, root.spanMs, root.triggered)
             if (samples.length === 0)
                 return
 
