@@ -148,6 +148,21 @@ class SessionManager : public QObject
     // Il profilo cambia da sé quando cambia il modo, e prima di uscirne si
     // salva: non è un preset di fabbrica da cui si esce, è la memoria di come
     // piace quel modo.
+    // ── Il blocco «Plugin» (SPEC-005 §4.5) ──────────────────────────────
+    //
+    // `pluginHostAvailable` è falso quando l'ospite non è stato costruito:
+    // allora il blocco non compare affatto, invece di comparire spento
+    // (CONSTITUTION §7).
+    Q_PROPERTY(bool pluginHostAvailable READ pluginHostAvailable CONSTANT)
+    Q_PROPERTY(bool pluginEnabled READ pluginEnabled WRITE setPluginEnabled
+                   NOTIFY pluginChanged)
+    Q_PROPERTY(QString pluginName READ pluginName NOTIFY pluginChanged)
+    Q_PROPERTY(QString pluginPath READ pluginPath NOTIFY pluginChanged)
+    Q_PROPERTY(QVariantList pluginList READ pluginList NOTIFY pluginListChanged)
+    Q_PROPERTY(QVariantList pluginParameters READ pluginParameters NOTIFY pluginChanged)
+    Q_PROPERTY(bool pluginScanning READ pluginScanning NOTIFY pluginListChanged)
+    Q_PROPERTY(QString pluginTrouble READ pluginTrouble NOTIFY pluginChanged)
+
     Q_PROPERTY(int txProfile READ txProfile NOTIFY txProfileChanged)
     Q_PROPERTY(QString txProfileName READ txProfileName NOTIFY txProfileChanged)
     Q_PROPERTY(int ssbProfile READ ssbProfile WRITE setSsbProfile NOTIFY txProfileChanged)
@@ -409,6 +424,23 @@ public:
     /// mescolato al fruscio della banda non si giudica.
     Q_INVOKABLE void playVoiceRecording(int source = 1);
     Q_INVOKABLE void stopVoiceRecording();
+
+    bool pluginHostAvailable() const;
+    bool pluginEnabled() const;
+    void setPluginEnabled(bool enabled);
+    QString pluginName() const;
+    QString pluginPath() const;
+    QVariantList pluginList() const { return m_pluginList; }
+    QVariantList pluginParameters() const;
+    bool pluginScanning() const { return m_pluginScanning; }
+    QString pluginTrouble() const;
+
+    /// Cerca i plugin installati. Asincrono: su una macchina con cento plugin
+    /// vuol dire aprire cento librerie, e bloccare l'interfaccia per quel
+    /// tempo non è accettabile.
+    Q_INVOKABLE void scanPlugins();
+    Q_INVOKABLE void loadPlugin(const QString &path);
+    Q_INVOKABLE void setPluginParameter(int index, double value);
 
     int txProfile() const;
     QString txProfileName() const;
@@ -756,6 +788,8 @@ signals:
     void cfcChanged();
     void txEqChanged();
     void txProfileChanged();
+    void pluginChanged();
+    void pluginListChanged();
     void voicePlaybackChanged();
     void dynamicsChanged();
     void audioLevelsChanged();
@@ -861,6 +895,9 @@ private:
     double m_micGainDb = 6.0;
     /// I profili della catena TX e quello che è in vigore adesso.
     TxProfiles *m_txProfiles = nullptr;
+
+    QVariantList m_pluginList;
+    bool m_pluginScanning = false;
 
     /// Mentre si applica un profilo i comandi cambiano da soli, e ognuno di
     /// loro ricadrebbe qui a sporcare il profilo che si sta applicando. Questo

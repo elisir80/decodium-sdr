@@ -1,9 +1,9 @@
 # DSDR-SPEC-005 — La catena di studio
 
-> Stato: **§3 e §4.1–§4.4 sono costruiti.** Resta la fase 2 — il blocco
-> «Plugin» di §4.5 — che ha una questione di licenza aperta prima di poter
-> cominciare. Le parti non costruite non compaiono nell'interfaccia: un blocco
-> che non fa niente è peggio di un blocco che manca (CONSTITUTION §7).
+> Stato: **costruita.** §3 e §4.1–§4.5 ci sono tutti. Le parti che una build
+> non ha — il blocco «Plugin» senza l'SDK, per esempio — non compaiono
+> nell'interfaccia: un blocco che non fa niente è peggio di un blocco che manca
+> (CONSTITUTION §7).
 
 ## 1. La tesi
 
@@ -192,26 +192,69 @@ porta nessuna informazione. Se i due profili differissero solo per la
 compressione sarebbero lo stesso profilo con una manopola diversa, e c'è un
 test che lo presidia.
 
-### 4.5 Fase 2: il blocco «Plugin»
+### 4.5 Il blocco «Plugin» — **fatto**
 
-Un host LV2 (e VST3, se si può) come blocco della catena: l'utente carica il
-compressore che preferisce. Renderebbe DECODIUM SDR l'unico client che
-**ospita** la catena eSSB invece di costringerla in una matassa di cavi audio
-virtuali.
+Un host VST3 come blocco della catena: l'utente carica il compressore che
+preferisce. Sta fra l'equalizzatore e il multibanda, che è il posto in cui un
+compressore di studio si aspetta di stare — chi ne carica uno sta cercando
+quello.
 
-- Su Linux LV2 è nativo e la sua licenza è ISC: compatibile.
-- **Da verificare prima di scrivere una riga**: il VST3 SDK è a doppia licenza
-  (GPLv3 o proprietaria). La via GPLv3 sembra percorribile per un programma già
-  GPL-3.0-or-later, ma va confermata e registrata in `THIRD_PARTY_LICENSES`
-  come qualunque altra dipendenza (CLAUDE.md, «cosa NON fare senza chiedere»).
-- Un plugin che va in crash non deve portarsi dietro la radio: l'host va
-  isolato, o almeno protetto, prima ancora di essere comodo.
+**La licenza, che era la domanda aperta, si è chiusa da sé.** Fino alla 3.7.x
+il VST3 SDK era a doppia licenza — GPLv3 oppure una proprietaria Steinberg — e
+la via GPLv3 andava dichiarata e verificata. **Dalla 3.8.1 è MIT e basta**:
+Steinberg ha ritirato esplicitamente sia la GPLv3 sia la proprietaria. MIT è
+compatibile con GPL-3.0-or-later senza riserve, ed è registrato in
+`THIRD_PARTY_LICENSES`.
 
-## 5. Dove sta, nell'interfaccia
+Resta un solo vincolo, ed è di marchio e non di licenza: usare il nome «VST» o
+il logo obbliga alle linee guida Steinberg. È facoltativo, e qui non li si usa
+— il blocco si chiama «Plugin».
 
-Un pannello della colonna, `FLUSSO`, **staccabile**: la catena disegnata vuole
-larghezza, e in una striscia di trecento punti i blocchi diventano illeggibili.
-Staccato è lo schermo del secondo monitor su cui si regola la voce.
+LV2 non c'è, e non è una dimenticanza: su Windows di plugin LV2 per la voce non
+ne esistono, e un host corretto e vuoto è peggio di nessun host.
 
-Cliccando un blocco si aprono i suoi comandi sotto il diagramma. Uno per volta:
-la catena resta visibile mentre si regola, che è tutto il punto.
+#### Perché due processi
+
+**Questa è la parte che conta.** Un plugin VST3 è codice di qualcun altro, e
+quando sbaglia sbaglia dentro il processo che lo ospita. Il programma che si
+porterebbe dietro non è un editor audio: è una radio, e magari sta
+trasmettendo.
+
+Quindi non gira lì dentro. C'è un secondo eseguibile, `decodium-vst-host`, e
+tutto quello che tocca l'SDK sta lì. Se salta, salta lui: da questa parte si
+vede una pipe che si chiude, il blocco va in bypass, e la stazione resta in
+aria.
+
+**Bypass e non silenzio.** Un blocco che si zittisce quando il suo plugin muore
+toglie l'aria a chi sta chiamando, ed è peggio del difetto che stava cercando
+di gestire.
+
+**E non si riavvia da solo.** Un ospite che risorge a ogni crash, se il plugin
+va in crash a ogni blocco, diventa un ciclo che consuma la macchina mentre chi
+la guarda non capisce perché si è fermata. Si riparte quando qualcuno lo
+chiede.
+
+C'è un test che ammazza l'ospite a metà elaborazione e verifica che il segnale
+continui a passare identico. È l'unico modo di provare questa proprietà:
+rileggendo il codice non si vede.
+
+#### Quello che non c'è
+
+**La finestra disegnata dal costruttore.** Incastrare un editor VST3 dentro una
+scena QML è un problema a sé — è una finestra nativa dentro un albero di
+elementi grafici che non lo è. Senza, il plugin resta governabile dai suoi
+parametri, che è come lo governa qualunque automazione; chi vuole le manopole
+del costruttore apre il plugin nel suo programma e ne salva il preset.
+
+**Un tempo garantito.** Un blocco che non torna entro venti millisecondi viene
+lasciato passare com'è: aspettare vorrebbe dire un buco nella trasmissione, e
+un buco si sente molto più di uno stadio saltato.
+
+#### Come si prova senza avere un plugin
+
+La macchina di sviluppo non ne ha nessuno installato, e senza un plugin vero
+l'unica cosa dimostrabile sarebbe che il protocollo parla — non che l'audio
+attraversi davvero una libreria di terze parti. Quindi la suite **compila il
+ritardo d'esempio dell'SDK** e ci manda dentro un blocco: se torna identico, il
+segnale ha girato attorno al plugin invece di passarci dentro, ed è il modo più
+silenzioso di essere rotti.

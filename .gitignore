@@ -54,6 +54,11 @@ desktop.ini
 #   cd third_party/rnnoise && ./download_model.sh
 /third_party/rnnoise/
 
+# VST3 SDK: MIT dalla 3.8.1 in poi — compatibile senza riserve con GPL-3.0.
+# Duecentoquaranta megabyte non si versionano, si clonano:
+#   git clone --depth 1 --recurse-submodules --shallow-submodules #       https://github.com/steinbergmedia/vst3sdk.git third_party/vst3sdk
+/third_party/vst3sdk/
+
 # Pacchetti di release: si costruiscono, non si versionano. Un archivio da
 # settanta megabyte resta nella storia di git per sempre, anche dopo essere
 # stato cancellato.

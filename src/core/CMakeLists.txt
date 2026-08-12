@@ -27,6 +27,7 @@ add_library(dsdr_core STATIC
 # cambio di lingua senza riavviare l'applicazione.
 target_link_libraries(dsdr_core
     PUBLIC dsdr::common dsdr::dsp dsdr::hal dsdr::audio
+    dsdr::plugins
            Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml)
 
 dsdr_apply_target_defaults(dsdr_core)

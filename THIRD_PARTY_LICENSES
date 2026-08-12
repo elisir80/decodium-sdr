@@ -26,6 +26,30 @@ RNNoise
               distribuiti da Xiph con la stessa licenza del codice.
 
 
+VST 3 SDK
+    Licenza : MIT (dalla versione 3.8.1)
+    Sito    : https://github.com/steinbergmedia/vst3sdk
+    Autori  : Steinberg Media Technologies GmbH
+    Uso     : ospitare plugin VST3 come blocco della catena di studio
+              (DSDR-SPEC-005 §4.5). Compilato da `third_party/vst3sdk`, che
+              non sta nel repository — sono duecentoquaranta megabyte:
+                git clone --depth 1 --recurse-submodules --shallow-submodules                     https://github.com/steinbergmedia/vst3sdk.git third_party/vst3sdk
+              Senza, `DSDR_VST3` resta spento e il blocco non compare.
+    Note    : **La licenza è cambiata, e vale la pena annotarlo.** Fino alla
+              3.7.x l'SDK era a doppia licenza — GPLv3 oppure una proprietaria
+              Steinberg — e la via GPLv3 andava dichiarata e verificata. Dalla
+              3.8.1 è MIT e basta: Steinberg ha ritirato esplicitamente sia la
+              GPLv3 sia la proprietaria. MIT è compatibile con GPL-3.0-or-later
+              senza riserve.
+
+              Resta un solo vincolo, ed è di marchio e non di licenza: usare il
+              nome «VST» o il logo «VST Compatible» obbliga alle linee guida
+              Steinberg. È **facoltativo**, e qui non li si usa — il blocco si
+              chiama «Plugin» e nell'interfaccia il marchio non compare.
+              Steinberg dichiara esplicitamente che non usarli non tocca i
+              diritti concessi da MIT.
+
+
 DeepFilterNet
     Licenza : MIT / Apache-2.0
     Sito    : https://github.com/Rikorose/DeepFilterNet

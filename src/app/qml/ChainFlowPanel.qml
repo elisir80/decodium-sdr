@@ -303,6 +303,21 @@ PanelFrame {
 
         ChainLink {}
 
+        // Il blocco «Plugin». Compare solo se l'ospite è stato costruito: un
+        // blocco che non fa niente è peggio di un blocco che manca.
+        ChainBlock {
+            visible: Session.pluginHostAvailable
+            title: Session.pluginName !== "" ? Session.pluginName : qsTr("Plugin")
+            glyph: root.glyphs.mon
+            on: Session.pluginEnabled && Session.pluginName !== ""
+            warning: Session.pluginTrouble !== ""
+            selected: root.picked === "plugin"
+            onToggled: Session.pluginEnabled = !Session.pluginEnabled
+            onPicked: root.picked = root.picked === "plugin" ? "" : "plugin"
+        }
+
+        ChainLink { visible: Session.pluginHostAvailable }
+
         ChainBlock {
             title: qsTr("CFC")
             glyph: root.glyphs.cfc
@@ -365,6 +380,128 @@ PanelFrame {
         ChainEndpoint {
             label: qsTr("TX")
             live: Session.transmitting
+        }
+    }
+
+    // ── Il blocco «Plugin» (SPEC-005 §4.5) ───────────────────────────────
+    //
+    // Il plugin gira in un processo a parte, e questa e' la sola cosa che
+    // conta saperne: se va in crash, il blocco va in bypass e la radio resta
+    // in aria. La riga dell'errore lo dice, invece di lasciare un blocco
+    // acceso che non fa piu' niente.
+    //
+    // Non c'e' la finestra disegnata dal costruttore: incastrare un editor
+    // VST3 dentro una scena QML e' un problema a se'. I parametri ci sono
+    // tutti, ed e' con quelli che governa un plugin qualunque automazione.
+    ColumnLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacingTight
+        visible: Session.capabilities.canTransmit && Session.pluginHostAvailable
+        spacing: Theme.spacingTight
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingTight
+
+            Text {
+                text: qsTr("PLUGIN")
+                font.pixelSize: Theme.fontSmall
+                font.bold: true
+                font.letterSpacing: 1.4
+                color: Theme.textDisabled
+            }
+
+            DsdrButton {
+                implicitWidth: 76
+                implicitHeight: 26
+                text: Session.pluginScanning ? qsTr("CERCO…") : qsTr("CERCA")
+                enabled: !Session.pluginScanning
+                onClicked: Session.scanPlugins()
+            }
+
+            DsdrComboBox {
+                Layout.fillWidth: true
+                enabled: Session.pluginList.length > 0
+                model: [qsTr("— nessuno —")].concat(
+                           Session.pluginList.map(function(p) {
+                               return p.vendor !== "" ? p.name + " · " + p.vendor : p.name
+                           }))
+                currentIndex: {
+                    for (let i = 0; i < Session.pluginList.length; ++i) {
+                        if (Session.pluginList[i].path === Session.pluginPath)
+                            return i + 1
+                    }
+                    return 0
+                }
+                onActivated: (index) => {
+                    Session.loadPlugin(index === 0 ? ""
+                                                   : Session.pluginList[index - 1].path)
+                }
+            }
+
+            DsdrButton {
+                implicitWidth: 104
+                implicitHeight: 26
+                text: qsTr("IN CATENA")
+                checkable: true
+                enabled: Session.pluginName !== ""
+                checked: Session.pluginEnabled
+                onClicked: Session.pluginEnabled = checked
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: Session.pluginTrouble !== ""
+            text: Session.pluginTrouble
+            font.pixelSize: Theme.fontSmall
+            color: Theme.danger
+            wrapMode: Text.WordWrap
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: Session.pluginList.length === 0 && !Session.pluginScanning
+            text: qsTr("Premi CERCA per elencare i plugin VST3 installati. Girano in un processo a parte: se uno va in crash, il blocco va in bypass e la trasmissione continua.")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textDisabled
+            wrapMode: Text.WordWrap
+        }
+
+        // I parametri, che senza la finestra del costruttore sono l'unico modo
+        // di governarlo. Sono normalizzati fra zero e uno, come li dichiara
+        // VST3: mostrare un numero che il plugin non usa sarebbe peggio.
+        Flow {
+            Layout.fillWidth: true
+            visible: Session.pluginParameters.length > 0
+            spacing: Theme.spacing
+
+            Repeater {
+                model: Session.pluginParameters
+
+                delegate: RowLayout {
+                    required property var modelData
+
+                    width: 240
+                    spacing: Theme.spacingTight
+
+                    Text {
+                        Layout.preferredWidth: 84
+                        text: modelData.name
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textSecondary
+                        elide: Text.ElideRight
+                    }
+
+                    DsdrSlider {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 1
+                        value: modelData.value
+                        onMoved: Session.setPluginParameter(modelData.index, value)
+                    }
+                }
+            }
         }
     }
 
@@ -907,6 +1044,7 @@ PanelFrame {
         "mic": qsTr("Microfono"),
         "comp": qsTr("Compressore"),
         "txeq": qsTr("Equalizzatore di trasmissione"),
+        "plugin": qsTr("Plugin di studio"),
         "txfilter": qsTr("Filtro di trasmissione"),
         "drive": qsTr("Drive"),
         "input": qsTr("Ingresso RF"),

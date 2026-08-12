@@ -126,8 +126,13 @@ Item {
 
     // A riposo il riquadro non resta vuoto senza spiegazione: dire che non c'è
     // niente da mostrare costa una riga e toglie il dubbio che sia rotto.
+    // In basso e non al centro: al centro finisce sotto i punti
+    // dell'equalizzatore, che restano visibili anche a riposo perche' e' li'
+    // che si va a cercarli.
     Text {
-        anchors.centerIn: parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 3
         visible: !root.live
         text: qsTr("il confronto compare mentre si trasmette")
         font.pixelSize: Theme.fontSmall

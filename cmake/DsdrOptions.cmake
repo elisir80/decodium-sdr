@@ -93,6 +93,28 @@ option(DSDR_NEURAL_NR "Stadio di riduzione di rumore neurale (RNNoise)" ON)
 # a una funzione che non c'era, non chi ha costruito il pacchetto.
 option(DSDR_STRICT_BACKENDS    "Una parte richiesta che non si compila è un errore" OFF)
 
+# Il blocco «Plugin» della catena di studio (DSDR-SPEC-005 §4.5).
+#
+# Si accende da se' quando l'SDK e' presente in third_party/, come lo stadio
+# neurale: senza, il blocco non compare e non c'e' un comando che prometta
+# qualcosa che non c'e' (CONSTITUTION §7).
+#
+# La licenza e' MIT dalla 3.8.1 — Steinberg ha ritirato la doppia licenza
+# GPLv3/proprietaria — quindi compatibile senza riserve. Il marchio «VST» e il
+# logo restano di Steinberg e sono facoltativi: qui non li si usa, e il blocco
+# si chiama «Plugin».
+set(DSDR_VST3_SDK "${CMAKE_SOURCE_DIR}/third_party/vst3sdk" CACHE PATH
+    "Percorso del VST3 SDK (vuoto: blocco Plugin assente)")
+
+if(EXISTS "${DSDR_VST3_SDK}/pluginterfaces/vst/ivstaudioprocessor.h")
+    set(dsdr_vst3_default ON)
+else()
+    set(dsdr_vst3_default OFF)
+endif()
+option(DSDR_VST3 "Blocco «Plugin»: ospita effetti VST3 in un processo a parte"
+       ${dsdr_vst3_default})
+unset(dsdr_vst3_default)
+
 option(DSDR_BUILD_TESTS        "Compila la suite di test (RNF-07)"              ON)
 option(DSDR_WARNINGS_AS_ERRORS "Tratta i warning del compilatore come errori"   OFF)
 

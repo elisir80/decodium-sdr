@@ -32,9 +32,11 @@
 #include "dsp/SpeechProcessor.h"
 #include "dsp/SpscRing.h"
 #include "dsp/VoiceRecorder.h"
+#include "plugins/PluginBridge.h"
 
 #include <QElapsedTimer>
 #include <QObject>
+#include <QVariantList>
 
 #include <atomic>
 #include <vector>
@@ -187,6 +189,14 @@ public slots:
     /// ripulita e a livello, e quello che tocca è solo il timbro.
     dsp::ParametricEq &equalizer() noexcept { return m_txEq; }
 
+    /// Il blocco «Plugin» (SPEC-005 §4.5).
+    ///
+    /// Vive **su questo thread** e non su quello della UI, ed è la ragione per
+    /// cui elencare e caricare passano da slot invece che da chiamate dirette:
+    /// il processo ospite si parla da un thread solo, e quello che gli manda i
+    /// campioni è questo.
+    plugins::PluginBridge &pluginHost() noexcept { return m_plugins; }
+
     /// Livello d'uscita 0…1, applicato in banda base. Non è la potenza del
     /// finale — quella la conosce solo la radio — ma quanto del fondo scala
     /// del convertitore si sta usando.
@@ -226,6 +236,16 @@ public slots:
     void setMonitorEnabled(bool enabled);
     void setMonitorLevel(double level);
 
+    // ── Il blocco «Plugin» ───────────────────────────────────────────────
+    //
+    // Tutti asincroni. Elencare i plugin di una macchina che ne ha cento
+    // significa aprire cento librerie, e farlo dietro una chiamata bloccante
+    // vorrebbe dire un'interfaccia ferma per dieci secondi senza spiegazioni.
+    void scanPlugins();
+    void loadPlugin(const QString &path);
+    void setPluginEnabled(bool enabled);
+    void setPluginParameter(int index, double value);
+
 signals:
     /// La trasmissione non può partire, e perché. La UI lo mostra invece di
     /// lasciare l'operatore davanti a un PTT premuto che non trasmette.
@@ -233,6 +253,12 @@ signals:
 
     /// Emesso a bassa cadenza per gli indicatori.
     void metersUpdated();
+
+    /// L'elenco dei plugin trovati, come lista di mappe per QML.
+    void pluginsScanned(const QVariantList &plugins);
+
+    /// Il plugin caricato è cambiato, o l'ospite è morto.
+    void pluginChanged();
 
     /// Il riascolto è partito, o è finito. Serve alla UI per non lasciare un
     /// tasto premuto su una riproduzione che si è già chiusa da sola.
@@ -279,6 +305,7 @@ private:
     qint64 m_monitorCenterHz = 0;
 
     dsp::VoiceRecorder m_recorder;
+    plugins::PluginBridge m_plugins;
 
     /// Le due trasformate del confronto. Costano due FFT a 2048 punti ogni
     /// blocco, e solo mentre si trasmette: meno dell'interpolazione che c'è

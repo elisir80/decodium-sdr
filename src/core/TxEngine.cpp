@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "core/TxEngine.h"
 
+#include <QVariantMap>
+
 #include <QLoggingCategory>
 #include <QTimer>
 
@@ -95,6 +97,15 @@ TxEngine::TxEngine(QObject *parent)
         m_dryBins[i].store(-140.0f, std::memory_order_relaxed);
         m_wetBins[i].store(-140.0f, std::memory_order_relaxed);
     }
+
+    // Se l'ospite muore, il blocco va in bypass e lo si dice: la radio non si
+    // ferma per un plugin, ma nemmeno continua a mostrare uno stadio acceso
+    // che non fa più niente.
+    connect(&m_plugins, &plugins::PluginBridge::hostDied, this,
+            [this](const QString &reason) {
+                emit refused(reason);
+                emit pluginChanged();
+            });
 
     m_audio.resize(kAudioBlockFrames);
     m_baseband.resize(kAudioBlockFrames);
@@ -545,6 +556,48 @@ void TxEngine::setPlaybackSource(int source)
     emit playbackChanged();
 }
 
+void TxEngine::scanPlugins()
+{
+    if (!m_plugins.isRunning() && !m_plugins.start()) {
+        emit refused(m_plugins.lastError());
+        emit pluginsScanned({});
+        return;
+    }
+
+    QVariantList out;
+    for (const plugins::PluginInfo &info : m_plugins.scan()) {
+        out.append(QVariantMap{{QStringLiteral("path"), info.path},
+                               {QStringLiteral("name"), info.name},
+                               {QStringLiteral("vendor"), info.vendor},
+                               {QStringLiteral("category"), info.category}});
+    }
+    emit pluginsScanned(out);
+}
+
+void TxEngine::loadPlugin(const QString &path)
+{
+    if (!m_plugins.isRunning() && !m_plugins.start()) {
+        emit refused(m_plugins.lastError());
+        return;
+    }
+
+    m_plugins.prepare(m_audioRate, static_cast<int>(kAudioBlockFrames));
+    if (!m_plugins.load(path))
+        emit refused(m_plugins.lastError());
+    emit pluginChanged();
+}
+
+void TxEngine::setPluginEnabled(bool enabled)
+{
+    m_plugins.setEnabled(enabled);
+    emit pluginChanged();
+}
+
+void TxEngine::setPluginParameter(int index, double value)
+{
+    m_plugins.setParameter(index, value);
+}
+
 void TxEngine::produce(std::size_t audioFrames)
 {
     const bool cw = m_settings.mode == DemodMode::Cw || m_settings.mode == DemodMode::Cwr;
@@ -643,6 +696,11 @@ void TxEngine::produce(std::size_t audioFrames)
         // ripulita dal gate e portata a livello dal leveller, quindi quello
         // che tocca è il timbro e non il respiro della stanza.
         m_txEq.process(m_audio.data(), audioFrames);
+        // Il plugin dopo l'equalizzatore e prima del multibanda: è il posto in
+        // cui un compressore di studio si aspetta di stare, e chi ne carica
+        // uno sta cercando quello. Se l'ospite è morto, questa riga non fa
+        // niente e il segnale passa — la radio non si ferma per un plugin.
+        m_plugins.process(m_audio.data(), audioFrames);
         // Il multibanda dopo il processore di voce: quello livella e comprime
         // la voce nel suo insieme, questo la divide in quattro e tratta ogni
         // parte per conto suo. Invertirli vorrebbe dire dare al multibanda un

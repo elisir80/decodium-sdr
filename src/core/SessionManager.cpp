@@ -5,6 +5,7 @@
 #include "core/DspEngine.h"
 #include "core/TxEngine.h"
 #include "core/TxProfiles.h"
+#include "plugins/PluginBridge.h"
 #include "hal/RadioScout.h"
 #ifdef DSDR_BACKEND_FLEX_PROBE
 #endif
@@ -179,6 +180,12 @@ SessionManager::SessionManager(QObject *parent)
     connect(m_txThread, &QThread::finished, m_tx, &QObject::deleteLater);
     connect(m_tx, &TxEngine::metersUpdated, this, &SessionManager::txMetersChanged);
     connect(m_tx, &TxEngine::playbackChanged, this, &SessionManager::voicePlaybackChanged);
+    connect(m_tx, &TxEngine::pluginChanged, this, &SessionManager::pluginChanged);
+    connect(m_tx, &TxEngine::pluginsScanned, this, [this](const QVariantList &found) {
+        m_pluginList = found;
+        m_pluginScanning = false;
+        emit pluginListChanged();
+    });
 
     // Il riascolto prende il posto della ricezione nell'uscita audio. Si
     // aggancia una volta sola e per sempre: il router lo terrà anche se il
@@ -901,6 +908,79 @@ void SessionManager::setAudioEqEnabled(bool enabled)
 int SessionManager::audioEqBandCount() const
 {
     return dsp::ParametricEq::kBands;
+}
+
+// ── Il blocco «Plugin» (SPEC-005 §4.5) ──────────────────────────────────
+
+bool SessionManager::pluginHostAvailable() const
+{
+    return plugins::PluginBridge::hostAvailable();
+}
+
+bool SessionManager::pluginEnabled() const
+{
+    return m_tx && m_tx->pluginHost().isEnabled();
+}
+
+void SessionManager::setPluginEnabled(bool enabled)
+{
+    if (!m_tx || pluginEnabled() == enabled)
+        return;
+    QMetaObject::invokeMethod(m_tx, [this, enabled] { m_tx->setPluginEnabled(enabled); });
+}
+
+QString SessionManager::pluginName() const
+{
+    return m_tx ? m_tx->pluginHost().loadedName() : QString();
+}
+
+QString SessionManager::pluginPath() const
+{
+    return m_tx ? m_tx->pluginHost().loadedPath() : QString();
+}
+
+QString SessionManager::pluginTrouble() const
+{
+    return m_tx ? m_tx->pluginHost().lastError() : QString();
+}
+
+QVariantList SessionManager::pluginParameters() const
+{
+    QVariantList out;
+    if (!m_tx)
+        return out;
+    for (const plugins::PluginParameter &p : m_tx->pluginHost().parameters()) {
+        out.append(QVariantMap{{QStringLiteral("index"), p.index},
+                               {QStringLiteral("name"), p.name},
+                               {QStringLiteral("unit"), p.unit},
+                               {QStringLiteral("value"), p.value}});
+    }
+    return out;
+}
+
+void SessionManager::scanPlugins()
+{
+    if (!m_tx || m_pluginScanning)
+        return;
+    m_pluginScanning = true;
+    emit pluginListChanged();
+    QMetaObject::invokeMethod(m_tx, [this] { m_tx->scanPlugins(); });
+}
+
+void SessionManager::loadPlugin(const QString &path)
+{
+    if (!m_tx)
+        return;
+    QMetaObject::invokeMethod(m_tx, [this, path] { m_tx->loadPlugin(path); });
+}
+
+void SessionManager::setPluginParameter(int index, double value)
+{
+    if (!m_tx)
+        return;
+    QMetaObject::invokeMethod(m_tx, [this, index, value] {
+        m_tx->setPluginParameter(index, value);
+    });
 }
 
 // ── I profili della catena di trasmissione (SPEC-005 §4.4) ──────────────
