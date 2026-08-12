@@ -28,10 +28,12 @@ constexpr int kMaxPrimeAttempts = 100; // 500 ms: Soapy may open after the sink
 class AudioRouter::RingSource : public QIODevice
 {
 public:
-    explicit RingSource(dsp::SpscRing<float> *ring, bool useFloat, int outputChannels)
+    explicit RingSource(dsp::SpscRing<float> *ring, bool useFloat, int outputChannels,
+                        dsp::ParametricEq *equalizer)
         : m_ring(ring)
         , m_useFloat(useFloat)
         , m_outputChannels(outputChannels)
+        , m_equalizer(equalizer)
     {
         m_scratch.resize(4096 * kSourceChannels);
     }
@@ -68,6 +70,12 @@ protected:
             if (m_ring)
                 m_underruns.fetch_add(1, std::memory_order_relaxed);
         }
+
+        // L'equalizzatore prima del volume: si equalizza il segnale, non la
+        // manopola. Al contrario, alzando il volume cambierebbe anche la forma
+        // della curva — e non c'è niente che lo spieghi a chi lo sente.
+        if (m_equalizer)
+            m_equalizer->process(m_scratch.data(), frames);
 
         const float gain = m_gain.load(std::memory_order_relaxed);
 
@@ -117,6 +125,7 @@ private:
     dsp::SpscRing<float> *m_ring = nullptr;
     std::vector<float> m_scratch;
     std::atomic<float> m_gain{1.0f};
+    dsp::ParametricEq *m_equalizer = nullptr;
     std::atomic<quint64> m_underruns{0};
     bool m_useFloat = true;
     int m_outputChannels = 2;
@@ -191,7 +200,12 @@ bool AudioRouter::start(dsp::SpscRing<float> *source)
     const int bytesPerSecond = format.bytesForDuration(1'000'000);
     m_sink->setBufferSize(bytesPerSecond * kTargetLatencyMs / 1000);
 
-    m_source = std::make_unique<RingSource>(source, useFloat, format.channelCount());
+    // L'equalizzatore lavora sul flusso interno, che è stereo: la conversione
+    // a mono, dove serve, viene dopo.
+    m_equalizer.configure(format.sampleRate(), 2);
+
+    m_source = std::make_unique<RingSource>(source, useFloat, format.channelCount(),
+                                            &m_equalizer);
     m_source->open(QIODevice::ReadOnly);
     applyVolume();
 

@@ -604,6 +604,63 @@ SpectrumFeed *SessionManager::audioSpectrum() const
     return m_engine ? m_engine->audioSpectrumFeed() : nullptr;
 }
 
+bool SessionManager::audioEqEnabled() const
+{
+    return m_audio && m_audio->equalizer().isEnabled();
+}
+
+void SessionManager::setAudioEqEnabled(bool enabled)
+{
+    if (!m_audio || m_audio->equalizer().isEnabled() == enabled)
+        return;
+    m_audio->equalizer().setEnabled(enabled);
+    emit audioEqChanged();
+}
+
+int SessionManager::audioEqBandCount() const
+{
+    return dsp::ParametricEq::kBands;
+}
+
+void SessionManager::setAudioEqBand(int index, double frequencyHz, double gainDb, double q)
+{
+    if (!m_audio)
+        return;
+    m_audio->equalizer().setBand(index, frequencyHz, gainDb, q);
+    emit audioEqChanged();
+}
+
+double SessionManager::audioEqFrequency(int index) const
+{
+    return m_audio ? m_audio->equalizer().bandFrequency(index) : 0.0;
+}
+
+double SessionManager::audioEqGainDb(int index) const
+{
+    return m_audio ? m_audio->equalizer().bandGainDb(index) : 0.0;
+}
+
+double SessionManager::audioEqQ(int index) const
+{
+    return m_audio ? m_audio->equalizer().bandQ(index) : 1.0;
+}
+
+double SessionManager::audioEqResponseDb(double frequencyHz) const
+{
+    return m_audio ? m_audio->equalizer().responseDb(frequencyHz) : 0.0;
+}
+
+void SessionManager::resetAudioEq()
+{
+    if (!m_audio)
+        return;
+    for (int band = 0; band < dsp::ParametricEq::kBands; ++band) {
+        m_audio->equalizer().setBand(band, m_audio->equalizer().bandFrequency(band), 0.0,
+                                     m_audio->equalizer().bandQ(band));
+    }
+    emit audioEqChanged();
+}
+
 QVariantList SessionManager::audioWaveform(int points, double spanMs, bool trigger)
 {
     QVariantList out;

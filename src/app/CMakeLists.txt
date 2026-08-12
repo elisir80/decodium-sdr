@@ -36,6 +36,7 @@ set(DSDR_QML_FILES
     qml/NetworkQuality.qml
     qml/AudioStudioPanel.qml
     qml/AudioScope.qml
+    qml/EqCurve.qml
     qml/AudioLevelBar.qml
     qml/ChainBlock.qml
     qml/ChainGlyph.qml

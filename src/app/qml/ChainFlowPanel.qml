@@ -106,6 +106,7 @@ PanelFrame {
         "notch": "M2,9 C20,9 24,24 30,24 C36,24 40,9 70,9",
         "nr":    "M2,17 C20,12 44,16 70,14",
         "mon":   "M2,13 L10,13 L14,5 L20,21 L26,9 L32,17 L38,11 L46,14 L70,13",
+        "eq":    "M2,16 C12,16 14,7 22,7 C30,7 32,19 42,19 C52,19 58,9 70,9",
     })
 
     /// Da dBFS a frazione di barretta. Sessanta decibel di scala: sotto non c'è
@@ -369,6 +370,21 @@ PanelFrame {
             onPicked: root.picked = root.picked === "agc" ? "" : "agc"
         }
 
+        ChainLink {}
+
+        // L'equalizzatore dell'ascolto: l'ultimo stadio prima delle cuffie, e
+        // il primo che non c'era. La sua curva si regola nello studio audio,
+        // sopra lo spettro vivo.
+        ChainBlock {
+            title: qsTr("EQ")
+            glyph: root.glyphs.eq
+            readout: Session.audioEqEnabled ? qsTr("5 celle") : ""
+            on: Session.audioEqEnabled
+            selected: root.picked === "eq"
+            onToggled: Session.audioEqEnabled = !Session.audioEqEnabled
+            onPicked: root.picked = root.picked === "eq" ? "" : "eq"
+        }
+
         ChainLink {
             level: root.fractionFromDb(Session.audioPeakDb)
             tint: Session.audioPeakDb > -1 ? Theme.danger
@@ -475,6 +491,7 @@ PanelFrame {
         "notch": qsTr("Notch"),
         "dnr": qsTr("DECODIUM NR"),
         "agc": qsTr("AGC"),
+        "eq": qsTr("Equalizzatore d'ascolto"),
     })[picked] || ""
 
     readonly property var detailHint: ({
@@ -489,6 +506,7 @@ PanelFrame {
         "notch": qsTr("Il notch automatico toglie i fischi. Quelli a mano si piazzano con il tasto destro sullo spettro."),
         "dnr": qsTr("Lo stadio neurale. Costa un thread e qualche millisecondo di ritardo, e agisce solo sull'ascolto: il flusso verso i decoder resta lineare."),
         "agc": qsTr("Il modo e la soglia si scelgono dalla targa o dal pannello dei canali: sono due comandi, e qui ce ne sta uno."),
+        "eq": qsTr("Cinque campane sull'ascolto. La curva si trascina nello studio audio, sopra lo spettro vivo: si muove il punto e si vede la voce cambiare forma sotto. Non tocca il percorso dei decoder."),
     })[picked] || ""
 
     readonly property real detailFrom: ({

@@ -14,6 +14,12 @@ dsdr_add_test(tst_noise_filters
     SOURCES tst_noise_filters.cpp
     LIBRARIES dsdr::dsp)
 
+# L'equalizzatore parametrico: un errore qui non fallisce, suona — e la curva
+# che si guarda mentre si regola e' la prima cosa che puo' mentire.
+dsdr_add_test(tst_parametric_eq
+    SOURCES tst_parametric_eq.cpp
+    LIBRARIES dsdr::dsp)
+
 dsdr_add_test(tst_overload_guard
     SOURCES tst_overload_guard.cpp
     LIBRARIES dsdr::dsp)

@@ -65,6 +65,15 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::core::SpectrumFeed *spectrum READ spectrum CONSTANT)
     Q_PROPERTY(dsdr::core::SpectrumFeed *audioSpectrum READ audioSpectrum CONSTANT)
 
+    // ── Equalizzatore dell'ascolto (SPEC-005 §4.1) ──────────────────────
+    //
+    // Cinque campane sul percorso che arriva alle cuffie. Non su quello dei
+    // decoder, che resta lineare: equalizzare prima di un decodificatore non
+    // migliora niente e rovina la stima del rapporto segnale-rumore.
+    Q_PROPERTY(bool audioEqEnabled READ audioEqEnabled WRITE setAudioEqEnabled
+                   NOTIFY audioEqChanged)
+    Q_PROPERTY(int audioEqBandCount READ audioEqBandCount CONSTANT)
+
     // ── Analisi dell'audio ──────────────────────────────────────────────
     Q_PROPERTY(double audioToneHz READ audioToneHz NOTIFY audioToneChanged)
     Q_PROPERTY(double audioToneDb READ audioToneDb NOTIFY audioToneChanged)
@@ -259,6 +268,31 @@ public:
     /// portante a tre.
     double audioPeakDb() const { return m_audioPeakDb; }
     double audioRmsDb() const { return m_audioRmsDb; }
+
+    bool audioEqEnabled() const;
+    void setAudioEqEnabled(bool enabled);
+    int audioEqBandCount() const;
+
+    /// Una campana: frequenza in hertz, guadagno in decibel, Q.
+    ///
+    /// Tre numeri e non un oggetto perché sono i tre gradi di libertà di un
+    /// punto trascinabile su una curva — dove sta, quanto è alto, quanto è
+    /// stretto — ed è così che li manda l'editor.
+    Q_INVOKABLE void setAudioEqBand(int index, double frequencyHz, double gainDb, double q);
+    Q_INVOKABLE double audioEqFrequency(int index) const;
+    Q_INVOKABLE double audioEqGainDb(int index) const;
+    Q_INVOKABLE double audioEqQ(int index) const;
+
+    /// La risposta dell'insieme, in decibel, alla frequenza data.
+    ///
+    /// La calcola il filtro dai propri coefficienti: una curva disegnata da
+    /// una seconda formula mostrerebbe, il giorno che la campana cambia, un
+    /// filtro diverso da quello che si sente.
+    Q_INVOKABLE double audioEqResponseDb(double frequencyHz) const;
+
+    /// Riporta tutte le campane a zero senza spegnere l'equalizzatore: è il
+    /// gesto con cui si ricomincia, e spegnerlo sarebbe un gesto diverso.
+    Q_INVOKABLE void resetAudioEq();
 
     /// Gli ultimi campioni audio, ridotti a `points` valori fra −1 e 1.
     ///
@@ -563,6 +597,7 @@ signals:
     void noiseBlankerChanged();
     void streamHealthChanged();
     void audioToneChanged();
+    void audioEqChanged();
     void audioLevelsChanged();
     void neuralChanged();
     void overloadChanged();

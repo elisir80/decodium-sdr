@@ -58,6 +58,7 @@ e le misure che sappiamo fare.
 | RX | Notch automatico e manuali | acceso/spento, conteggio | — |
 | RX | DECODIUM NR (neurale) | acceso/spento, intensità | carico, ritardo |
 | RX | AGC | modo, soglia | guadagno |
+| RX | EQ d'ascolto | 5 campane a curva | la curva stessa |
 | RX | Uscita audio | volume, muto | picco, RMS, cresta |
 | TX | Microfono | dispositivo, guadagno | livello |
 | TX | Compressore | quantità | compressione applicata |
@@ -73,7 +74,11 @@ e le misure che sappiamo fare.
   frase e l'altra, che su una eSSB larga si sente più della voce.
 - **Leveller**: un AGC lento *prima* della compressione. Corregge la distanza
   dal microfono; senza, il compressore fa due lavori diversi e nessuno bene.
-- **EQ parametrico**: quattro o cinque celle, punti liberi.
+- ~~**EQ parametrico**~~: fatto sul percorso di ricezione — cinque campane
+  RBJ sull'ascolto, con la curva trascinabile sopra lo spettro vivo. Sulla
+  catena di trasmissione resta da fare: là serve prima il resto della catena,
+  perché un equalizzatore prima di un gate e di un leveller equalizza il
+  respiro della stanza insieme alla voce.
 - **CFC — compressore multibanda**: la voce divisa in bande, ognuna con la sua
   compressione. È il blocco che distingue una eSSB da una SSB alzata.
 - **Limiter**: l'ultimo, e l'unico che non deve mai lasciar passare niente

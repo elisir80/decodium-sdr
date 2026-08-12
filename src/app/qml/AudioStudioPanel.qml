@@ -42,7 +42,13 @@ PanelFrame {
         property bool peakHold: true
         property real spanMs: 20
         property bool triggered: true
+        property bool showEq: true
     }
+
+    /// La curva si può nascondere: sopra uno spettro che si sta guardando per
+    /// un'altra ragione — un fischio da trovare — cinque punti e una linea
+    /// sono cinque cose in mezzo.
+    property alias showEq: prefs.showEq
 
     // ── Lo spettro dell'audio ────────────────────────────────────────────
     //
@@ -129,6 +135,26 @@ PanelFrame {
                     color: Theme.textDisabled
                 }
             }
+        }
+
+        // ── L'equalizzatore, sopra lo spettro ────────────────────────
+        //
+        // Qui e non in un riquadro accanto: si trascina il punto e si vede la
+        // voce cambiare forma *sotto* la curva, nello stesso istante e nello
+        // stesso posto. Due riquadri affiancati sarebbero due immagini da
+        // confrontare, e confrontare è già un lavoro.
+        EqCurve {
+            // Solo sulla metà della traccia, non anche sul waterfall: sotto la
+            // linea di mezzo c'è la storia, dove un asse in decibel di
+            // guadagno non significa niente — e i punti finivano proprio sul
+            // confine fra le due, che è il posto peggiore per un comando.
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: parent.height * audioView.spectrumRatio
+            visible: root.showEq
+            spanStartHz: root.spanStartHz
+            spanWidthHz: root.spanWidthHz
         }
 
         // I bordi del filtro: dove *dovrebbe* tagliare.
@@ -258,6 +284,43 @@ PanelFrame {
             ticks.push(hz)
         }
         return ticks
+    }
+
+    // ── L'equalizzatore ──────────────────────────────────────────────────
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacingTight
+
+        DsdrButton {
+            implicitHeight: 24
+            text: qsTr("EQ")
+            checkable: true
+            checked: Session.audioEqEnabled
+            onClicked: Session.audioEqEnabled = checked
+        }
+
+        DsdrButton {
+            implicitHeight: 24
+            text: root.showEq ? qsTr("Nascondi curva") : qsTr("Mostra curva")
+            onClicked: root.showEq = !root.showEq
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Text {
+            visible: root.showEq
+            text: qsTr("trascina un punto · rotellina = larghezza")
+            font.pixelSize: Theme.fontSmall
+            color: Theme.textDisabled
+            elide: Text.ElideRight
+        }
+
+        DsdrButton {
+            implicitHeight: 24
+            text: qsTr("Azzera")
+            enabled: Session.audioEqEnabled
+            onClicked: Session.resetAudioEq()
+        }
     }
 
     // ── L'oscilloscopio ──────────────────────────────────────────────────

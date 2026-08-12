@@ -7,6 +7,7 @@
 #pragma once
 
 #include "common/Types.h"
+#include "dsp/ParametricEq.h"
 #include "dsp/SpscRing.h"
 
 #include <QAudioFormat>
@@ -48,6 +49,14 @@ public:
     bool isMuted() const { return m_muted; }
     void setMuted(bool muted);
 
+    /// L'equalizzatore dell'ascolto.
+    ///
+    /// Sta qui e non nel motore DSP per una ragione sola, che è anche
+    /// l'interlock della SPEC-005: questo è il punto in cui l'audio smette di
+    /// essere un segnale da misurare e diventa un suono da sentire. Quello che
+    /// alimenta i decoder si è già staccato prima e resta lineare.
+    dsdr::dsp::ParametricEq &equalizer() noexcept { return m_equalizer; }
+
     /// Numero di underrun dall'avvio: se cresce, il DSP non sta stando dietro.
     quint64 underrunCount() const;
 
@@ -70,6 +79,7 @@ private:
     QAudioFormat m_format;
     float m_volume = 0.8f;
     int m_latencyMs = 0;
+    dsdr::dsp::ParametricEq m_equalizer;
     QTimer *m_primeTimer = nullptr;
     int m_primeAttempts = 0;
     bool m_muted = false;
