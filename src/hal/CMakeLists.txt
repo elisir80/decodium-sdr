@@ -83,6 +83,16 @@ if(DSDR_BACKEND_FLEX_PROBE)
         backends/flex/FlexVita.cpp
     )
     list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_FLEX_PROBE)
+
+    # Il backend vero: usa i pezzi qui sopra e ci mette in mezzo la sequenza
+    # che apre il flusso DAX IQ.
+    if(DSDR_BACKEND_FLEX)
+        list(APPEND DSDR_HAL_SOURCES
+            backends/flex/FlexBackend.h
+            backends/flex/FlexBackend.cpp
+        )
+        list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_FLEX)
+    endif()
     set(DSDR_HAL_NEEDS_NETWORK ON)
 endif()
 

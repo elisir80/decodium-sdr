@@ -13,7 +13,17 @@ option(DSDR_BACKEND_COLIBRI "Backend ColibriNANO (Expert Electronics)"          
 option(DSDR_BACKEND_IQFILE  "Riproduzione di registrazioni IQ (RF-17)"          ON)
 option(DSDR_BACKEND_AUDIORIG "Radio tradizionali via audio + CAT (SPEC-004)"       ON)
 option(DSDR_BACKEND_FLEX_PROBE "Canale di comando SmartSDR (metà di RF-04)"      ON)
-option(DSDR_BACKEND_FLEX    "Backend FlexRadio SmartSDR (RF-04)"                OFF)
+# Il backend FlexRadio e' scritto ma non e' mai stato provato su una radio
+# vera: la sequenza che apre il flusso DAX IQ cambia fra le versioni maggiori
+# del firmware, e le fonti pubbliche ne descrivono due forme.
+#
+# Acceso lo stesso, e non e' una svista. La regola «un backend che non consegna
+# campioni non si mostra» qui si rispetta in un altro modo: se la sequenza non
+# passa, il backend dice su quale comando si e' fermato e con che codice; se
+# passa e non arrivano pacchetti, lo dice pure, nominando le due cause
+# possibili. Non tace, non finge, e chi ha un Flex davanti ha nel diario tutto
+# quello che serve a chiudere la questione in dieci minuti.
+option(DSDR_BACKEND_FLEX    "Backend FlexRadio SmartSDR (RF-04)"                ON)
 option(DSDR_BACKEND_TCI     "Backend TCI / SunSDR (RF-05)"                      OFF)
 option(DSDR_BACKEND_KIWI    "Backend KiwiSDR (RF-06)"                           OFF)
 option(DSDR_BACKEND_HAMLIB  "Bridge CAT Hamlib (RF-08)"                         OFF)
@@ -177,8 +187,8 @@ function(dsdr_print_configuration)
     # sapere se un backend c'è — è successo con audiorig sparito dalla 1.1.3, e
     # questa riga diceva di sì tacendo.
     message(STATUS "  Backend attivi  :")
-    foreach(be DEMO SOAPY NETTCP HERMES COLIBRI IQFILE AUDIORIG FLEX_PROBE
-               HPSDR DLINK FLEX TCI KIWI HAMLIB)
+    foreach(be DEMO SOAPY NETTCP HERMES COLIBRI IQFILE AUDIORIG FLEX FLEX_PROBE
+               HPSDR DLINK TCI KIWI HAMLIB)
         if(DSDR_BACKEND_${be})
             message(STATUS "      • ${be}")
         endif()

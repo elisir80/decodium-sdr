@@ -1,7 +1,22 @@
 # FlexRadio serie 6000 — a che punto siamo
 
-**Non c'è ancora un backend.** C'è metà del protocollo, ed è la metà che si
-può scrivere onestamente adesso.
+**Il backend c'è, e non è mai stato provato su una radio vera.** Le due cose
+stanno insieme, e vanno lette insieme.
+
+La sequenza che apre il flusso DAX IQ è scritta sulle fonti pubbliche di
+FlexRadio, ma il legame fra fetta, panadapter e canale DAX cambia fra le
+versioni maggiori del firmware. Finché qualcuno non lo prova, non si può dire
+che funzioni.
+
+Il modo di essere onesti, qui, non è tenerlo spento — è **farlo parlare**. Se
+la sequenza non passa, il backend dice su quale comando si è fermato e con che
+codice la radio ha risposto. Se passa e non arrivano pacchetti, lo dice pure, e
+nomina le due cause possibili — il firewall o un firmware che vuole una
+sequenza diversa — perché si risolvono in modi diversi. Non tace e non finge.
+
+Chi ha un Flex davanti chiude la questione in dieci minuti: apre il backend,
+legge il diario, e se serve manda a mano il comando che manca con
+`flex.send`.
 
 Un FlexRadio 6000 parla due lingue insieme:
 
@@ -119,18 +134,47 @@ nasce a 48 kS/s qualunque cosa si sia chiesto — con il DSP che calcolerebbe
 tutto sulla velocità sbagliata senza accorgersene. Le velocità vanno da 24 a
 192 kS/s.
 
-## Quello che manca
+## Le due forme del comando di creazione
 
-Provarla. Il legame esatto fra fetta, panadapter e canale DAX cambia fra le
-versioni maggiori del firmware, e le fonti pubbliche descrivono due forme del
-comando di creazione. Con un Flex davanti è questione di minuti: si manda la
-sequenza e si guarda se la risposta è `0` o un codice d'errore. Senza, resterebbe
-un backend che si collega e non riceve niente — che è peggio di nessun
-backend.
+Le fonti pubbliche ne descrivono due, e non si sceglie a memoria:
 
-Fino ad allora `DSDR_BACKEND_FLEX` resta spento e nell'elenco delle sorgenti non
-compare niente: un backend che apre e non consegna campioni sarebbe la peggiore
-delle promesse (CONSTITUTION §7).
+```
+stream create daxiq=<canale> ip=<indirizzo> port=<porta>
+stream create type=iq daxiq_channel=<canale> ip=<indirizzo> port=<porta>
+```
+
+Si prova la prima; se la radio la rifiuta si prova la seconda, una volta sola.
+Rifiutate entrambe, il problema non è la forma, e continuare a provare
+nasconderebbe la diagnosi invece di darla.
+
+## Quello che manca ancora
+
+- **Provare la sequenza su una radio vera.** È l'unica cosa che manca al
+  ricevitore.
+- **La trasmissione.** Passa da DAX MIC, che è un'altra metà di protocollo e
+  non è scritta: le capability dichiarano `TxSupport::None`, quindi la UI non
+  mostra un PTT che non farebbe niente (CONSTITUTION §7).
+- **Il DAX Audio** — i canali audio demodulati per fetta — non è affrontato:
+  qui si prende l'IQ e si demodula da questa parte, con tutta la catena della
+  SPEC-003.
+
+## Nel frattempo, un Flex si usa già
+
+Non da questo backend, ma da `audiorig`: SmartSDR espone i canali DAX come
+dispositivi audio del sistema, quindi si sceglie il DAX RX come ingresso e si
+prende il CAT dalla porta seriale di SmartSDR o da un `rigctld`. Si perde la
+banda larga — si ascolta la passata della fetta, non lo spettro completo — ma
+frequenza, modo e tutto lo studio audio funzionano.
+
+## Diagnosi
+
+`nativeCommand("flex.status")` restituisce il passo raggiunto, i pacchetti e i
+campioni arrivati, i buchi nel contatore VITA, la porta UDP e se è stata usata
+la forma alternativa del comando.
+
+`nativeCommand("flex.send", {command})` manda una riga a mano sul canale di
+comando: è così che si chiude la parte di sequenza che non abbiamo potuto
+verificare, senza ricompilare niente.
 
 ## Dove guardare nel codice
 

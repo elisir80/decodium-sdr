@@ -27,6 +27,10 @@
 #include "hal/backends/audiorig/AudiorigBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_FLEX
+#include "hal/backends/flex/FlexBackend.h"
+#endif
+
 #ifdef DSDR_BACKEND_HERMES
 #include "hal/backends/hermes/HermesBackend.h"
 #endif
@@ -157,6 +161,18 @@ void registerBuiltinBackends()
                                    "sintonizzabile, demodulabile, con il suo waterfall. "
                                    "Con la differenza che il tempo si può riavvolgere.")},
         [](QObject *parent) -> IRadioBackend * { return new IqFileBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_FLEX
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("flex"),
+                    QStringLiteral("FlexRadio serie 6000 (SmartSDR)"),
+                    QStringLiteral("Canale di comando su TCP e flusso IQ in VITA-49 "
+                                   "attraverso DAX. La sequenza che apre il flusso non "
+                                   "è ancora stata provata su una radio vera: se non "
+                                   "passa, il backend dice su quale comando si è "
+                                   "fermato invece di restare zitto.")},
+        [](QObject *parent) -> IRadioBackend * { return new FlexBackend(parent); });
 #endif
 
 #ifdef DSDR_BACKEND_HERMES
