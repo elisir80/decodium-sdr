@@ -158,6 +158,18 @@ Rectangle {
         onWheel: (wheel) => wheel.accepted = true
     }
 
+    // ── Due righe, non una ───────────────────────────────────────────────
+    //
+    // Con tutti i comandi in fila la targa era larga quasi quanto la finestra,
+    // e una targa che copre lo spettro da un bordo all'altro nasconde proprio
+    // ciò per cui sta lì. Piegata in due diventa metà larga e alta il doppio:
+    // sul waterfall lo spazio verticale è quello che costa meno, perché una
+    // riga di storia in più non è un segnale in meno.
+    //
+    // La piega non è a metà a caso. Sopra sta quello che si **legge** — quale
+    // ricevitore, dove sta, quanto arriva — e sotto quello che si **tocca**.
+    // Sono due gesti diversi: il primo si fa continuamente e di sbieco, il
+    // secondo si fa di rado e guardando.
     RowLayout {
         id: row
         anchors.centerIn: parent
@@ -177,6 +189,9 @@ Rectangle {
             // significa non fare niente — significa che il gesto arriva allo
             // spettro sotto, che lo interpreta come una sintonia.
             implicitWidth: 22
+            // Alta quanto la targa: la maniglia si prende su tutta l'altezza,
+            // e con due righe cercarla solo in cima sarebbe cercarla a metà.
+            Layout.fillHeight: true
             implicitHeight: 26
 
             Column {
@@ -207,269 +222,285 @@ Rectangle {
 
         }
 
-        // ── Etichetta del canale ─────────────────────────────────────────
-        Rectangle {
-            implicitWidth: tag.implicitWidth + 2 * Theme.spacing
-            implicitHeight: tag.implicitHeight + 4
-            radius: Theme.radiusSmall
-            color: root.channelColor
-
-            Text {
-                id: tag
-                anchors.centerIn: parent
-                text: root.label
-                font.pixelSize: Theme.fontSmall
-                font.bold: true
-                font.letterSpacing: 1
-                // Il testo sta sopra il colore del canale, che è chiaro: qui
-                // il nero è il contrasto, non una tinta del tema.
-                color: Theme.surfaceSunken
-            }
-        }
-
-        // ── Frequenza ────────────────────────────────────────────────────
-        FrequencyDisplay {
-            frequencyHz: root.frequencyHz
-            minimumHz: Session.capabilities.minFrequency
-            maximumHz: Session.capabilities.maxFrequency > 0
-                       ? Session.capabilities.maxFrequency : 30000000
-            editable: Session.connected
-            digitSize: 26
-            onTuneRequested: (hz) => Session.setChannelFrequency(root.index, hz)
-        }
-
-        // ── Livello ──────────────────────────────────────────────────────
         ColumnLayout {
-            spacing: 1
+            spacing: Theme.spacingTight
 
-            SignalMeter {
-                Layout.preferredWidth: 132
-                Layout.preferredHeight: 18
-                levelDb: root.signalDb
-                noiseFloorDb: root.noiseFloorDb
-            }
-        }
-
-        // ── Passo di sintonia ────────────────────────────────────────────
-        //
-        // Era cablato nel codice della rotellina, e l'unico modo di sapere di
-        // quanto ci si stesse muovendo era muoversi e guardare.
-        RowLayout {
-            spacing: 2
-
-            Text {
-                text: qsTr("STEP")
-                font.pixelSize: Theme.fontSmall
-                color: Theme.textDisabled
-            }
-
-            DsdrButton {
-                text: "◀"
-                implicitWidth: 22
-                implicitHeight: 22
-                enabled: Tuning.stepHz > Tuning.steps[0]
-                onClicked: Tuning.shift(-1)
-            }
-
-            Text {
-                text: Tuning.label(Tuning.stepHz)
-                font.pixelSize: Theme.fontSmall
-                font.family: Theme.monoFamily
-                color: Theme.accent
-                horizontalAlignment: Text.AlignHCenter
-                Layout.preferredWidth: 30
-            }
-
-            DsdrButton {
-                text: "▶"
-                implicitWidth: 22
-                implicitHeight: 22
-                enabled: Tuning.stepHz < Tuning.steps[Tuning.steps.length - 1]
-                onClicked: Tuning.shift(1)
-            }
-        }
-
-        // ── Silenzia ─────────────────────────────────────────────────────
-        //
-        // Nella targa e non solo nel pannello: si silenzia un canale mentre si
-        // ascolta, cioè guardando lo spettro, non la colonna laterale.
-        DsdrButton {
-            text: root.muted ? qsTr("MUTO") : qsTr("AUDIO")
-            implicitWidth: 62
-            implicitHeight: 24
-            checkable: true
-            checked: root.muted
-            danger: root.muted
-            onToggled: Session.setChannelMuted(root.index, checked)
-        }
-
-        // Il volume accanto al silenzia, non in fondo alla colonna: sono la
-        // stessa manopola divisa in due, e chi abbassa spesso finisce per
-        // volere l'una o l'altra. Da muto il cursore si spegne — muoverlo
-        // senza sentire niente è il modo più efficace di credere che il guasto
-        // sia altrove.
-        DsdrSlider {
-            implicitWidth: 84
-            enabled: !root.muted
-            from: 0; to: 1
-            value: root.volume
-            accentColor: root.channelColor
-            onMoved: Session.setChannelVolume(root.index, value)
-        }
-
-        // ── Dove si è: banda e modo ──────────────────────────────────────
-        //
-        // Vicini perché si scelgono insieme. Si cambia banda e la prima cosa
-        // dopo è il modo, perché sotto i dieci megahertz si sta in LSB e sopra
-        // in USB, e su una banda nuova quello di prima è quasi sempre quello
-        // sbagliato. Tenerli ai due capi della targa voleva dire attraversarla
-        // due volte per un gesto solo.
-        //
-        // Il bandstack è condiviso con il pannello di sintonia: la banda
-        // ricorda dove la si era lasciata comunque la si sia scelta.
-        PlateChip {
-            text: root.bandName
-            enabled: Session.connected
-            model: Memories.reachableBands.map(band => band.name)
-            currentIndex: {
-                const bands = Memories.reachableBands
-                for (let i = 0; i < bands.length; ++i) {
-                    if (bands[i].name === root.bandName)
-                        return i
-                }
-                return -1
-            }
-            onSelected: (index) => {
-                Session.channels.currentIndex = root.index
-                Memories.selectBand(Memories.reachableBands[index])
-            }
-        }
-
-        // A menu e non a pulsantiera come nella colonna: qui lo spazio è una
-        // riga sopra il waterfall, e undici modi in fila la renderebbero più
-        // larga della finestra. Il menu costa un gesto in più e non copre il
-        // segnale quando è chiuso, che è il compromesso giusto per una targa
-        // che sta sopra ciò che si guarda.
-        PlateChip {
-            text: root.modeName
-            enabled: Session.connected
-            model: Session.modeNames()
-            currentIndex: root.mode
-            onSelected: (index) => Session.setChannelMode(root.index, index)
-        }
-
-        PlateChip {
-            text: FilterPresets.label(root.filterWidthHz)
-            enabled: Session.connected
-            model: root.filterChoices.map(FilterPresets.label)
-            // Il filtro in uso può non essere fra quelli proposti — lo si
-            // regola anche a mano dal pannello — e allora nessuna voce è
-            // segnata: meglio di una spuntata a caso.
-            currentIndex: root.filterChoices.indexOf(root.filterWidthHz)
-            onSelected: (index) => FilterPresets.applyWidth(
-                            root.index, root.mode, root.filterChoices[index],
-                            root.filterLowHz, root.filterHighHz)
-        }
-
-        PlateChip {
-            text: qsTr("AGC %1").arg(root.agcName)
-            enabled: Session.connected
-            model: Session.agcModeNames()
-            currentIndex: root.agcMode
-            onSelected: (index) => Session.setChannelAgcMode(root.index, index)
-        }
-
-        // ── Filtri di disturbo ───────────────────────────────────────────
-        //
-        // In un blocco solo, con la sua cornice. Sono cinque interruttori che
-        // in fila con gli altri comandi si leggevano come cinque comandi
-        // scollegati: quando il rumore peggiora si cerca *questa* zona della
-        // targa, non un interruttore per volta.
-        //
-        // Interruttori e non un menu: si accendono guardando lo spettro — si
-        // alza il rumore, si preme, si sente se è servito — e un gesto in più
-        // per aprire un elenco è un gesto durante il quale non si ascolta.
-        // Nella colonna ci sono già con i loro cursori: la regolazione fine
-        // resta di là, dove c'è spazio per spiegarla.
-        //
-        // Nessuno dei cinque è gratis, ed è per questo che nascono spenti.
-        Rectangle {
-            Layout.alignment: Qt.AlignVCenter
-
-            implicitWidth: disturbances.implicitWidth + 2 * Theme.spacing
-            implicitHeight: disturbances.implicitHeight + 2 * Theme.spacingTight
-            radius: Theme.radiusSmall
-            // Incassato e con il bordo marcato: un riquadro appena accennato,
-            // su una riga già piena di riquadri, non raggruppa niente — si
-            // legge come un sesto comando invece che come la cornice degli
-            // altri cinque.
-            color: Theme.background
-            border.width: 1
-            border.color: Theme.borderStrong
-
+            // ── Riga di sopra: quello che si legge ───────────────────────
             RowLayout {
-                id: disturbances
+                spacing: Theme.spacingLoose
 
-                anchors.centerIn: parent
-                spacing: Theme.spacingTight
+                // ── Etichetta del canale ─────────────────────────────────────────
+                Rectangle {
+                    implicitWidth: tag.implicitWidth + 2 * Theme.spacing
+                    implicitHeight: tag.implicitHeight + 4
+                    radius: Theme.radiusSmall
+                    color: root.channelColor
 
-                // Riduzione di rumore del canale.
-                PlateToggle {
-                    text: qsTr("NR")
-                    enabled: Session.connected
-                    checked: root.nrEnabled
-                    onToggled: Session.setChannelNoiseReduction(root.index, !root.nrEnabled,
-                                                                root.nrStrength)
+                    Text {
+                        id: tag
+                        anchors.centerIn: parent
+                        text: root.label
+                        font.pixelSize: Theme.fontSmall
+                        font.bold: true
+                        font.letterSpacing: 1
+                        // Il testo sta sopra il colore del canale, che è chiaro: qui
+                        // il nero è il contrasto, non una tinta del tema.
+                        color: Theme.surfaceSunken
+                    }
                 }
 
-                // Riduzione neurale: è di tutta la catena audio, non di questo
-                // canale, e compare solo dove il motore c'è davvero — un
-                // interruttore che non può fare niente è peggio di un
-                // interruttore assente (CONSTITUTION §7).
-                PlateToggle {
-                    visible: Session.neuralAvailable
-                    text: qsTr("DNR")
-                    enabled: Session.connected
-                    checked: Session.neuralEnabled
-                    // Tinta diversa dagli altri: costa un thread e qualche
-                    // millisecondo di ritardo, e chi lo tiene acceso deve
-                    // ricordarselo.
-                    activeColor: Theme.spectrumPeak
-                    onToggled: Session.setNeuralNr(!Session.neuralEnabled)
+                // ── Frequenza ────────────────────────────────────────────────────
+                FrequencyDisplay {
+                    frequencyHz: root.frequencyHz
+                    minimumHz: Session.capabilities.minFrequency
+                    maximumHz: Session.capabilities.maxFrequency > 0
+                               ? Session.capabilities.maxFrequency : 30000000
+                    editable: Session.connected
+                    digitSize: 26
+                    onTuneRequested: (hz) => Session.setChannelFrequency(root.index, hz)
                 }
 
-                // Soppressore di impulsi: di catena, perché un impulso arriva
-                // su tutta la banda campionata e va tolto prima che i canali
-                // decimino.
-                PlateToggle {
-                    text: qsTr("NB")
-                    enabled: Session.connected
-                    checked: Session.noiseBlanker
-                    onToggled: Session.setNoiseBlanker(!Session.noiseBlanker,
-                                                       Session.noiseBlankerThreshold)
+                // ── Livello ──────────────────────────────────────────────────────
+                ColumnLayout {
+                    spacing: 1
+
+                    SignalMeter {
+                        Layout.preferredWidth: 132
+                        Layout.preferredHeight: 18
+                        levelDb: root.signalDb
+                        noiseFloorDb: root.noiseFloorDb
+                    }
                 }
 
-                // Notch automatico: toglie i fischi, e su una voce si sente.
-                PlateToggle {
-                    text: qsTr("ANF")
-                    enabled: Session.connected
-                    checked: root.anfEnabled
-                    onToggled: Session.setChannelAutoNotch(root.index, !root.anfEnabled)
+            }
+
+            // ── Riga di sotto: quello che si tocca ───────────────────────
+            RowLayout {
+                spacing: Theme.spacingLoose
+
+                // ── Passo di sintonia ────────────────────────────────────────────
+                //
+                // Era cablato nel codice della rotellina, e l'unico modo di sapere di
+                // quanto ci si stesse muovendo era muoversi e guardare.
+                RowLayout {
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("STEP")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textDisabled
+                    }
+
+                    DsdrButton {
+                        text: "◀"
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        enabled: Tuning.stepHz > Tuning.steps[0]
+                        onClicked: Tuning.shift(-1)
+                    }
+
+                    Text {
+                        text: Tuning.label(Tuning.stepHz)
+                        font.pixelSize: Theme.fontSmall
+                        font.family: Theme.monoFamily
+                        color: Theme.accent
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.preferredWidth: 30
+                    }
+
+                    DsdrButton {
+                        text: "▶"
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        enabled: Tuning.stepHz < Tuning.steps[Tuning.steps.length - 1]
+                        onClicked: Tuning.shift(1)
+                    }
                 }
 
-                // I notch manuali si piazzano con il tasto destro sullo
-                // spettro. Qui si contano e si tolgono tutti insieme:
-                // dimenticarne uno sopra un segnale che si voleva ascoltare è
-                // il modo più efficace di credere che la radio sia sorda
-                // proprio lì.
-                PlateToggle {
-                    visible: root.notches.length > 0
-                    text: qsTr("NOTCH %1").arg(root.notches.length)
-                    enabled: Session.connected
-                    checked: true
-                    activeColor: Theme.danger
-                    onToggled: Session.clearChannelNotches(root.index)
+                // ── Silenzia ─────────────────────────────────────────────────────
+                //
+                // Nella targa e non solo nel pannello: si silenzia un canale mentre si
+                // ascolta, cioè guardando lo spettro, non la colonna laterale.
+                DsdrButton {
+                    text: root.muted ? qsTr("MUTO") : qsTr("AUDIO")
+                    implicitWidth: 62
+                    implicitHeight: 24
+                    checkable: true
+                    checked: root.muted
+                    danger: root.muted
+                    onToggled: Session.setChannelMuted(root.index, checked)
                 }
+
+                // Il volume accanto al silenzia, non in fondo alla colonna: sono la
+                // stessa manopola divisa in due, e chi abbassa spesso finisce per
+                // volere l'una o l'altra. Da muto il cursore si spegne — muoverlo
+                // senza sentire niente è il modo più efficace di credere che il guasto
+                // sia altrove.
+                DsdrSlider {
+                    implicitWidth: 84
+                    enabled: !root.muted
+                    from: 0; to: 1
+                    value: root.volume
+                    accentColor: root.channelColor
+                    onMoved: Session.setChannelVolume(root.index, value)
+                }
+
+                // ── Dove si è: banda e modo ──────────────────────────────────────
+                //
+                // Vicini perché si scelgono insieme. Si cambia banda e la prima cosa
+                // dopo è il modo, perché sotto i dieci megahertz si sta in LSB e sopra
+                // in USB, e su una banda nuova quello di prima è quasi sempre quello
+                // sbagliato. Tenerli ai due capi della targa voleva dire attraversarla
+                // due volte per un gesto solo.
+                //
+                // Il bandstack è condiviso con il pannello di sintonia: la banda
+                // ricorda dove la si era lasciata comunque la si sia scelta.
+                PlateChip {
+                    text: root.bandName
+                    enabled: Session.connected
+                    model: Memories.reachableBands.map(band => band.name)
+                    currentIndex: {
+                        const bands = Memories.reachableBands
+                        for (let i = 0; i < bands.length; ++i) {
+                            if (bands[i].name === root.bandName)
+                                return i
+                        }
+                        return -1
+                    }
+                    onSelected: (index) => {
+                        Session.channels.currentIndex = root.index
+                        Memories.selectBand(Memories.reachableBands[index])
+                    }
+                }
+
+                // A menu e non a pulsantiera come nella colonna: qui lo spazio è una
+                // riga sopra il waterfall, e undici modi in fila la renderebbero più
+                // larga della finestra. Il menu costa un gesto in più e non copre il
+                // segnale quando è chiuso, che è il compromesso giusto per una targa
+                // che sta sopra ciò che si guarda.
+                PlateChip {
+                    text: root.modeName
+                    enabled: Session.connected
+                    model: Session.modeNames()
+                    currentIndex: root.mode
+                    onSelected: (index) => Session.setChannelMode(root.index, index)
+                }
+
+                PlateChip {
+                    text: FilterPresets.label(root.filterWidthHz)
+                    enabled: Session.connected
+                    model: root.filterChoices.map(FilterPresets.label)
+                    // Il filtro in uso può non essere fra quelli proposti — lo si
+                    // regola anche a mano dal pannello — e allora nessuna voce è
+                    // segnata: meglio di una spuntata a caso.
+                    currentIndex: root.filterChoices.indexOf(root.filterWidthHz)
+                    onSelected: (index) => FilterPresets.applyWidth(
+                                    root.index, root.mode, root.filterChoices[index],
+                                    root.filterLowHz, root.filterHighHz)
+                }
+
+                PlateChip {
+                    text: qsTr("AGC %1").arg(root.agcName)
+                    enabled: Session.connected
+                    model: Session.agcModeNames()
+                    currentIndex: root.agcMode
+                    onSelected: (index) => Session.setChannelAgcMode(root.index, index)
+                }
+
+                // ── Filtri di disturbo ───────────────────────────────────────────
+                //
+                // In un blocco solo, con la sua cornice. Sono cinque interruttori che
+                // in fila con gli altri comandi si leggevano come cinque comandi
+                // scollegati: quando il rumore peggiora si cerca *questa* zona della
+                // targa, non un interruttore per volta.
+                //
+                // Interruttori e non un menu: si accendono guardando lo spettro — si
+                // alza il rumore, si preme, si sente se è servito — e un gesto in più
+                // per aprire un elenco è un gesto durante il quale non si ascolta.
+                // Nella colonna ci sono già con i loro cursori: la regolazione fine
+                // resta di là, dove c'è spazio per spiegarla.
+                //
+                // Nessuno dei cinque è gratis, ed è per questo che nascono spenti.
+                Rectangle {
+                    Layout.alignment: Qt.AlignVCenter
+
+                    implicitWidth: disturbances.implicitWidth + 2 * Theme.spacing
+                    implicitHeight: disturbances.implicitHeight + 2 * Theme.spacingTight
+                    radius: Theme.radiusSmall
+                    // Incassato e con il bordo marcato: un riquadro appena accennato,
+                    // su una riga già piena di riquadri, non raggruppa niente — si
+                    // legge come un sesto comando invece che come la cornice degli
+                    // altri cinque.
+                    color: Theme.background
+                    border.width: 1
+                    border.color: Theme.borderStrong
+
+                    RowLayout {
+                        id: disturbances
+
+                        anchors.centerIn: parent
+                        spacing: Theme.spacingTight
+
+                        // Riduzione di rumore del canale.
+                        PlateToggle {
+                            text: qsTr("NR")
+                            enabled: Session.connected
+                            checked: root.nrEnabled
+                            onToggled: Session.setChannelNoiseReduction(root.index, !root.nrEnabled,
+                                                                        root.nrStrength)
+                        }
+
+                        // Riduzione neurale: è di tutta la catena audio, non di questo
+                        // canale, e compare solo dove il motore c'è davvero — un
+                        // interruttore che non può fare niente è peggio di un
+                        // interruttore assente (CONSTITUTION §7).
+                        PlateToggle {
+                            visible: Session.neuralAvailable
+                            text: qsTr("DNR")
+                            enabled: Session.connected
+                            checked: Session.neuralEnabled
+                            // Tinta diversa dagli altri: costa un thread e qualche
+                            // millisecondo di ritardo, e chi lo tiene acceso deve
+                            // ricordarselo.
+                            activeColor: Theme.spectrumPeak
+                            onToggled: Session.setNeuralNr(!Session.neuralEnabled)
+                        }
+
+                        // Soppressore di impulsi: di catena, perché un impulso arriva
+                        // su tutta la banda campionata e va tolto prima che i canali
+                        // decimino.
+                        PlateToggle {
+                            text: qsTr("NB")
+                            enabled: Session.connected
+                            checked: Session.noiseBlanker
+                            onToggled: Session.setNoiseBlanker(!Session.noiseBlanker,
+                                                               Session.noiseBlankerThreshold)
+                        }
+
+                        // Notch automatico: toglie i fischi, e su una voce si sente.
+                        PlateToggle {
+                            text: qsTr("ANF")
+                            enabled: Session.connected
+                            checked: root.anfEnabled
+                            onToggled: Session.setChannelAutoNotch(root.index, !root.anfEnabled)
+                        }
+
+                        // I notch manuali si piazzano con il tasto destro sullo
+                        // spettro. Qui si contano e si tolgono tutti insieme:
+                        // dimenticarne uno sopra un segnale che si voleva ascoltare è
+                        // il modo più efficace di credere che la radio sia sorda
+                        // proprio lì.
+                        PlateToggle {
+                            visible: root.notches.length > 0
+                            text: qsTr("NOTCH %1").arg(root.notches.length)
+                            enabled: Session.connected
+                            checked: true
+                            activeColor: Theme.danger
+                            onToggled: Session.clearChannelNotches(root.index)
+                        }
+                    }
+                }
+
             }
         }
     }

@@ -115,6 +115,15 @@ class SessionManager : public QObject
                    NOTIFY noiseBlankerChanged)
     Q_PROPERTY(double noiseBlankerActivity READ noiseBlankerActivity NOTIFY replayChanged)
 
+    // ── Salute del collegamento ─────────────────────────────────────────
+    //
+    // Quanto del flusso atteso sta arrivando davvero, da 0 a 1, e se la
+    // sorgente sta dall'altra parte di una rete. Il secondo serve al primo:
+    // su una radio attaccata al bus il rapporto sta incollato a uno e mostrarlo
+    // sarebbe un numero che non dice mai niente.
+    Q_PROPERTY(double streamHealth READ streamHealth NOTIFY streamHealthChanged)
+    Q_PROPERTY(bool streamOverNetwork READ streamOverNetwork NOTIFY connectionChanged)
+
     // ── Guardia contro la saturazione (SPEC-003 §3) ─────────────────────
     Q_PROPERTY(bool overloaded READ overloaded NOTIFY overloadChanged)
     Q_PROPERTY(double peakDbfs READ peakDbfs NOTIFY overloadChanged)
@@ -279,6 +288,21 @@ public:
     double replayHistorySeconds() const { return m_replayHistory; }
     double replayCapacitySeconds() const;
     bool replaying() const { return m_replayDelay > 0.05; }
+
+    /// Quanto del flusso atteso arriva davvero, da 0 a 1.
+    ///
+    /// È il rapporto fra i campioni contati nell'ultimo secondo e quelli che la
+    /// frequenza di campionamento dichiarata prometteva. Su una sorgente locale
+    /// sta incollato a uno; su una di rete scende appena il collegamento
+    /// comincia a perdere pezzi — e scende **prima** che si senta qualcosa, che
+    /// è l'unico momento in cui saperlo serve.
+    ///
+    /// Vale −1 finché non c'è una misura: un secondo di attesa dopo la
+    /// connessione, e dopo ogni riconfigurazione.
+    double streamHealth() const { return m_streamHealth; }
+
+    /// Se la sorgente aperta sta dall'altra parte di una rete.
+    bool streamOverNetwork() const;
 
     bool overloaded() const { return m_overloaded; }
     double peakDbfs() const { return m_peakDbfs; }
@@ -486,6 +510,7 @@ signals:
     void sampleRateChanged();
     void replayChanged();
     void noiseBlankerChanged();
+    void streamHealthChanged();
     void neuralChanged();
     void overloadChanged();
     void spectrumAveragingChanged();
@@ -553,6 +578,7 @@ private:
     int m_overloadMode = 0;
     bool m_nbEnabled = false;
     bool m_neuralEnabled = false;
+    double m_streamHealth = -1.0;
     bool m_overloaded = false;
 
     bool m_txMetersAvailable = false;

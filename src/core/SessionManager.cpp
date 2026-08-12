@@ -304,6 +304,26 @@ SessionManager::SessionManager(QObject *parent)
                 emit replayChanged();
             });
 
+    // Una volta al secondo il motore dice quanti campioni sono arrivati e
+    // quanti ne aspettava: da lì la salute del collegamento.
+    connect(m_engine, &DspEngine::streamRateMeasured, this,
+            [this](double measured, double nominal) {
+                if (!(nominal > 0.0)) {
+                    m_streamHealth = -1.0;
+                    emit streamHealthChanged();
+                    return;
+                }
+                // Il rapporto si tronca a uno: un secondo può contenerne un po'
+                // più del dovuto quando il precedente ne aveva contati meno, e
+                // un «103 %» in fondo alla finestra è solo una domanda in più
+                // per chi legge.
+                const double health = std::clamp(measured / nominal, 0.0, 1.0);
+                if (std::abs(health - m_streamHealth) < 0.005)
+                    return;
+                m_streamHealth = health;
+                emit streamHealthChanged();
+            });
+
     // La guardia parla poco: quando l'ingresso entra o esce dalla saturazione, e
     // quando avrebbe una correzione da chiedere.
     connect(m_engine, &DspEngine::overloadStateChanged, this,
@@ -360,6 +380,26 @@ SessionManager::SessionManager(QObject *parent)
         setStatus(message);
         emit errorReported(message, false);
     });
+
+    // Una volta al secondo il motore dice quanti campioni sono arrivati e
+    // quanti ne aspettava: da lì la salute del collegamento.
+    connect(m_engine, &DspEngine::streamRateMeasured, this,
+            [this](double measured, double nominal) {
+                if (!(nominal > 0.0)) {
+                    m_streamHealth = -1.0;
+                    emit streamHealthChanged();
+                    return;
+                }
+                // Il rapporto si tronca a uno: un secondo può contenerne un po'
+                // più del dovuto quando il precedente ne aveva contati meno, e
+                // un «103 %» in fondo alla finestra è solo una domanda in più
+                // per chi legge.
+                const double health = std::clamp(measured / nominal, 0.0, 1.0);
+                if (std::abs(health - m_streamHealth) < 0.005)
+                    return;
+                m_streamHealth = health;
+                emit streamHealthChanged();
+            });
 
     // La guardia parla poco: quando l'ingresso entra o esce dalla saturazione, e
     // quando avrebbe una correzione da chiedere.
@@ -698,6 +738,20 @@ void SessionManager::scoutNetwork(int seconds)
     setStatus(tr("Cerco radio in rete…"));
     m_scout->start(seconds);
     emit networkRadiosChanged();
+}
+
+bool SessionManager::streamOverNetwork() const
+{
+    if (!m_backend || !m_connected)
+        return false;
+
+    // I nomi dei transport li scelgono i backend, e sono quelli: `net` per il
+    // CAT via rigctl, `tcp` per rtl_tcp e SpyServer, `udp` per Hermes. Gli
+    // altri — `usb`, `soapy`, `file`, `synthetic` — non passano da nessuna
+    // rete, e per loro la misura non ha niente da dire.
+    static const QStringList networked = {QStringLiteral("net"), QStringLiteral("tcp"),
+                                          QStringLiteral("udp")};
+    return networked.contains(m_backend->currentDevice().transport);
 }
 
 void SessionManager::probeNetworkRadio(const QString &address)

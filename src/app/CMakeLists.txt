@@ -33,6 +33,7 @@ set(DSDR_QML_FILES
     qml/Memories.qml
     qml/Markers.qml
     qml/SpectrumCursor.qml
+    qml/NetworkQuality.qml
     qml/FrequencyPanel.qml
     qml/FrequencyGrid.qml
     qml/LevelScale.qml

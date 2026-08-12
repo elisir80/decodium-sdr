@@ -174,6 +174,16 @@ signals:
     /// chiederebbe di correggere il guadagno (0 se non chiede nulla).
     void overloadStateChanged(bool overloaded, double peakDbfs, double requestDb);
 
+    /// Quanti campioni al secondo sono arrivati davvero, e quanti se ne
+    /// aspettavano. Una volta al secondo, dallo stesso punto in cui il motore
+    /// tira le somme per il log.
+    ///
+    /// È la misura che dice se il flusso regge. Su una sorgente locale il
+    /// rapporto sta incollato a uno; su una di rete scende appena il
+    /// collegamento comincia a perdere pezzi, e scende **prima** che si senta
+    /// qualcosa — che è l'unico momento in cui saperlo serve a qualcosa.
+    void streamRateMeasured(double measuredRate, double nominalRate);
+
 private:
     void reconfigure();
     void processAvailable();

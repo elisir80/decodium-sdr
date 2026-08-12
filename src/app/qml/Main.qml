@@ -288,6 +288,11 @@ ApplicationWindow {
                 elide: Text.ElideRight
             }
 
+            // La salute del collegamento, dove c'è una rete di mezzo.
+            NetworkQuality {
+                Layout.alignment: Qt.AlignVCenter
+            }
+
             Text {
                 visible: Session.connected
                 text: qsTr("audio %1 · %2 ms").arg(Session.audio.deviceName).arg(Session.audio.latencyMs)

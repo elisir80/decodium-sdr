@@ -4,6 +4,45 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.1.11] — 2026-08-12
+
+### Aggiunto
+
+- **La salute del collegamento in fondo alla finestra**, dove la sorgente sta
+  dall'altra parte di una rete. È il rapporto fra i campioni arrivati
+  nell'ultimo secondo e quelli che la frequenza di campionamento prometteva:
+  risponde alla domanda che prima non aveva risposta — la banda è vuota, o i
+  campioni non stanno arrivando? Sullo schermo le due cose si somigliano,
+  traccia piatta e waterfall scuro, e portano a cercare il guasto in due posti
+  opposti. Non compare su una radio attaccata al bus: lì quel rapporto sta
+  incollato a uno, e un indicatore che dice sempre la stessa cosa smette di
+  essere letto.
+
+### Cambiato
+
+- **La targa del ricevitore è su due righe** e larga quasi la metà. Sopra
+  quello che si legge — quale ricevitore, dove sta, quanto arriva — sotto
+  quello che si tocca. Una targa larga quanto la finestra nasconde proprio ciò
+  per cui sta lì, e sul waterfall lo spazio verticale è quello che costa meno:
+  una riga di storia in più non è un segnale in meno.
+- **I filtri di disturbo stanno in un blocco solo**, con la sua cornice. Erano
+  cinque interruttori in fila con gli altri comandi, e si leggevano come cinque
+  comandi scollegati: quando il rumore peggiora si cerca *quella* zona della
+  targa, non un interruttore per volta.
+- **Banda e modo sono vicini.** Si scelgono insieme: si cambia banda e la prima
+  cosa dopo è il modo, perché sotto i dieci megahertz si sta in LSB e sopra in
+  USB. Stavano ai due capi della targa.
+- **Le memorie escono dalla targa** e restano nel pannello di sintonia, con lo
+  stesso archivio: erano un menu che si apriva di rado e occupava una larghezza
+  fissa su una riga che sta sopra il segnale.
+
+### Corretto
+
+- **Niente più finestra nera all'avvio** su Windows. L'eseguibile era di
+  sottosistema «console» e Windows gli apriva accanto un terminale che restava
+  lì per tutta la sessione. Il log non si perde: chi lancia da un terminale
+  ritrova tutto, e senza più dover impostare a mano una variabile d'ambiente.
+
 ## [1.1.10] — 2026-08-12
 
 ### Corretto

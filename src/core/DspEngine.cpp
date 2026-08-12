@@ -736,6 +736,11 @@ void DspEngine::processAvailable()
         const qint64 now = m_uptime.nsecsElapsed();
         if (now - m_lastStatsNs >= 1'000'000'000) {
             const double seconds = static_cast<double>(now - m_lastStatsNs) / 1e9;
+            // La stessa misura che finisce nel log va anche alla UI: dice se
+            // il flusso regge, ed è l'unica cosa che su una sorgente di rete
+            // distingue «la banda è vuota» da «i campioni non arrivano».
+            emit streamRateMeasured(m_statsIqFrames / seconds, m_activeRate);
+
             qCDebug(dsdrDsp) << "flusso DSP:"
                              << (m_statsIqFrames / seconds) << "IQ/s"
                              << (m_statsAudioFrames / seconds) << "audio/s"
