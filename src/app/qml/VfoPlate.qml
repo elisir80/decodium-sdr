@@ -50,9 +50,6 @@ Rectangle {
         return band ? band.name : qsTr("BANDA")
     }
 
-    /// Se questa frequenza è già fra le memorie.
-    readonly property bool memorized: Memories.indexOf(frequencyHz) >= 0
-
     /// Chi prende una targa sta lavorando su quel ricevitore: prenderla lo
     /// sceglie, come prendere il flag sullo spettro.
     signal selectRequested()
@@ -320,14 +317,34 @@ Rectangle {
             onMoved: Session.setChannelVolume(root.index, value)
         }
 
-        // ── Modo, filtro, AGC ────────────────────────────────────────────
+        // ── Dove si è: banda e modo ──────────────────────────────────────
         //
-        // Si cambiano da qui, non solo dalla colonna: sono le tre cose che si
-        // toccano mentre si ascolta, cioè guardando lo spettro. Prima erano
-        // etichette da leggere, e per cambiare modo bisognava spostare gli
-        // occhi dall'altra parte della finestra e ritrovare la scheda giusta
-        // fra quelle aperte.
+        // Vicini perché si scelgono insieme. Si cambia banda e la prima cosa
+        // dopo è il modo, perché sotto i dieci megahertz si sta in LSB e sopra
+        // in USB, e su una banda nuova quello di prima è quasi sempre quello
+        // sbagliato. Tenerli ai due capi della targa voleva dire attraversarla
+        // due volte per un gesto solo.
         //
+        // Il bandstack è condiviso con il pannello di sintonia: la banda
+        // ricorda dove la si era lasciata comunque la si sia scelta.
+        PlateChip {
+            text: root.bandName
+            enabled: Session.connected
+            model: Memories.reachableBands.map(band => band.name)
+            currentIndex: {
+                const bands = Memories.reachableBands
+                for (let i = 0; i < bands.length; ++i) {
+                    if (bands[i].name === root.bandName)
+                        return i
+                }
+                return -1
+            }
+            onSelected: (index) => {
+                Session.channels.currentIndex = root.index
+                Memories.selectBand(Memories.reachableBands[index])
+            }
+        }
+
         // A menu e non a pulsantiera come nella colonna: qui lo spazio è una
         // riga sopra il waterfall, e undici modi in fila la renderebbero più
         // larga della finestra. Il menu costa un gesto in più e non copre il
@@ -364,117 +381,95 @@ Rectangle {
 
         // ── Filtri di disturbo ───────────────────────────────────────────
         //
-        // Si accendono guardando lo spettro: si alza il rumore, si preme, si
-        // sente se è servito. Nella colonna ci sono già, con i loro cursori —
-        // qui c'è solo l'interruttore, che è il gesto che si fa mentre si
-        // ascolta; la regolazione fine resta di là, dove c'è spazio per
-        // spiegarla.
+        // In un blocco solo, con la sua cornice. Sono cinque interruttori che
+        // in fila con gli altri comandi si leggevano come cinque comandi
+        // scollegati: quando il rumore peggiora si cerca *questa* zona della
+        // targa, non un interruttore per volta.
         //
-        // Nessuno dei quattro è gratis, ed è per questo che nascono spenti.
-
-        // Riduzione di rumore del canale.
-        PlateToggle {
-            text: qsTr("NR")
-            enabled: Session.connected
-            checked: root.nrEnabled
-            onToggled: Session.setChannelNoiseReduction(root.index, !root.nrEnabled,
-                                                        root.nrStrength)
-        }
-
-        // Riduzione neurale: è di tutta la catena audio, non di questo canale,
-        // e compare solo dove il motore c'è davvero — un interruttore che non
-        // può fare niente è peggio di un interruttore assente
-        // (CONSTITUTION §7).
-        PlateToggle {
-            visible: Session.neuralAvailable
-            text: qsTr("DNR")
-            enabled: Session.connected
-            checked: Session.neuralEnabled
-            // Tinta diversa dagli altri: costa un thread e qualche
-            // millisecondo di ritardo, e chi lo tiene acceso deve ricordarselo.
-            activeColor: Theme.spectrumPeak
-            onToggled: Session.setNeuralNr(!Session.neuralEnabled)
-        }
-
-        // Soppressore di impulsi: di catena, perché un impulso arriva su tutta
-        // la banda campionata e va tolto prima che i canali decimino.
-        PlateToggle {
-            text: qsTr("NB")
-            enabled: Session.connected
-            checked: Session.noiseBlanker
-            onToggled: Session.setNoiseBlanker(!Session.noiseBlanker,
-                                               Session.noiseBlankerThreshold)
-        }
-
-        // Notch automatico: toglie i fischi, e su una voce si sente.
-        PlateToggle {
-            text: qsTr("ANF")
-            enabled: Session.connected
-            checked: root.anfEnabled
-            onToggled: Session.setChannelAutoNotch(root.index, !root.anfEnabled)
-        }
-
-        // I notch manuali si piazzano con il tasto destro sullo spettro. Qui
-        // si contano e si tolgono tutti insieme: dimenticarne uno sopra un
-        // segnale che si voleva ascoltare è il modo più efficace di credere
-        // che la radio sia sorda proprio lì.
-        PlateToggle {
-            visible: root.notches.length > 0
-            text: qsTr("NOTCH %1").arg(root.notches.length)
-            enabled: Session.connected
-            checked: true
-            activeColor: Theme.danger
-            onToggled: Session.clearChannelNotches(root.index)
-        }
-
-        // ── Banda e memorie ──────────────────────────────────────────────
+        // Interruttori e non un menu: si accendono guardando lo spettro — si
+        // alza il rumore, si preme, si sente se è servito — e un gesto in più
+        // per aprire un elenco è un gesto durante il quale non si ascolta.
+        // Nella colonna ci sono già con i loro cursori: la regolazione fine
+        // resta di là, dove c'è spazio per spiegarla.
         //
-        // Cambiare banda dalla targa e non dalla colonna: è il gesto che si fa
-        // quando una banda si chiude e se ne prova un'altra, e farlo senza
-        // spostare lo sguardo dallo spettro è il punto di avere la targa qui.
-        //
-        // Il bandstack è condiviso con il pannello di sintonia: la banda
-        // ricorda dove la si era lasciata comunque la si sia scelta.
-        PlateChip {
-            text: root.bandName
-            enabled: Session.connected
-            model: Memories.reachableBands.map(band => band.name)
-            currentIndex: {
-                const bands = Memories.reachableBands
-                for (let i = 0; i < bands.length; ++i) {
-                    if (bands[i].name === root.bandName)
-                        return i
+        // Nessuno dei cinque è gratis, ed è per questo che nascono spenti.
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+
+            implicitWidth: disturbances.implicitWidth + 2 * Theme.spacing
+            implicitHeight: disturbances.implicitHeight + 2 * Theme.spacingTight
+            radius: Theme.radiusSmall
+            // Incassato e con il bordo marcato: un riquadro appena accennato,
+            // su una riga già piena di riquadri, non raggruppa niente — si
+            // legge come un sesto comando invece che come la cornice degli
+            // altri cinque.
+            color: Theme.background
+            border.width: 1
+            border.color: Theme.borderStrong
+
+            RowLayout {
+                id: disturbances
+
+                anchors.centerIn: parent
+                spacing: Theme.spacingTight
+
+                // Riduzione di rumore del canale.
+                PlateToggle {
+                    text: qsTr("NR")
+                    enabled: Session.connected
+                    checked: root.nrEnabled
+                    onToggled: Session.setChannelNoiseReduction(root.index, !root.nrEnabled,
+                                                                root.nrStrength)
                 }
-                return -1
-            }
-            onSelected: (index) => {
-                Session.channels.currentIndex = root.index
-                Memories.selectBand(Memories.reachableBands[index])
-            }
-        }
 
-        // Le memorie, con in testa il comando che ne aggiunge una. Salvare e
-        // richiamare stanno insieme perché sono lo stesso gesto in due
-        // direzioni, e perché una memoria si crea quasi sempre subito dopo
-        // averne cercata una che non c'era.
-        PlateChip {
-            text: root.memorized ? qsTr("MEM ✓") : qsTr("MEM")
-            enabled: Session.connected
-            model: [root.memorized
-                        ? qsTr("Dimentica questa frequenza")
-                        : qsTr("Memorizza qui")].concat(Memories.labels)
-            onSelected: (index) => {
-                if (index === 0) {
-                    if (root.memorized)
-                        Memories.remove(root.frequencyHz)
-                    else
-                        Memories.storeChannel(root.frequencyHz, root.mode,
-                                              root.modeName,
-                                              root.filterLowHz, root.filterHighHz)
-                    return
+                // Riduzione neurale: è di tutta la catena audio, non di questo
+                // canale, e compare solo dove il motore c'è davvero — un
+                // interruttore che non può fare niente è peggio di un
+                // interruttore assente (CONSTITUTION §7).
+                PlateToggle {
+                    visible: Session.neuralAvailable
+                    text: qsTr("DNR")
+                    enabled: Session.connected
+                    checked: Session.neuralEnabled
+                    // Tinta diversa dagli altri: costa un thread e qualche
+                    // millisecondo di ritardo, e chi lo tiene acceso deve
+                    // ricordarselo.
+                    activeColor: Theme.spectrumPeak
+                    onToggled: Session.setNeuralNr(!Session.neuralEnabled)
                 }
-                Session.channels.currentIndex = root.index
-                Memories.recall(Memories.entries[index - 1], root.index)
+
+                // Soppressore di impulsi: di catena, perché un impulso arriva
+                // su tutta la banda campionata e va tolto prima che i canali
+                // decimino.
+                PlateToggle {
+                    text: qsTr("NB")
+                    enabled: Session.connected
+                    checked: Session.noiseBlanker
+                    onToggled: Session.setNoiseBlanker(!Session.noiseBlanker,
+                                                       Session.noiseBlankerThreshold)
+                }
+
+                // Notch automatico: toglie i fischi, e su una voce si sente.
+                PlateToggle {
+                    text: qsTr("ANF")
+                    enabled: Session.connected
+                    checked: root.anfEnabled
+                    onToggled: Session.setChannelAutoNotch(root.index, !root.anfEnabled)
+                }
+
+                // I notch manuali si piazzano con il tasto destro sullo
+                // spettro. Qui si contano e si tolgono tutti insieme:
+                // dimenticarne uno sopra un segnale che si voleva ascoltare è
+                // il modo più efficace di credere che la radio sia sorda
+                // proprio lì.
+                PlateToggle {
+                    visible: root.notches.length > 0
+                    text: qsTr("NOTCH %1").arg(root.notches.length)
+                    enabled: Session.connected
+                    checked: true
+                    activeColor: Theme.danger
+                    onToggled: Session.clearChannelNotches(root.index)
+                }
             }
         }
     }

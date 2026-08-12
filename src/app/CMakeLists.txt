@@ -128,6 +128,19 @@ add_library(dsdr::qml ALIAS dsdr_qml)
 qt_add_executable(dsdr_app main.cpp)
 
 set_target_properties(dsdr_app PROPERTIES OUTPUT_NAME "decodium-sdr")
+
+# Su Windows: applicazione grafica, non di console.
+#
+# Senza questo l'eseguibile è di sottosistema «console» e Windows gli apre
+# accanto una finestra nera che resta lì per tutta la sessione. Non serve a
+# niente e sembra un errore — è la prima cosa che si nota lanciando il
+# programma dal menù.
+#
+# Il log non si perde: `attachToParentConsole()` in main.cpp riaggancia i
+# flussi standard alla console di chi ci ha lanciati, quando ce n'è una.
+if(WIN32)
+    set_target_properties(dsdr_app PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 target_compile_definitions(dsdr_app PRIVATE DSDR_VERSION="${PROJECT_VERSION}")
 
 # Su macOS l'applicazione dev'essere un bundle, e non lo è per default: senza,
