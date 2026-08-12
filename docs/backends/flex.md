@@ -147,16 +147,70 @@ Si prova la prima; se la radio la rifiuta si prova la seconda, una volta sola.
 Rifiutate entrambe, il problema non è la forma, e continuare a provare
 nasconderebbe la diagnosi invece di darla.
 
+## La trasmissione
+
+La voce fa la strada opposta, e la fa con lo stesso formato: pacchetti VITA-49
+verso la **porta 4993** della radio, con il codice di classe che dichiara
+trentadue bit per campione, due canali, virgola mobile — esattamente quello che
+si legge in ricezione, costruito all'incontrario.
+
+Tre cose vanno dette con precisione, perché sono quelle che si sbagliano.
+
+**Il formato è a due canali e la voce è una sola.** Si duplica su entrambi.
+Mandarla su uno e lasciare l'altro a zero non dà silenzio: dà metà livello, e
+chi trasmette è l'ultimo ad accorgersene.
+
+**La velocità è 24 kHz, il motore TX produce a 48**, e il dimezzamento passa da
+un passa-basso — non dal prendere un campione su due. Decimare senza filtro
+butta la banda fra 12 e 24 kHz addosso a quella che resta, e lì sopra qualcosa
+c'è sempre: il limiter in coda alla catena genera armoniche per mestiere.
+Ripiegate non si sentono come acuti, si sentono come una voce sporca.
+
+**La frequenza di trasmissione non la decide DECODIUM.** Su un Flex trasmette la
+*slice* marcata TX, e questo backend le slice non le crea né le governa: apre un
+flusso DAX IQ e un panadapter, che sono la ricezione. Mandare `slice tune` a una
+slice altrui vorrebbe dire spostare la frequenza di SmartSDR aperto accanto, che
+su queste radio è il caso normale. Quindi `setTxFrequency` **non manda niente**,
+e lo scrive nel diario invece di far credere il contrario. Chi preme PTT
+trasmette dove la radio è messa.
+
+### Il guinzaglio
+
+`xmit 1` è l'unica riga di tutto il programma che manda una radio in aria, e la
+regola qui è più stretta che altrove: **niente può lasciare il trasmettitore
+inserito.**
+
+- Se cade il canale di comando mentre si trasmette, il PTT si rilascia subito —
+  senza aspettare niente, perché si sa già che il `xmit 0` non arriverebbe.
+- Se nessuno chiude la trasmissione entro **due minuti**, la chiude il
+  temporizzatore, e lo dice. Non è un caso da manuale: è quello che succede
+  quando il programma si impianta o la rete cade, e una portante lasciata in
+  frequenza non se ne va da sola.
+- `close()` rilascia il PTT prima di ogni altra cosa.
+- Il PTT si rifiuta se il flusso audio di trasmissione non si è aperto: una
+  portante muta occupa la frequenza e non se ne accorge nessuno tranne i vicini.
+
+### Che cosa è verificato e che cosa no
+
+Il pacchetto che mandiamo alla radio viene **riletto dal decodificatore che
+legge quelli che la radio manda a noi**: se le due metà non si parlano, il
+difetto è nostro e non del firmware. È l'unica parte che si può stabilire senza
+avere l'apparato, ed è verificata (`tst_flex_protocol`).
+
+Quello che resta da provare su una radio vera è il comando che apre il flusso —
+anche qui le fonti ne descrivono due forme, `stream create type=dax_tx` e
+`dax tx 1`, e valgono le stesse regole della ricezione: si prova la prima, e se
+viene rifiutata la seconda, una volta sola.
+
 ## Quello che manca ancora
 
-- **Provare la sequenza su una radio vera.** È l'unica cosa che manca al
-  ricevitore.
-- **La trasmissione.** Passa da DAX MIC, che è un'altra metà di protocollo e
-  non è scritta: le capability dichiarano `TxSupport::None`, quindi la UI non
-  mostra un PTT che non farebbe niente (CONSTITUTION §7).
+- **Provare tutto su una radio vera.** Ricezione e trasmissione: è la sola cosa
+  che manca, e nessun test la sostituisce.
 - **Il DAX Audio** — i canali audio demodulati per fetta — non è affrontato:
   qui si prende l'IQ e si demodula da questa parte, con tutta la catena della
   SPEC-003.
+- **Le slice**, che sono il modo in cui un Flex governa frequenza e modo di
+  trasmissione. Finché non ci sono, la trasmissione segue la radio.
 
 ## Nel frattempo, un Flex si usa già
 
@@ -170,7 +224,9 @@ frequenza, modo e tutto lo studio audio funzionano.
 
 `nativeCommand("flex.status")` restituisce il passo raggiunto, i pacchetti e i
 campioni arrivati, i buchi nel contatore VITA, la porta UDP e se è stata usata
-la forma alternativa del comando.
+la forma alternativa del comando. Dal lato trasmissione: se il flusso si è
+aperto, quanti pacchetti sono partiti, se si è in aria, e la frequenza TX che il
+client ha chiesto — quella che non viene mandata alla radio.
 
 `nativeCommand("flex.send", {command})` manda una riga a mano sul canale di
 comando: è così che si chiude la parte di sequenza che non abbiamo potuto
@@ -182,6 +238,8 @@ verificare, senza ricompilare niente.
 src/hal/backends/flex/
     FlexProtocol.h/.cpp   le righe, pure e statiche
     FlexClient.h/.cpp     il canale di comando su TCP 4992
+    FlexVita.h/.cpp       VITA-49 nei due versi: si legge e si costruisce
+    FlexBackend.h/.cpp    la sequenza, il flusso, il PTT e il suo guinzaglio
 src/hal/RadioScout.h      il rilevamento, condiviso con le altre famiglie
 tests/hal/tst_flex_protocol.cpp
 ```

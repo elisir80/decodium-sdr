@@ -130,4 +130,67 @@ std::size_t decodeIq(const QByteArray &datagram, const VitaPacket &packet, float
     return static_cast<std::size_t>(values / 2);
 }
 
+void buildTxAudioPacket(QByteArray &packet, quint32 streamId, quint8 packetCount,
+                        const float *samples, int count)
+{
+    if (!samples || count <= 0) {
+        packet.clear();
+        return;
+    }
+
+    // Intestazione, identificativo di flusso, due parole di classe, e poi i
+    // campioni: la stessa forma che si legge in ricezione, costruita
+    // all'incontrario. Niente marcatori temporali — la radio non li chiede per
+    // l'audio, e metterceli allungherebbe ogni pacchetto di due parole per
+    // un'informazione che nessuno legge.
+    const int payloadWords = count * 2;              // due canali
+    const int totalWords = 4 + payloadWords;
+
+    packet.resize(totalWords * 4);
+    auto *out = reinterpret_cast<uchar *>(packet.data());
+
+    // Tipo: dati con identificativo di flusso, classe presente, nessun
+    // marcatore temporale. La misura è in parole a 32 bit e comprende
+    // l'intestazione: è il campo che la radio usa per sapere dove finisce il
+    // pacchetto, e sbagliarlo non produce un errore — produce campioni letti
+    // oltre la fine.
+    const quint32 header = kPacketTypeIfDataWithStreamId | kClassIdPresent
+        | ((static_cast<quint32>(packetCount) << 16) & kPacketCountMask)
+        | (static_cast<quint32>(totalWords) & kPacketSizeMask);
+
+    qToBigEndian<quint32>(header, out);
+    qToBigEndian<quint32>(streamId, out + 4);
+
+    // Le due parole di classe: l'OUI del costruttore, poi la classe
+    // d'informazione e il codice di pacchetto. Il codice **descrive** il
+    // carico — trentadue bit per campione, due canali, virgola mobile — invece
+    // di essere un numero opaco: è la stessa scelta che rende leggibile il
+    // verso opposto.
+    qToBigEndian<quint32>(kFlexOui & kOuiMask, out + 8);
+    const quint32 classWord = (static_cast<quint32>(kFlexInformationClass) << 16)
+        | kClassBitsPerSample32 | kClassChannelsPair | kClassIeee754;
+    qToBigEndian<quint32>(classWord, out + 12);
+
+    // I campioni, in ordine di rete. Leggerli come stanno in memoria
+    // funzionerebbe solo su una macchina big endian, e le nostre non lo sono:
+    // quel che ne uscirebbe sono numeri enormi o denormali — cioè silenzio, o
+    // rumore, in aria.
+    uchar *payload = out + 16;
+    for (int i = 0; i < count; ++i) {
+        quint32 bits = 0;
+        const float value = samples[i];
+        std::memcpy(&bits, &value, sizeof(bits));
+        qToBigEndian<quint32>(bits, payload + i * 8);
+        qToBigEndian<quint32>(bits, payload + i * 8 + 4);
+    }
+}
+
+QByteArray buildTxAudioPacket(quint32 streamId, quint8 packetCount,
+                              const float *samples, int count)
+{
+    QByteArray packet;
+    buildTxAudioPacket(packet, streamId, packetCount, samples, count);
+    return packet;
+}
+
 } // namespace dsdr::hal::flex

@@ -40,6 +40,11 @@ private slots:
     void aFormatWeCannotReadIsSkipped();
     void fixedPointIsNotMistakenForFloatingPoint();
     void theStreamIsOpenedInFourSteps();
+
+    // ── Verso la radio ──────────────────────────────────────────────────
+    void theVoicePacketIsReadBackByOurOwnDecoder();
+    void theVoiceGoesOutOnBothChannels();
+    void anEmptyBlockDoesNotBecomeAPacket();
 };
 
 void TestFlexProtocol::theRadioIntroducesItself()
@@ -315,6 +320,56 @@ void TestFlexProtocol::theStreamIsOpenedInFourSteps()
                                  QStringLiteral("0x36A13007")),
              QStringLiteral("dax iq s 1 pan=0x40000000 daxiq_rate=192000 "
                             "client_handle=0x36A13007"));
+}
+
+void TestFlexProtocol::theVoicePacketIsReadBackByOurOwnDecoder()
+{
+    // Il modo più onesto di verificare quello che si manda a una radio che non
+    // si ha: farlo rileggere al decodificatore che legge quello che la radio
+    // manda a noi. Se le due metà non si parlano, il difetto è qui e non nel
+    // firmware — ed è l'unica parte che si può stabilire senza l'apparato.
+    const float samples[] = {0.0f, 0.5f, -0.5f, 1.0f, -1.0f, 0.125f};
+    const QByteArray packet = buildTxAudioPacket(0x84000001u, 3, samples, 6);
+
+    const auto parsed = parseVita(packet);
+    QVERIFY2(parsed.valid, "il pacchetto che mandiamo alla radio non è VITA valido");
+    QCOMPARE(parsed.streamId, quint32(0x84000001u));
+    QCOMPARE(parsed.packetCount, quint8(3));
+
+    // Niente marcatori temporali: il carico comincia alla quinta parola. Se
+    // l'intestazione dichiarasse una misura sbagliata, il decodificatore
+    // leggerebbe oltre la fine — e su una radio vera si sentirebbe come uno
+    // scoppiettio a ogni pacchetto.
+    QCOMPARE(parsed.payloadOffset, 16);
+    QCOMPARE(parsed.payloadBytes, 6 * 2 * 4);
+    QVERIFY(parsed.isFloatPair());
+}
+
+void TestFlexProtocol::theVoiceGoesOutOnBothChannels()
+{
+    // Il flusso è stereo perché il formato lo è; la voce è una sola. Mandarla
+    // su un canale e lasciare l'altro a zero non dà silenzio: dà metà livello,
+    // e chi trasmette non ha modo di accorgersene se non chiedendolo a chi
+    // ascolta.
+    const float samples[] = {0.25f, -0.75f};
+    const QByteArray packet = buildTxAudioPacket(0x84000001u, 0, samples, 2);
+    const auto parsed = parseVita(packet);
+
+    std::vector<float> out(4, 0.0f);
+    QCOMPARE(decodeIq(packet, parsed, out.data()), std::size_t(2));
+    QVERIFY(std::abs(out[0] - 0.25f) < 1e-6f);
+    QVERIFY(std::abs(out[1] - 0.25f) < 1e-6f);
+    QVERIFY(std::abs(out[2] + 0.75f) < 1e-6f);
+    QVERIFY(std::abs(out[3] + 0.75f) < 1e-6f);
+}
+
+void TestFlexProtocol::anEmptyBlockDoesNotBecomeAPacket()
+{
+    // Un pacchetto di sola intestazione è una domanda che la radio non ha
+    // motivo di ricevere, e a cadenza di cinque millisecondi diventa traffico.
+    QVERIFY(buildTxAudioPacket(0x84000001u, 0, nullptr, 4).isEmpty());
+    const float one = 1.0f;
+    QVERIFY(buildTxAudioPacket(0x84000001u, 0, &one, 0).isEmpty());
 }
 
 QTEST_MAIN(TestFlexProtocol)

@@ -23,6 +23,7 @@
 // che serve a dirlo: ogni comando mandato e ogni risposta ricevuta.
 #pragma once
 
+#include "dsp/FirDecimator.h"
 #include "hal/IRadioBackend.h"
 
 #include <QElapsedTimer>
@@ -77,6 +78,7 @@ public:
     void setPtt(bool transmit) override;
     bool ptt() const override { return m_ptt; }
     void setTxFrequency(qint64 hz) override;
+    SampleRing *txStream() override;
 
     SampleRing *iqStream(ChannelId channel = kInvalidChannel) const override;
     SampleRing *audioStream(ChannelId channel) const override;
@@ -97,6 +99,7 @@ public:
         CreatePan,      ///< `display pan create`
         BindStream,     ///< `dax iq s … daxiq_rate=…`
         Streaming,      ///< la sequenza è passata: si aspettano i pacchetti
+        CreateTxStream, ///< `stream create type=dax_tx`: il ritorno della voce
     };
     Q_ENUM(Step)
 
@@ -106,6 +109,14 @@ private slots:
     void onResponse(quint32 sequence, quint32 code, const QString &payload);
     void readDatagrams();
     void checkForSilence();
+
+    /// Svuota il ring di trasmissione verso la radio, un pacchetto per volta.
+    void pumpTxAudio();
+
+    /// Il guinzaglio del PTT. Se la trasmissione non viene chiusa da nessuno —
+    /// perché il programma si è impiantato, perché il canale di comando è
+    /// caduto — la chiude questo.
+    void onTransmitWatchdog();
 
 private:
     void setState(BackendState state);
@@ -173,6 +184,46 @@ private:
     quint64 m_gaps = 0;
 
     std::vector<float> m_decoded;
+
+    // ── Trasmissione ─────────────────────────────────────────────────────
+    //
+    // La voce fa la strada opposta: dal ring che riempie il motore TX, in
+    // pacchetti VITA-49, verso la porta 4993 della radio.
+    std::unique_ptr<SampleRing> m_txRing;
+    quint32 m_txStreamId = 0;
+    quint8 m_txPacketCount = 0;
+
+    /// La frequenza che il client chiede per la trasmissione. Si tiene per
+    /// poterla dire, non per mandarla: la trasmissione segue la slice TX della
+    /// radio, che questo backend non governa. Vedi `setTxFrequency`.
+    qint64 m_txFrequencyHz = 0;
+
+    /// Da 48 kHz a 24: SmartSDR vuole l'audio di trasmissione a ventiquattro,
+    /// il motore TX lo produce a quarantotto.
+    ///
+    /// **Con il passa-basso, non prendendo un campione su due.** Dimezzare la
+    /// velocità butta la banda fra 12 e 24 kHz addosso a quella che resta, e
+    /// lì sopra qualcosa c'è sempre: il limiter in coda alla catena genera
+    /// armoniche fino a fondo banda per mestiere. Ripiegate, non si sentono
+    /// come acuti — si sentono come una voce sporca, e chi trasmette è
+    /// l'ultimo ad accorgersene.
+    dsp::FirDecimator m_txDecimator;
+    std::vector<float> m_txScratch;
+    std::vector<dsp::Complex> m_txComplexIn;
+    std::vector<dsp::Complex> m_txComplexOut;
+    std::vector<float> m_txPacketBuffer;
+
+    /// Quanti campioni ci sono già dentro il pacchetto in costruzione. I
+    /// blocchi che arrivano dal ring non sono multipli di 128: senza questo,
+    /// ogni blocco lascerebbe indietro una coda.
+    std::size_t m_txPending = 0;
+
+    /// Il pacchetto in partenza, riusato: vedi CONSTITUTION §5.
+    QByteArray m_txDatagram;
+
+    QTimer *m_txTimer = nullptr;
+    QTimer *m_txWatchdog = nullptr;
+    quint64 m_txPackets = 0;
 };
 
 } // namespace dsdr::hal::flex

@@ -79,4 +79,43 @@ VitaPacket parseVita(const QByteArray &datagram);
 /// `out` deve avere spazio per `packet.payloadBytes / 4` float.
 std::size_t decodeIq(const QByteArray &datagram, const VitaPacket &packet, float *out);
 
+// ── Verso la radio ───────────────────────────────────────────────────────
+//
+// L'audio di trasmissione viaggia nella stessa forma, all'incontrario: VITA-49
+// su UDP, verso la porta 4993 della radio. Cambia il verso e cambia chi
+// riempie il contatore dei pacchetti — che qui tocca a noi, ed è il campo che
+// permette alla radio di accorgersi se ne perde per strada.
+
+/// La porta su cui una radio FlexRadio ascolta i dati dei client.
+inline constexpr quint16 kFlexDataPort = 4993;
+
+/// Quanti campioni stanno in un pacchetto di audio di trasmissione.
+///
+/// Centoventotto per canale, cioè poco più di cinque millisecondi a 24 kHz.
+/// Pacchetti più lunghi allungano il ritardo fra la voce e l'antenna; più
+/// corti moltiplicano l'intestazione e il lavoro della rete per niente.
+inline constexpr int kTxAudioSamplesPerPacket = 128;
+
+/// La frequenza dell'audio di trasmissione di SmartSDR.
+inline constexpr int kTxAudioRate = 24000;
+
+/// Costruisce un pacchetto di audio di trasmissione.
+///
+/// `samples` sono float mono fra −1 e 1; il pacchetto li porta **doppi**,
+/// perché il formato è a due canali — la stessa forma dell'IQ, con lo stesso
+/// codice di classe che la dichiara. Duplicare un mono è più onesto che
+/// mandarne metà e sperare che la radio indovini l'altro.
+///
+/// `packetCount` è il contatore a quattro bit: lo incrementa chi manda, e
+/// saltarlo significa far credere alla radio di aver perso dei pacchetti.
+/// La forma che riusa il buffer di chi chiama: sul percorso caldo si manda un
+/// pacchetto ogni cinque millisecondi, e allocare a quella cadenza è la cosa
+/// che la CONSTITUTION §5 vieta.
+void buildTxAudioPacket(QByteArray &out, quint32 streamId, quint8 packetCount,
+                        const float *samples, int count);
+
+/// La forma comoda, per i test e per chi ne costruisce uno solo.
+QByteArray buildTxAudioPacket(quint32 streamId, quint8 packetCount,
+                              const float *samples, int count);
+
 } // namespace dsdr::hal::flex
