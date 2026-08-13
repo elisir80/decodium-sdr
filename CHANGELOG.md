@@ -4,6 +4,155 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.2.0] — 2026-08-13
+
+Una versione con un tema solo: **le cose che un operatore non può misurare da
+solo**. La propria voce mentre parla, il momento buono su una banda, dove sta
+puntando l'antenna, se stasera il rumore è normale. Sono tutte domande a cui si
+risponde a orecchio, e a cui adesso risponde uno strumento.
+
+### Aggiunto
+
+- **Registra e riascolta la propria voce.** Gli ultimi dieci secondi, in due
+  tracce — com'era e come parte verso la radio — riascoltabili subito.
+
+  Un trasmettitore non si regola ascoltandosi: mentre si parla si sente la
+  propria voce per conduzione ossea, non quella che esce dall'antenna, e ogni
+  giudizio dato in quel momento è dato sul suono sbagliato. Il rimedio classico
+  è un secondo ricevitore in stazione; questo lo sostituisce.
+
+  Non c'è niente da armare: registra da sé mentre si trasmette. Ci si accorge
+  di voler riascoltare solo *dopo* aver parlato, e un registratore da accendere
+  prima arriva sempre tardi. Si commuta prima/dopo **mentre suona**, senza
+  perdere il punto: si sente la stessa sillaba nei due modi, di seguito, e il
+  confronto smette di dipendere dal ricordo di com'era.
+
+- **Monitor in cuffia.** Sentire quello che si sta mandando alla radio, mentre
+  lo si manda. Solo a PTT premuto, e non c'è modo di lasciarlo acceso per
+  sbaglio. Se chi ascolta resta indietro si butta il vecchio e non il nuovo:
+  sentirsi con mezzo secondo di ritardo fa inciampare chi parla.
+
+- **Spettro della voce prima e dopo la catena**, sovrapposti sullo stesso
+  grafico. L'orecchio dice se una voce è bella; questo dice *perché*. Due
+  grafici affiancati costringerebbero a spostare lo sguardo, e fra uno sguardo
+  e l'altro si mette in mezzo la memoria.
+
+- **Equalizzatore parametrico sulla trasmissione**, cinque campane con la curva
+  trascinabile sopra lo spettro della propria voce. Sta dopo gate, leveller e
+  compressore: in testa equalizzerebbe il respiro della stanza insieme alla
+  voce.
+
+- **Profili di trasmissione per modo** — chiacchierata, DX/contest, dati e CW —
+  commutati **con il modo**: chi passa a un pile-up non sta chiedendo un
+  preset, sta cambiando mestiere.
+
+  Prima di uscire da un profilo lo si salva, e lo si salva anche chiudendo il
+  programma: è la memoria di come piace quel modo, non un preset da cui si
+  esce. Sui dati e in CW la catena si spegne tutta e non c'è una scelta da
+  offrire — un compressore davanti a un modulatore FT8 allarga il segnale e non
+  aggiunge un decibel a chi decodifica.
+
+- **Generatore di prova a uno e due toni** accanto alle curve, dove serve. Due
+  toni che restano due dicono che *la nostra* catena è lineare;
+  l'intermodulazione del finale è un'altra misura, sta in radiofrequenza, e la
+  si guarda sul monitor del panadattatore.
+
+- **Blocco «Plugin»: un host VST3.** Si carica il compressore che si preferisce
+  come stadio della catena, fra l'equalizzatore e il multibanda.
+
+  Gira in un **processo a parte**, e questa è la sola cosa che conta saperne: un
+  plugin è codice di qualcun altro, e il programma che si porterebbe dietro non
+  è un editor audio — è una radio, e magari sta trasmettendo. Se va in crash, il
+  blocco va in bypass e la stazione resta in aria. Bypass e non silenzio:
+  zittirsi toglierebbe l'aria a chi sta chiamando.
+
+  Il blocco compare solo dove l'ospite è stato costruito. Non c'è la finestra
+  disegnata dal costruttore; i parametri ci sono tutti.
+
+- **Pannello «Linea grigia».** Dove passa il terminatore adesso, su una mappa
+  del mondo senza tile e senza rete — un client SDR non deve telefonare a un
+  server di mappe per dire dov'è il Sole.
+
+  Il numero per cui esiste il pannello non è l'azimut e non è la distanza:
+  è **quanti chilometri del percorso stanno adesso nella fascia grigia**. Non si
+  legge a occhio da una mappa — un percorso può attraversare il terminatore di
+  sbieco per migliaia di chilometri o tagliarlo in duecento, e le due cose sulla
+  mappa si assomigliano.
+
+  La fascia è regolabile perché il terminatore radio non coincide con quello
+  ottico: la ionosfera resta illuminata quando la superficie è già al buio.
+
+- **Quadrante del rotore, con gli assi cartesiani.** L'azimut è un angolo, e un
+  numero da solo va convertito mentalmente in una direzione ogni volta che lo si
+  legge; sul quadrante la direzione **è** la posizione dell'ago. Due aghi, via
+  breve e via lunga, con quello inattivo disegnato e spento.
+
+- **Controllo rotore via `rotctld`**, il demone rotori di Hamlib: una
+  quarantina di modelli — Yaesu GS-232, Prosistel, SPID, Green Heron, M2 —
+  senza linkare hamlib. Un terzo indice tratteggiato mostra dove punta davvero
+  l'antenna, e lo scarto dice quanto resta da girare.
+
+  Un rotore è una massa su un palo, e da lì discende tutto: non insegue niente
+  da solo, non si martella (un puntamento ogni secondo e mezzo, perché ogni
+  comando chiude dei relè), FERMA passa davanti a qualunque cosa sia in coda, e
+  se il collegamento cade mentre gira lo si dice invece di fingere di poterlo
+  fermare.
+
+- **Pannello «Condizioni»: com'è messa la banda stasera rispetto a com'è di
+  solito.** «Stasera i quaranta sono rumorosi» è una frase che tutti dicono e
+  che nessuno può verificare: il fondo lo si guarda adesso, e adesso non ha
+  niente con cui confrontarsi.
+
+  Si annota la mediana su un quarto d'ora, per banda, per trenta giorni. Il
+  guadagno viene tolto — altrimenti sarebbe il grafico del proprio AGC — e il
+  ricevitore viene annotato, perché due radio hanno due fondi e non c'è
+  correzione che li renda uno. Il confronto è con «il solito», la mediana delle
+  sette giornate precedenti: ieri può essere stato un temporale.
+
+  Nessun servizio in rete può dare questa risposta: il rumore della propria
+  stazione è fatto per metà di propagazione e per metà del quartiere.
+
+- **Trasmissione sul backend FlexRadio.** La voce fa la strada opposta
+  dell'IQ: pacchetti VITA-49 verso la porta 4993, con lo stesso codice di
+  classe che si legge in ricezione, costruito all'incontrario.
+
+  `xmit 1` è l'unica riga di tutto il programma che manda una radio in aria, e
+  ha quattro presidi: il PTT si rilascia subito se cade il canale di comando,
+  un temporizzatore lo chiude d'ufficio dopo due minuti, `close()` lo rilascia
+  prima di ogni altra cosa, e non si trasmette affatto se il flusso audio non
+  si è aperto — una portante muta occupa la frequenza e non se ne accorge
+  nessuno tranne i vicini.
+
+  **Come tutto il backend Flex, non è mai stato provato su una radio vera.** Il
+  pacchetto che si manda viene però riletto dal decodificatore che legge quelli
+  che la radio manda a noi: se le due metà non si parlano, il difetto è nostro
+  e non del firmware.
+
+### Corretto
+
+- La frequenza di trasmissione su Flex **non viene più promessa**: su queste
+  radio trasmette la slice marcata TX, che questo backend non governa, e
+  mandare `slice tune` sposterebbe la frequenza di SmartSDR aperto accanto. Ora
+  lo scrive nel diario invece di far credere il contrario.
+
+### Note
+
+- La **DSDR-SPEC-003 §7** dichiarava «da fare» quattro rifiniture di
+  demodulazione — passband tuning, APF CW, binaurale CW, SAM potenziato — che
+  erano già tutte nel codice. La specifica è stata riallineata: una specifica
+  che dichiara mancante una cosa che c'è manda a rifarla.
+
+- Il **VST3 SDK è MIT** dalla versione 3.8.1: Steinberg ha ritirato la vecchia
+  doppia licenza GPLv3/proprietaria. Compatibile con GPL-3.0-or-later senza
+  riserve, registrato in `THIRD_PARTY_LICENSES`. Il marchio «VST» resta di
+  Steinberg ed è facoltativo: qui non lo si usa.
+
+- Le coste del mondo del pannello «Linea grigia» vengono da **Natural Earth**,
+  di pubblico dominio: diciannove kilobyte di polilinee. È l'unico dato di
+  terze parti versionato nel repository, e la deroga è motivata in
+  `THIRD_PARTY_LICENSES`.
+
+
 ## [1.1.13] — 2026-08-12
 
 ### Aggiunto

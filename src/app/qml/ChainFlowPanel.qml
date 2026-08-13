@@ -116,6 +116,12 @@ PanelFrame {
         "mon":   "M2,13 L10,13 L14,5 L20,21 L26,9 L32,17 L38,11 L46,14 L70,13",
         "eq":    "M2,16 C12,16 14,7 22,7 C30,7 32,19 42,19 C52,19 58,9 70,9",
         "cfc":   "M6,24 L6,10 M20,24 L20,5 M34,24 L34,13 M48,24 L48,7 M62,24 L62,15",
+        // Il gate: sotto la soglia niente, sopra tutto. Il gradino è quello
+        // che fa — e mancava, così il blocco chiedeva un glifo che non c'era e
+        // ogni avvio lasciava una riga di «Unable to assign [undefined]» nel
+        // diario. Un `undefined` assegnato a una stringa non rompe niente:
+        // lascia il disegno vuoto, e nessuno collega la cosa all'altra.
+        "gate":  "M2,22 L26,22 L26,8 L46,8 L46,22 L70,22",
     })
 
     /// Quanto sta abbassando la banda che lavora di più, in decibel. È la
