@@ -42,17 +42,23 @@ accetta 48 kHz stereo, il router prova automaticamente 48 kHz mono.
 
 ## Device, moduli e packaging
 
-Decodium usa una HAL a backend e SoapySDR, quindi RTL-SDR V4 è distribuibile
-nel bundle macOS insieme al plugin Soapy. I moduli IQ esterni possono essere
-caricati con `--iq-module /percorso/modulo.dylib`; l'header installato è
-`include/decodium/IqModuleApi.h`. Il caricamento runtime e la lista dei moduli
-attivi e il catalogo UI con nome, percorso e stato di caricamento sono già
-disponibili; restano come backlog i backend dedicati per i device più comuni.
+Decodium usa una HAL a backend. RTL-SDR V4 ora ha sia un percorso nativo
+`librtlsdr` — discovery USB, sintonia, rate, gain, PPM, bias-tee, direct
+sampling e log del flusso — sia il percorso SoapySDR universale. Il DMG macOS
+porta con sé runtime e librerie necessari, così l'utente finale non deve
+installare Homebrew. I moduli IQ esterni possono essere caricati con
+`--iq-module /percorso/modulo.dylib`; l'header installato è
+`include/decodium/IqModuleApi.h`. Restano come backlog i backend dedicati per
+HPSDR, DLINK, FlexRadio, TCI e KiwiSDR.
 
 Il server rigctl resta vincolato al loopback per sicurezza. Un logger o un
 programma CAT locale può collegarsi alla porta 4532 e usare i comandi Hamlib
-standard `f`, `F`, `m`, `M`, `t`, `T`, `l AF` e `L AF`; la frequenza viene
-applicata al VFO selezionato. Il PTT viene rifiutato con `RPRT -4` quando il
+standard `f`, `F`, `m`, `M`, `t`, `T`, `l AF` e `L AF`, oltre agli alias e alle
+query compatibili con SDR++ (`\\get_freq`, `\\set_freq`, `\\get_mode`,
+`\\set_mode`, `M ?`, `v/V`, `s/S`, `\\chk_vfo`, `AOS/LOS` e `\\quit`). La
+registrazione CAT controlla il recorder audio locale e restituisce errore se
+l’uscita audio non è attiva. La frequenza viene applicata al VFO selezionato.
+Il PTT viene rifiutato con `RPRT -4` quando il
 backend dichiara una sorgente solo RX. Questo vale anche per Soapy quando il
 driver rileva canali TX fisici ma il percorso TX di Decodium non è ancora
 implementato: non viene mostrato un PTT che non genererebbe RF.

@@ -193,6 +193,29 @@ Rectangle {
             filterHighHz: entry.filterHighHz
         }
 
+        // Wide-FM è l'unico modo che contiene il multiplex RDS. I dati
+        // arrivano già dal DSP e sono ruoli del modello del canale; senza
+        // questa vista restavano dichiarati ma non venivano mai mostrati.
+        RdsPanel {
+            Layout.fillWidth: true
+            visible: entry.wideFm
+            channelIndex: entry.index
+            fmStereo: entry.fmStereo
+            fmRds: entry.fmRds
+            rdsAutomaticAf: entry.rdsAutomaticAf
+            rdsRegion: entry.rdsRegion
+            rdsSynced: entry.rdsSynced
+            rdsCountryCode: entry.rdsCountryCode
+            rdsProgramCoverage: entry.rdsProgramCoverage
+            rdsReferenceNumber: entry.rdsReferenceNumber
+            rdsPi: entry.rdsPi
+            rdsCallsign: entry.rdsCallsign
+            rdsProgramType: entry.rdsProgramType
+            rdsAlternateFrequencies: entry.rdsAlternateFrequencies
+            rdsProgramService: entry.rdsProgramService
+            rdsRadioText: entry.rdsRadioText
+        }
+
         // ── Spostamento del passa-banda (IF shift, SPEC-003 §7) ──
         //
         // Lo esegue la nostra catena, quindi vale con qualunque sorgente:

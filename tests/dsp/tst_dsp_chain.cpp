@@ -216,6 +216,8 @@ private slots:
     void noiseBlankerRejectsImpulse();
     void fmIfNoiseReductionSuppressesHighFrequencyNoise();
     void rdsDecodesProgramService();
+    void rdsDoesNotSyncOnASingleGroup();
+    void rdsDetectsAbsentSubcarrier();
     void channelDemodulatesUsbTone();
     void channelDemodulatesLsbAndDigitalModes();
     void channelDemodulatesAmAndSam();
@@ -569,8 +571,11 @@ void TestDspChain::rdsDecodesProgramService()
     const std::vector<float> mpx = makeRdsMpx(bits, kRate);
     RdsDecoder decoder;
     QVERIFY(decoder.configure(kRate));
-    decoder.process(mpx.data(), mpx.size());
-
+    for (std::size_t offset = 0; offset < mpx.size();) {
+        const std::size_t chunk = std::min<std::size_t>(1379, mpx.size() - offset);
+        decoder.process(mpx.data() + offset, chunk);
+        offset += chunk;
+    }
     QVERIFY2(decoder.synced(), "RDS non sincronizzato sul segnale sintetico");
     QCOMPARE(decoder.piCode(), kPi);
     QCOMPARE(decoder.countryCode(), static_cast<std::uint8_t>(1));
@@ -581,10 +586,56 @@ void TestDspChain::rdsDecodesProgramService()
     QCOMPARE(QString::fromStdString(decoder.alternateFrequencies()),
              QStringLiteral("97.7 MHz"));
     QCOMPARE(QString::fromStdString(decoder.programService()), QStringLiteral("TESTFM"));
+    QVERIFY2(decoder.subcarrierToReferenceDb() > 12.0f,
+             qPrintable(QStringLiteral("sottoportante RDS non rilevata: %1 dB")
+                            .arg(decoder.subcarrierToReferenceDb())));
 
     decoder.setRegion(RdsRegion::NorthAmerica);
     QCOMPARE(QString::fromStdString(decoder.programTypeName()), QStringLiteral("Country"));
     QVERIFY(!decoder.callsign().empty());
+}
+
+void TestDspChain::rdsDoesNotSyncOnASingleGroup()
+{
+    constexpr double kRate = 240'000.0;
+    constexpr std::uint16_t kPi = 0x1234;
+    const std::uint16_t offsets[] = {
+        0b0011111100, 0b0110011000, 0b0101101000, 0b0110110100,
+    };
+
+    std::vector<std::uint8_t> bits{0};
+    appendRdsBlock(bits, makeRdsBlock(kPi, offsets[0]));
+    appendRdsBlock(bits, makeRdsBlock(static_cast<std::uint16_t>(10 << 5), offsets[1]));
+    appendRdsBlock(bits, makeRdsBlock(0, offsets[2]));
+    appendRdsBlock(bits, makeRdsBlock(static_cast<std::uint16_t>('O' << 8 | 'K'), offsets[3]));
+
+    const std::vector<float> mpx = makeRdsMpx(bits, kRate);
+    RdsDecoder decoder;
+    QVERIFY(decoder.configure(kRate));
+    decoder.process(mpx.data(), mpx.size());
+
+    QVERIFY2(!decoder.synced(), "un singolo gruppo RDS non deve dichiarare SYNC");
+}
+
+void TestDspChain::rdsDetectsAbsentSubcarrier()
+{
+    constexpr double kRate = 240'000.0;
+    std::vector<float> mpx(static_cast<std::size_t>(kRate));
+    std::uint32_t noiseState = 0x6d2b79f5u;
+    for (std::size_t i = 0; i < mpx.size(); ++i) {
+        noiseState = noiseState * 1664525u + 1013904223u;
+        const float noise = static_cast<float>((noiseState >> 8) & 0xffffu) / 32768.0f - 1.0f;
+        const double pilotPhase = kTwoPi * 19'000.0 * static_cast<double>(i) / kRate;
+        mpx[i] = 0.1f * static_cast<float>(std::cos(pilotPhase)) + 0.01f * noise;
+    }
+
+    RdsDecoder decoder;
+    QVERIFY(decoder.configure(kRate));
+    decoder.process(mpx.data(), mpx.size());
+
+    QVERIFY2(std::abs(decoder.subcarrierToReferenceDb()) < 3.0f,
+             qPrintable(QStringLiteral("falso RDS nel rumore: %1 dB")
+                            .arg(decoder.subcarrierToReferenceDb())));
 }
 
 void TestDspChain::channelDemodulatesUsbTone()
@@ -976,8 +1027,21 @@ void TestDspChain::channelDemodulatesWideFmTone()
     // lascia il mixer a 0 Hz.
     constexpr double kChannelOffset = 120000.0;
     constexpr double kAudioTone = 1000.0;
-    const std::vector<Complex> input = makeFmTone(kChannelOffset, kAudioTone, 50000.0,
-                                                   kDeviceRate, 480000);
+    std::vector<Complex> input = makeFmTone(kChannelOffset, kAudioTone, 50000.0,
+                                            kDeviceRate, 480000);
+    // Rumore complesso deterministico: presidia la stima C/N Wide-FM senza
+    // rendere casuale il test. Una portante FM forte deve emergere dal rumore
+    // anche se l'inviluppo del canale la contiene sempre.
+    std::uint32_t noiseState = 0x7f4a7c15u;
+    for (Complex &sample : input) {
+        noiseState = noiseState * 1664525u + 1013904223u;
+        const float noiseI = (static_cast<float>((noiseState >> 8) & 0xffffu)
+                              / 32768.0f - 1.0f) * 0.012f;
+        noiseState = noiseState * 1664525u + 1013904223u;
+        const float noiseQ = (static_cast<float>((noiseState >> 8) & 0xffffu)
+                              / 32768.0f - 1.0f) * 0.012f;
+        sample += Complex(noiseI, noiseQ);
+    }
 
     ChannelProcessor channel;
     QVERIFY(channel.configure(kDeviceRate, 48000.0));
@@ -1006,6 +1070,12 @@ void TestDspChain::channelDemodulatesWideFmTone()
              qPrintable(QStringLiteral("Wide-FM: tono assente (%1)").arg(wanted)));
     QVERIFY2(wanted > other * 10.0,
              qPrintable(QStringLiteral("Wide-FM: atteso=%1 spurio=%2").arg(wanted).arg(other)));
+    QVERIFY2(channel.snrDb() > 15.0f,
+             qPrintable(QStringLiteral("Wide-FM: SNR fermo a %1 dB")
+                            .arg(channel.snrDb())));
+    QVERIFY2(channel.signalLevelDb() > channel.noiseFloorDb() + 15.0f,
+             qPrintable(QStringLiteral("Wide-FM: segnale=%1 rumore=%2")
+                            .arg(channel.signalLevelDb()).arg(channel.noiseFloorDb())));
 }
 
 void TestDspChain::channelDemodulatesWideFmStereo()

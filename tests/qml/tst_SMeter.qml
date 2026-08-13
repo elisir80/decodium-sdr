@@ -27,6 +27,20 @@ TestCase {
         DecoMeterS { levelDb: -140 }
     }
 
+    // QFont non interpreta le liste CSS di fallback: ogni piattaforma deve
+    // ricevere un solo monospace noto, altrimenti Qt cerca inutilmente un
+    // alias a ogni avvio dell'applicazione.
+    function test_monospace_family_is_a_single_platform_face() {
+        verify(!Theme.monoFamily.includes(","))
+
+        if (Qt.platform.os === "osx")
+            compare(Theme.monoFamily, "Menlo")
+        else if (Qt.platform.os === "windows")
+            compare(Theme.monoFamily, "Consolas")
+        else if (Qt.platform.os === "linux")
+            compare(Theme.monoFamily, "DejaVu Sans Mono")
+    }
+
     // ── La scala ─────────────────────────────────────────────────────────
 
     // Sei decibel per punto S: è la convenzione IARU, ed è ciò che rende
@@ -56,6 +70,15 @@ TestCase {
         // rapporto su ogni ricevitore tarato allo stesso modo.
         const strong = SMeterScale.units(data.floor + 40, s9)
         fuzzyCompare(strong, 1 + 40 / SMeterScale.dbPerUnit, 0.6)
+    }
+
+    // Una calibrazione sopra 0 dBFS è fisicamente impossibile. Senza questo
+    // limite una prima misura fatta su una broadcast FM salvava S9 positivo e
+    // schiacciava la lancetta a sinistra per tutti gli avvii successivi.
+    function test_calibration_cannot_put_s9_above_full_scale() {
+        compare(SMeterScale.s9From(-30), SMeterScale.maxS9ReferenceDb)
+        verify(SMeterScale.units(-32, SMeterScale.s9From(-30)) > 1,
+               "un segnale reale non deve cadere a S1 per una tara impossibile")
     }
 
     // E poi sta ferma. Questo è il difetto che la 1.1.6 aveva al posto del

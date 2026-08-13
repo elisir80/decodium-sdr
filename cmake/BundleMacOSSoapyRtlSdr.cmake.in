@@ -6,12 +6,13 @@ set(dsdr_app "${CMAKE_INSTALL_PREFIX}/decodium-sdr.app")
 set(dsdr_frameworks "${dsdr_app}/Contents/Frameworks")
 set(dsdr_modules "${dsdr_app}/Contents/PlugIns/SoapySDR/modules0.8")
 set(dsdr_module "${dsdr_modules}/librtlsdrSupport.so")
+set(dsdr_soapy_module "@DSDR_SOAPY_RTLSDR_MODULE@")
+set(dsdr_executable "${dsdr_app}/Contents/MacOS/decodium-sdr")
 set(dsdr_loader_path "@DSDR_LOADER_PATH@")
 set(dsdr_rtlsdr "${dsdr_frameworks}/@DSDR_RTLSDR_BASENAME@")
 set(dsdr_libusb "${dsdr_frameworks}/@DSDR_LIBUSB_BASENAME@")
 
 foreach(dsdr_required
-        "@DSDR_SOAPY_RTLSDR_MODULE@"
         "@DSDR_LIBRTLSDR_LIBRARY@"
         "@DSDR_LIBUSB_LIBRARY@")
     if(NOT EXISTS "${dsdr_required}")
@@ -34,7 +35,12 @@ function(dsdr_copy_binary source destination)
     endif()
 endfunction()
 
-dsdr_copy_binary("@DSDR_SOAPY_RTLSDR_MODULE@" "${dsdr_module}")
+if(dsdr_soapy_module)
+    if(NOT EXISTS "${dsdr_soapy_module}")
+        message(FATAL_ERROR "Modulo SoapyRTLSDR scomparso prima dell'installazione: ${dsdr_soapy_module}")
+    endif()
+    dsdr_copy_binary("${dsdr_soapy_module}" "${dsdr_module}")
+endif()
 dsdr_copy_binary("@DSDR_LIBRTLSDR_LIBRARY@" "${dsdr_rtlsdr}")
 dsdr_copy_binary("@DSDR_LIBUSB_LIBRARY@" "${dsdr_libusb}")
 
@@ -51,13 +57,22 @@ function(dsdr_rewrite_install_name)
 endfunction()
 
 # The module is three directories below Contents, while the libraries are in
-# Contents/Frameworks.
-dsdr_rewrite_install_name(
-    -change "@DSDR_RTLSDR_SOURCE_NAME@"
-             "${dsdr_loader_path}/../../../Frameworks/@DSDR_RTLSDR_BASENAME@"
-    -change "@DSDR_SOAPY_SOURCE_NAME@"
-             "${dsdr_loader_path}/../../../Frameworks/libSoapySDR.0.8.dylib"
-    "${dsdr_module}")
+# Contents/Frameworks. The executable is one directory below Contents.
+if(dsdr_soapy_module)
+    dsdr_rewrite_install_name(
+        -change "@DSDR_RTLSDR_SOURCE_NAME@"
+                 "${dsdr_loader_path}/../../../Frameworks/@DSDR_RTLSDR_BASENAME@"
+        -change "@DSDR_SOAPY_SOURCE_NAME@"
+                 "${dsdr_loader_path}/../../../Frameworks/libSoapySDR.0.8.dylib"
+        "${dsdr_module}")
+endif()
+
+if(EXISTS "${dsdr_executable}")
+    dsdr_rewrite_install_name(
+        -change "@DSDR_RTLSDR_SOURCE_NAME@"
+                 "${dsdr_loader_path}/../Frameworks/@DSDR_RTLSDR_BASENAME@"
+        "${dsdr_executable}")
+endif()
 
 dsdr_rewrite_install_name(
     -id "${dsdr_loader_path}/@DSDR_RTLSDR_BASENAME@"

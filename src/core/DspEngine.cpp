@@ -871,10 +871,16 @@ void DspEngine::processAvailable()
                 const QString af = synced
                     ? QString::fromStdString(channel.processor->rdsAlternateFrequencies())
                     : QString();
-                const QString ps = QString::fromStdString(
-                    channel.processor->rdsProgramService());
-                const QString text = QString::fromStdString(
-                    channel.processor->rdsRadioText());
+                // PS/RT must obey the same validity boundary as PI.  Keeping
+                // them visible while the decoder has lost group lock leaves
+                // stale station data on screen and makes a false lock look
+                // real.
+                const QString ps = synced
+                    ? QString::fromStdString(channel.processor->rdsProgramService())
+                    : QString();
+                const QString text = synced
+                    ? QString::fromStdString(channel.processor->rdsRadioText())
+                    : QString();
                 if (synced != channel.lastRdsSynced || pi != channel.lastRdsPi
                     || countryCode != channel.lastRdsCountryCode
                     || programCoverage != channel.lastRdsProgramCoverage
@@ -964,6 +970,14 @@ void DspEngine::processAvailable()
                     && channel.settings.fmRds)
                     qCDebug(dsdrDsp) << "    RDS"
                                      << (channel.processor->rdsSynced() ? "sync" : "no sync")
+                                     << "timing" << (channel.processor->rdsTimingLocked() ? "locked" : "acquiring")
+                                     << "clock" << channel.processor->rdsClockSamplesPerSymbol()
+                                     << "block" << (channel.processor->rdsBlockLocked() ? "locked" : "searching")
+                                     << "score" << channel.processor->rdsSyncScore()
+                                     << "groups" << channel.processor->rdsValidGroupStreak()
+                                     << "CRC candidates" << channel.processor->rdsValidBlocks()
+                                     << "57k/reference" << channel.processor->rdsSubcarrierToReferenceDb()
+                                     << "dB"
                                      << "PI" << channel.processor->rdsPiCode()
                                      << "country" << channel.processor->rdsCountryCode()
                                      << "coverage" << channel.processor->rdsProgramCoverage()

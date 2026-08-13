@@ -4,6 +4,46 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.2.1] «Braun» — 2026-08-13
+
+Una release di ricezione: il ricevitore, gli strumenti con cui lo si legge e
+il percorso che porta il segnale all'ascolto concordano finalmente su ciò che
+stanno facendo.
+
+### Aggiunto
+
+- **Backend RTL-SDR nativo**, con profilo esplicito per RTL-SDR Blog V4,
+  controlli di guadagno e PPM, discovery e verifiche dedicate. Su macOS il
+  bundle include anche le librerie necessarie al backend Soapy/RTL-SDR.
+
+- **Pannello RDS per la radio FM**, con stato di sincronismo, nome programma,
+  testo radio, PI, PTY e frequenze alternative. I log verbosi espongono il
+  percorso di recupero del clock e i blocchi RDS validi, così un'antenna o un
+  segnale insufficiente non si confondono con un decoder muto.
+
+- **Wide FM esplicita** fra i modi del ricevitore, con proprietà del canale,
+  filtri e catena stereo allineati al broadcast FM.
+
+### Corretto
+
+- **S-meter e Decometer in Wide FM.** La portante FM non viene più usata come
+  fondo di rumore: livello, fondo e SNR raccontano grandezze diverse. Le
+  tarature S9 impossibili salvate in precedenza vengono riparate all'avvio e
+  non possono più superare 0 dBFS.
+
+- **Guadagno automatico RTL-SDR.** Il profilo automatico evita il ciclo di
+  riconfigurazioni che poteva affamare il flusso audio e causare scatti.
+
+- **Tema macOS.** I display numerici usano Menlo su macOS, invece di una lista
+  CSS interpretata da Qt come un unico font inesistente: scompare il warning
+  di alias dei font a ogni avvio.
+
+### Verificato
+
+- Test DSP, QML, profili RTL-SDR e avvio reale del bundle macOS. Le prove
+  specifiche RNNoise verificano inizializzazione, latenza e percorso in tempo
+  reale quando il suo sorgente ufficiale è disponibile in `third_party/`.
+
 ## [1.2.0] «Armstrong» — 2026-08-13
 
 > Da questa versione i rilasci hanno **un nome oltre al numero**, in ordine

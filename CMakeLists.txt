@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(decodium-sdr
-    VERSION 1.2.0
+    VERSION 1.2.1
     DESCRIPTION "DECODIUM SDR — client SDR universale dell'ecosistema DECODIUM"
     HOMEPAGE_URL "https://decodium.it"
     # Il C serve a RNNoise, che è l'unico codice C del progetto: senza,
@@ -12,7 +12,7 @@ project(decodium-sdr
 # Il nome della versione.
 #
 # Le versioni hanno un numero e un nome, e il nome serve a una cosa che il
-# numero non sa fare: farsi ricordare. «Ce l'hai la 1.2.0 o la 1.1.13?» non se
+# numero non sa fare: farsi ricordare. «Ce l'hai la 1.2.1 o la 1.1.13?» non se
 # lo ricorda nessuno; «ce l'hai la Armstrong?» sì.
 #
 # **I nomi vanno in ordine alfabetico**, e questo li rende un numero
@@ -26,9 +26,11 @@ project(decodium-sdr
 # facesse *davvero*. Per una versione che è tutta strumenti di misura, non ce
 # n'era uno più adatto.
 #
-# Chi taglia la prossima prende la lettera dopo: Braun, Colpitts, De Forest,
+# Chi taglia la prossima prende la lettera dopo: Colpitts, De Forest,
 # Fessenden… La lettera è il numero d'ordine, e non si salta.
-set(DSDR_VERSION_NAME "Armstrong" CACHE STRING "Il nome di questa versione")
+# È metadato di release, non una preferenza di chi compila: lasciarlo in cache
+# farebbe sopravvivere il nome della versione precedente a un aggiornamento.
+set(DSDR_VERSION_NAME "Braun")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -8,7 +8,7 @@ hardware SDR — da una chiavetta RTL-SDR da 30 € fino al DECODIUM SDR One a
 quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 
 > Stato: **Fase 1 quasi completa.** Le fondamenta sono chiuse e l'hardware
-> reale è supportato per tre vie: USB via SoapySDR, rete via rtl_tcp e
+> reale è supportato per quattro vie: RTL-SDR nativa, USB via SoapySDR, rete via rtl_tcp e
 > SpyServer. Vedi [ROADMAP.md](ROADMAP.md).
 
 ---
@@ -20,6 +20,7 @@ quattro canali coerenti — con un'unica interfaccia e un'unica esperienza.
 | Seam HAL `IRadioBackend` + descrittore di capability | ✅ |
 | Backend **demo**: banda sintetica con CW, SSB, AM, digitale, QSB | ✅ |
 | Backend **soapy**: RTL-SDR, Airspy, HackRF, LimeSDR, PlutoSDR, USRP… | ✅ |
+| Backend **rtlsdr** nativo: discovery USB, sintonia, gain, PPM, bias-tee e direct sampling | ✅ |
 | Backend **nettcp**: rtl_tcp e SpyServer, con riconoscimento automatico | ✅ |
 | Backend **colibri**: ColibriNANO USB, 0,1–55 MHz | ✅ [documentato](docs/backends/colibri.md) |
 | DSP engine: DDC, decimazione multistadio, filtri complessi, demod, AGC con AGC-T | ✅ |
@@ -58,16 +59,22 @@ li validerà senza che sia necessario scrivere un test in più.
 
 ### Usare hardware vero
 
-**Collegato via USB** — serve SoapySDR con il driver del proprio device
-(`SoapyRTLSDR` per RTL-SDR; su macOS il pacchetto Homebrew è
-`soapyrtlsdr`, oltre a `soapysdr`):
+**RTL-SDR collegata via USB** — il percorso nativo non richiede SoapyRTLSDR
+durante l'esecuzione:
+
+```sh
+./build/bin/decodium-sdr --backend rtlsdr --auto-connect
+```
+
+Il percorso Soapy resta disponibile per RTL-SDR e per gli altri device:
 
 ```sh
 ./build/bin/decodium-sdr --backend soapy
 ```
 
-Il DMG macOS ufficiale include già SoapyRTLSDR, `librtlsdr` e `libusb`: chi
-scarica l'applicazione non deve installare Homebrew per usare una RTL-SDR V4.
+Il DMG macOS ufficiale include già il backend nativo, SoapyRTLSDR,
+`librtlsdr` e `libusb`: chi scarica l'applicazione non deve installare
+Homebrew per usare una RTL-SDR V4.
 
 **Su un'altra macchina**, via rtl_tcp:
 
@@ -91,11 +98,11 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Su macOS, per usare una RTL-SDR V4 collegata via USB durante lo sviluppo,
-servono anche il modulo SoapyRTLSDR e il runtime USB:
+Su macOS, per compilare il backend nativo e il percorso Soapy durante lo
+sviluppo, servono librtlsdr, il modulo SoapyRTLSDR e il runtime USB:
 
 ```sh
-brew install qt@6 fftw ninja soapysdr soapyrtlsdr
+brew install qt@6 fftw ninja librtlsdr soapysdr soapyrtlsdr
 ```
 
 Su MSYS2 (Windows):
@@ -116,6 +123,7 @@ cmake -S . -B build -DDSDR_BACKEND_SOAPY=ON -DDSDR_GPU_SPECTRUM=ON
 |---|---|---|
 | `DSDR_BACKEND_DEMO` | ON | Backend sintetico; necessario per i test |
 | `DSDR_BACKEND_SOAPY`, `DSDR_BACKEND_NETTCP` | ON | Hardware locale e di rete |
+| `DSDR_BACKEND_RTLSDR` | ON su macOS | Backend nativo `librtlsdr` |
 | `DSDR_BACKEND_HPSDR` … `DSDR_BACKEND_HAMLIB` | OFF | Backend delle fasi successive |
 | `DSDR_GPU_SPECTRUM` | ON | Spettro su GPU; OFF compila il path CPU |
 | `DSDR_BUILD_TESTS` | ON | Suite di test |
@@ -134,10 +142,10 @@ utile per separare i costi fra DSP e scene graph.
 Per seguire tutto il percorso RTL-SDR → DSP → audio usare `--verbose`:
 
 ```sh
-./build/bin/decodium-sdr --backend soapy --auto-connect --verbose
+./build/bin/decodium-sdr --backend rtlsdr --auto-connect --verbose
 ```
 
-Il log mostra discovery, profilo RTL-SDR, frequenza e rate, modalità/filtro/AGC,
+Il log mostra discovery, profilo RTL-SDR nativo, frequenza e rate, modalità/filtro/AGC,
 decimazione, campioni IQ→audio, RF/fondo rumore/SNR/audio, RDS, scanner, rigctl
 e stato dell'uscita audio.
 

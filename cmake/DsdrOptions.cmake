@@ -5,6 +5,7 @@
 
 option(DSDR_BACKEND_DEMO    "Backend sintetico (RF-09) — sempre consigliato ON" ON)
 option(DSDR_BACKEND_SOAPY   "Backend SoapySDR (RF-01)"                          ON)
+option(DSDR_BACKEND_RTLSDR  "Backend RTL-SDR nativo (librtlsdr)"                ${APPLE})
 option(DSDR_BACKEND_NETTCP  "Backend rtl_tcp / SpyServer (RF-07)"               ON)
 option(DSDR_BACKEND_HERMES  "Backend OpenHPSDR protocollo 1 / Hermes-Lite 2"     ON)
 option(DSDR_BACKEND_HPSDR   "Backend OpenHPSDR P2 (RF-02)"                       OFF)
@@ -209,7 +210,7 @@ function(dsdr_print_configuration)
     # sapere se un backend c'è — è successo con audiorig sparito dalla 1.1.3, e
     # questa riga diceva di sì tacendo.
     message(STATUS "  Backend attivi  :")
-    foreach(be DEMO SOAPY NETTCP HERMES COLIBRI IQFILE AUDIORIG FLEX FLEX_PROBE
+    foreach(be DEMO SOAPY RTLSDR NETTCP HERMES COLIBRI IQFILE AUDIORIG FLEX FLEX_PROBE
                HPSDR DLINK TCI KIWI HAMLIB)
         if(DSDR_BACKEND_${be})
             message(STATUS "      • ${be}")

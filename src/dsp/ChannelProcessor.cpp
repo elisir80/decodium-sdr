@@ -732,24 +732,59 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
             && (m_settings.mode == DemodMode::Fm || m_settings.mode == DemodMode::Nfm))
             m_fmIfNoiseReducer.process(m_filtered.data(), decimated);
 
-        // S-meter: potenza media del canale filtrato, prima dell'AGC.
-        float power = 0.0f;
-        for (std::size_t i = 0; i < decimated; ++i)
-            power += magnitudeSquared(m_filtered[i]);
-        power /= static_cast<float>(decimated);
-        const float instantDb = powerToDb(power);
-        m_signalLevelDb += (instantDb - m_signalLevelDb) * 0.2f;
+        // S-meter: potenza del canale filtrato, prima dell'AGC. Wide-FM è
+        // un caso fisicamente diverso: una portante FM forte ha inviluppo
+        // quasi costante e riempie l'intera larghezza del filtro. Usare la
+        // sua potenza media anche come fondo portava il rapporto a 0 dB e
+        // faceva cadere il DECØMETER a S1 pur con una stazione perfetta.
+        //
+        // Per un segnale a inviluppo costante C sommato a rumore complesso
+        // gaussiano N, con p = |C + N|², valgono:
+        //   E[p] = C + N,  Var[p] = N² + 2CN.
+        // Quindi C = sqrt(E[p]² - Var[p]) e N = E[p] - C. La stima è locale
+        // al canale, non richiede di cercare un tratto libero nel panorama
+        // FM, ed evita di scambiare una trasmissione broadcast per rumore.
+        double powerSum = 0.0;
+        double powerSquaredSum = 0.0;
+        for (std::size_t i = 0; i < decimated; ++i) {
+            const double samplePower = magnitudeSquared(m_filtered[i]);
+            powerSum += samplePower;
+            powerSquaredSum += samplePower * samplePower;
+        }
+        const double averagePower = powerSum / static_cast<double>(decimated);
+        const float instantDb = powerToDb(static_cast<float>(averagePower));
 
-        // Il fondo rumore scende rapidamente quando la banda si libera, ma
-        // sale lentamente davanti a un segnale continuo: in questo modo il
-        // S-meter non viene confuso con l'SNR e una portante non si trasforma
-        // artificialmente in "rumore di fondo".
-        if (!m_noiseFloorInitialized) {
-            m_noiseFloorDb = instantDb;
-            m_noiseFloorInitialized = true;
+        if (m_wideFm) {
+            const double averageSquaredPower = powerSquaredSum
+                / static_cast<double>(decimated);
+            const double variance = std::max(0.0,
+                averageSquaredPower - averagePower * averagePower);
+            const double carrierPower = std::sqrt(std::max(0.0,
+                averagePower * averagePower - variance));
+            const double noisePower = std::max(1.0e-16, averagePower - carrierPower);
+            const float carrierDb = powerToDb(static_cast<float>(carrierPower));
+            const float noiseDb = powerToDb(static_cast<float>(noisePower));
+            m_signalLevelDb += (carrierDb - m_signalLevelDb) * 0.2f;
+            if (!m_noiseFloorInitialized) {
+                m_noiseFloorDb = noiseDb;
+                m_noiseFloorInitialized = true;
+            } else {
+                m_noiseFloorDb += (noiseDb - m_noiseFloorDb) * 0.12f;
+            }
         } else {
-            const float alpha = instantDb < m_noiseFloorDb ? 0.12f : 0.003f;
-            m_noiseFloorDb += (instantDb - m_noiseFloorDb) * alpha;
+            m_signalLevelDb += (instantDb - m_signalLevelDb) * 0.2f;
+
+            // Il fondo rumore scende rapidamente quando la banda si libera,
+            // ma sale lentamente davanti a un segnale continuo: in questo
+            // modo una portante stretta non si trasforma artificialmente in
+            // "rumore di fondo".
+            if (!m_noiseFloorInitialized) {
+                m_noiseFloorDb = instantDb;
+                m_noiseFloorInitialized = true;
+            } else {
+                const float alpha = instantDb < m_noiseFloorDb ? 0.12f : 0.003f;
+                m_noiseFloorDb += (instantDb - m_noiseFloorDb) * alpha;
+            }
         }
         m_snrDb = std::clamp(m_signalLevelDb - m_noiseFloorDb, 0.0f, 99.0f);
 
@@ -820,9 +855,12 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
 
         if (decodeStereo) {
             m_demod.process(m_filtered.data(), decimated, m_demodulated.data());
-            m_agc.process(m_demodulated.data(), decimated);
+            // RDS deve vedere il multiplex FM lineare, prima dell'AGC audio:
+            // l'AGC segue l'inviluppo del multiplex completo e ne altera il
+            // rapporto fra L+R, pilota, L-R e sottoportante RDS a 57 kHz.
             if (m_settings.fmRds)
                 m_rds.process(m_demodulated.data(), decimated);
+            m_agc.process(m_demodulated.data(), decimated);
             m_broadcastFmStereo.process(m_demodulated.data(), decimated,
                                          m_stereoAudio.data());
             for (std::size_t i = 0; i < decimated; ++i) {

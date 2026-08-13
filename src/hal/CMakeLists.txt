@@ -208,6 +208,31 @@ endif()
 list(APPEND DSDR_HAL_SOURCES RadioScout.h RadioScout.cpp)
 set(DSDR_HAL_NEEDS_NETWORK ON)
 
+if(DSDR_BACKEND_RTLSDR)
+    find_path(DSDR_RTLSDR_INCLUDE_DIR
+        NAMES rtl-sdr.h
+        PATHS /opt/homebrew/include /usr/local/include)
+    find_library(DSDR_RTLSDR_LIBRARY
+        NAMES rtlsdr librtlsdr
+        PATHS /opt/homebrew/lib /usr/local/lib)
+    if(NOT DSDR_RTLSDR_INCLUDE_DIR OR NOT DSDR_RTLSDR_LIBRARY)
+        message(FATAL_ERROR
+            "librtlsdr non trovato ma DSDR_BACKEND_RTLSDR=ON.\n"
+            "  macOS: brew install librtlsdr\n"
+            "  Oppure disattiva il backend con -DDSDR_BACKEND_RTLSDR=OFF.")
+    endif()
+
+    list(APPEND DSDR_HAL_SOURCES
+        backends/rtlsdr/RtlSdrProfile.h
+        backends/rtlsdr/RtlSdrProfile.cpp
+        backends/rtlsdr/RtlSdrWorker.h
+        backends/rtlsdr/RtlSdrWorker.cpp
+        backends/rtlsdr/RtlSdrBackend.h
+        backends/rtlsdr/RtlSdrBackend.cpp
+    )
+    list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_RTLSDR)
+endif()
+
 add_library(dsdr_hal STATIC ${DSDR_HAL_SOURCES})
 
 target_compile_definitions(dsdr_hal PUBLIC ${DSDR_HAL_DEFINES})
@@ -261,6 +286,11 @@ if(DSDR_BACKEND_SOAPY)
             endif()
         endif()
     endif()
+endif()
+
+if(DSDR_BACKEND_RTLSDR)
+    target_include_directories(dsdr_hal PRIVATE ${DSDR_RTLSDR_INCLUDE_DIR})
+    target_link_libraries(dsdr_hal PRIVATE ${DSDR_RTLSDR_LIBRARY})
 endif()
 
 dsdr_apply_target_defaults(dsdr_hal)

@@ -73,8 +73,10 @@ private:
     std::atomic<double> m_pendingSampleRate{-1.0};
     std::atomic<double> m_pendingGain{-1.0};
     std::atomic<bool> m_gainAuto{true};
+    std::atomic<bool> m_gainCommandPending{true};
     std::atomic<int> m_pendingAntenna{-1};
     QStringList m_antennas;   ///< letto dal profilo, usato solo dal ciclo
+    double m_safeAutoGainDb = 0.0;
 };
 
 } // namespace dsdr::hal::soapy

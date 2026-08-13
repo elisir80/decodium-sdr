@@ -204,6 +204,32 @@ void TestSessionDemo::rigctlTunesAndChangesMode()
              "rigctl non ha confermato PTT OFF");
     QCOMPARE(socket.readLine().trimmed(), QByteArray("RPRT 0"));
     QVERIFY(!session.isTransmitting());
+
+    socket.write("\\get_freq\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "alias rigctl get_freq non ha risposto");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("7105000"));
+
+    socket.write("M ?\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha restituito la lista dei modi");
+    QVERIFY(socket.readLine().contains("RAW"));
+
+    socket.write("\\set_mode RAW 12000\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "alias rigctl set_mode non ha confermato il modo");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("RPRT 0"));
+    QCOMPARE(session.channels()->at(0)->settings.mode, DemodMode::Iq);
+
+    socket.write("v\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha restituito il VFO");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("VFO"));
+
+    socket.write("\\chk_vfo\n");
+    QVERIFY2(waitFor([&] { return socket.canReadLine(); }, 1000),
+             "rigctl non ha restituito CHKVFO");
+    QCOMPARE(socket.readLine().trimmed(), QByteArray("CHKVFO 0"));
 }
 
 void TestSessionDemo::scannerCompletesAndPublishesState()

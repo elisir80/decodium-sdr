@@ -15,6 +15,10 @@
 #include "hal/backends/soapy/SoapyBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_RTLSDR
+#include "hal/backends/rtlsdr/RtlSdrBackend.h"
+#endif
+
 #ifdef DSDR_BACKEND_COLIBRI
 #include "hal/backends/colibri/ColibriBackend.h"
 #endif
@@ -141,6 +145,17 @@ void registerBuiltinBackends()
                                    "HackRF, LimeSDR, PlutoSDR, USRP. Ogni device con un "
                                    "driver SoapySDR funziona senza scrivere altro codice.")},
         [](QObject *parent) -> IRadioBackend * { return new SoapyBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_RTLSDR
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("rtlsdr"),
+                    QStringLiteral("RTL-SDR (librtlsdr nativo)"),
+                    QStringLiteral("Percorso nativo diretto per RTL-SDR Blog V4 e ricevitori "
+                                   "compatibili: discovery USB, sintonia, sample rate, gain, "
+                                   "PPM, bias-tee e direct sampling. SoapySDR resta disponibile "
+                                   "come fallback per altri hardware.")},
+        [](QObject *parent) -> IRadioBackend * { return new RtlSdrBackend(parent); });
 #endif
 
 #ifdef DSDR_BACKEND_COLIBRI

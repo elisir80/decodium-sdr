@@ -103,7 +103,18 @@ QtObject {
     readonly property int headerHeight: 52
 
     // ── Tipografia ───────────────────────────────────────────────────────
-    readonly property string monoFamily: "Cascadia Mono, Consolas, DejaVu Sans Mono, monospace"
+    // QFont accetta un solo nome di famiglia: una lista CSS separata da
+    // virgole viene cercata alla lettera e causa una ricerca di alias ad ogni
+    // avvio. Si sceglie quindi il monospace fornito dalla rispettiva
+    // piattaforma, mantenendo le cifre allineate nei display radio.
+    readonly property string monoFamily: {
+        switch (Qt.platform.os) {
+        case "osx":     return "Menlo"
+        case "windows": return "Consolas"
+        case "linux":   return "DejaVu Sans Mono"
+        default:         return "monospace"
+        }
+    }
     readonly property int fontSmall: 11
     readonly property int fontNormal: 13
     readonly property int fontLarge: 16

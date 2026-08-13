@@ -34,6 +34,29 @@ TestCase {
         DecoMeter { width: testCase.panelWidth }
     }
 
+    Component {
+        id: rdsComponent
+
+        RdsPanel {
+            width: testCase.panelWidth
+            channelIndex: 0
+            fmStereo: true
+            fmRds: true
+            rdsAutomaticAf: false
+            rdsRegion: 0
+            rdsSynced: true
+            rdsCountryCode: 2
+            rdsProgramCoverage: 1
+            rdsReferenceNumber: 42
+            rdsPi: "1234"
+            rdsCallsign: "IURADIO"
+            rdsProgramType: "Pop Music"
+            rdsAlternateFrequencies: "99.700 MHz · 101.200 MHz"
+            rdsProgramService: "DECODIUM"
+            rdsRadioText: "Segnale RDS di prova"
+        }
+    }
+
     /// Cerca in profondità un figlio per nome: i due tasti del selettore
     /// nascono dentro un Repeater, e il loro posto nell'albero non è una cosa
     /// su cui una prova debba fare affidamento.
@@ -150,5 +173,29 @@ TestCase {
         // nasce chiuso.
         panel.collapsed = false
         wait(120)
+    }
+
+    function test_invalid_persisted_s9_calibration_is_repaired() {
+        const panel = createTemporaryObject(panelComponent, testCase)
+        verify(panel !== null, "pannello S-meter non istanziato")
+
+        panel.s9ReferenceDb = 13.9
+        wait(50)
+        compare(panel.s9ReferenceDb, panel.defaultS9ReferenceDb,
+                "una S9 sopra il fondo scala non è stata riparata")
+        verify(!panel.calibrated, "la tara non valida è rimasta marcata valida")
+    }
+
+    function test_rds_panel_displays_decoded_station_data() {
+        const panel = createTemporaryObject(rdsComponent, testCase)
+        verify(panel !== null, "pannello RDS non istanziato")
+        wait(80)
+
+        compare(findByName(panel, "rds-status").text, "SYNC")
+        compare(findByName(panel, "rds-ps").text, "DECODIUM")
+        compare(findByName(panel, "rds-radio-text").text, "Segnale RDS di prova")
+        compare(findByName(panel, "rds-pi").text, "1234")
+        compare(findByName(panel, "rds-pty").text, "Pop Music")
+        compare(findByName(panel, "rds-af").text, "99.700 MHz · 101.200 MHz")
     }
 }

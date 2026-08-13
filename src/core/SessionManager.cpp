@@ -129,7 +129,7 @@ bool demodModeFromRigctl(const QString &value, DemodMode &mode)
         mode = DemodMode::DigL;
     else if (upper == QStringLiteral("DIGU"))
         mode = DemodMode::DigU;
-    else if (upper == QStringLiteral("IQ"))
+    else if (upper == QStringLiteral("IQ") || upper == QStringLiteral("RAW"))
         mode = DemodMode::Iq;
     else if (upper == QStringLiteral("USB"))
         mode = DemodMode::Usb;
@@ -444,104 +444,6 @@ SessionManager::SessionManager(QObject *parent)
         emit errorReported(message, false);
     });
 
-    // Picco e valore efficace dell'audio, cinque volte al secondo.
-    connect(m_engine, &DspEngine::audioLevelsMeasured, this,
-            [this](double peakDb, double rmsDb) {
-                m_audioPeakDb = peakDb;
-                m_audioRmsDb = rmsDb;
-                emit audioLevelsChanged();
-            });
-
-    // Il tono dominante dell'audio, cinque volte al secondo.
-    connect(m_engine, &DspEngine::audioToneMeasured, this,
-            [this](double frequencyHz, double levelDb, double thdPercent) {
-                m_audioToneHz = frequencyHz;
-                m_audioToneDb = levelDb;
-                m_audioThdPercent = thdPercent;
-                emit audioToneChanged();
-            });
-
-    // Una volta al secondo il motore dice quanti campioni sono arrivati e
-    // quanti ne aspettava: da lì la salute del collegamento.
-    connect(m_engine, &DspEngine::streamRateMeasured, this,
-            [this](double measured, double nominal) {
-                if (!(nominal > 0.0)) {
-                    m_streamHealth = -1.0;
-                    emit streamHealthChanged();
-                    return;
-                }
-                // Il rapporto si tronca a uno: un secondo può contenerne un po'
-                // più del dovuto quando il precedente ne aveva contati meno, e
-                // un «103 %» in fondo alla finestra è solo una domanda in più
-                // per chi legge.
-                const double health = std::clamp(measured / nominal, 0.0, 1.0);
-                if (std::abs(health - m_streamHealth) < 0.005)
-                    return;
-                m_streamHealth = health;
-                emit streamHealthChanged();
-            });
-
-    // La guardia parla poco: quando l'ingresso entra o esce dalla saturazione, e
-    // quando avrebbe una correzione da chiedere.
-    connect(m_engine, &DspEngine::overloadStateChanged, this,
-            [this](bool overloaded, double peakDbfs, double requestDb) {
-                const bool wasOverloaded = m_overloaded;
-                m_overloaded = overloaded;
-                m_peakDbfs = peakDbfs;
-                emit overloadChanged();
-
-                if (overloaded && !wasOverloaded) {
-                    setStatus(canCorrectGain()
-                                  ? tr("Ingresso in saturazione (%1 dBFS).")
-                                        .arg(peakDbfs, 0, 'f', 1)
-                                  : tr("Ingresso in saturazione (%1 dBFS): "
-                                       "riduci il guadagno o inserisci l'attenuatore.")
-                                        .arg(peakDbfs, 0, 'f', 1));
-                }
-
-                if (requestDb == 0.0)
-                    return;
-
-                // Dove il device sa togliere guadagno, la guardia smette di
-                // essere una spia: la richiesta passa dal seam e il backend la
-                // realizza col mezzo che ha. Dove non sa, si dice che cosa
-                // servirebbe — che è meno utile ma è vero.
-                if (!canCorrectGain()) {
-                    setStatus(requestDb < 0.0
-                                  ? tr("Servirebbero %1 dB in meno di guadagno.")
-                                        .arg(-requestDb, 0, 'f', 0)
-                                  : tr("C'è margine: si possono restituire %1 dB.")
-                                        .arg(requestDb, 0, 'f', 0));
-                    return;
-                }
-
-                const double target = std::max(0.0, m_gainReductionDb - requestDb);
-                const double applied = m_backend->setGainReduction(target);
-                if (qFuzzyCompare(applied, m_gainReductionDb))
-                    return;
-
-                m_gainReductionDb = applied;
-                emit overloadChanged();
-
-                // Si annuncia il valore **applicato**, non quello chiesto: gli
-                // attenuatori hanno passi discreti, e dire «−6 dB» quando ne
-                // sono entrati 3 insegna a non fidarsi del pannello.
-                setStatus(requestDb < 0.0
-                              ? tr("Attenuazione a %1 dB: ingresso in saturazione.")
-                                    .arg(applied, 0, 'f', 0)
-                              : tr("Attenuazione a %1 dB: c'era margine.")
-                                    .arg(applied, 0, 'f', 0));
-            });
-
-    connect(&m_recorder, &IqRecorder::failed, this, [this](const QString &message) {
-        setStatus(message);
-        emit errorReported(message, false);
-    });
-
-    connect(&m_recorder, &IqRecorder::failed, this, [this](const QString &message) {
-        setStatus(message);
-        emit errorReported(message, false);
-    });
     connect(&m_audioRecorder, &IqRecorder::failed, this, [this](const QString &message) {
         setStatus(message);
         emit errorReported(message, false);
@@ -1828,11 +1730,11 @@ void SessionManager::handleRigctlLine(QTcpSocket *socket, const QByteArray &line
     const ChannelEntry *entry = m_channels.at(row);
     const qint64 frequency = entry ? entry->frequencyHz : m_centerFrequency;
 
-    if (command == "f") {
+    if (command == "f" || command == "\\get_freq") {
         socket->write(QByteArray::number(frequency) + '\n');
         return;
     }
-    if (command == "m") {
+    if (command == "m" || command == "\\get_mode") {
         const DemodMode mode = entry ? entry->settings.mode : DemodMode::Usb;
         const int passband = entry
             ? std::abs(entry->settings.filterHighHz - entry->settings.filterLowHz)
@@ -1850,7 +1752,23 @@ void SessionManager::handleRigctlLine(QTcpSocket *socket, const QByteArray &line
                       + '\n');
         return;
     }
-    if (command == "q") {
+    if (command == "v" || command == "\\get_vfo") {
+        socket->write("VFO\n");
+        return;
+    }
+    if (command == "\\chk_vfo") {
+        socket->write("CHKVFO 0\n");
+        return;
+    }
+    if (command == "s") {
+        socket->write("0\nVFOA\n");
+        return;
+    }
+    if (command == "S") {
+        socket->write("RPRT 0\n");
+        return;
+    }
+    if (command == "q" || command == "\\quit") {
         socket->write("RPRT 0\n");
         socket->disconnectFromHost();
         return;
@@ -1862,9 +1780,22 @@ void SessionManager::handleRigctlLine(QTcpSocket *socket, const QByteArray &line
                       + "\n");
         return;
     }
+    if (command == "AOS" || command == "\\recorder_start") {
+        const bool started = startAudioRecording();
+        qCInfo(dsdrCore) << "rigctl: recorder audio" << (started ? "ON" : "rifiutato");
+        socket->write(started ? "RPRT 0\n" : "RPRT -1\n");
+        return;
+    }
+    if (command == "LOS" || command == "\\recorder_stop") {
+        stopAudioRecording();
+        qCInfo(dsdrCore) << "rigctl: recorder audio OFF";
+        socket->write("RPRT 0\n");
+        return;
+    }
 
     const QList<QByteArray> parts = command.simplified().split(' ');
-    if (parts.size() >= 2 && parts.at(0) == "F") {
+    if (parts.size() >= 2
+        && (parts.at(0) == "F" || parts.at(0) == "\\set_freq")) {
         bool ok = false;
         const qint64 hz = parts.at(1).toLongLong(&ok);
         if (!ok || hz <= 0) {
@@ -1879,7 +1810,12 @@ void SessionManager::handleRigctlLine(QTcpSocket *socket, const QByteArray &line
         return;
     }
 
-    if (parts.size() >= 2 && parts.at(0) == "M") {
+    if (parts.size() >= 2
+        && (parts.at(0) == "M" || parts.at(0) == "\\set_mode")) {
+        if (parts.at(1) == "?") {
+            socket->write("WFM FM NFM SAM AM DSB USB LSB CW DIGU DIGL IQ RAW\n");
+            return;
+        }
         // Inizializzata anche se il ramo che la usa passa dalla conversione
         // riuscita: il compilatore non lo sa dimostrare, e una variabile che
         // «forse» ha un valore in un protocollo di rete non è una cosa da
@@ -1899,6 +1835,16 @@ void SessionManager::handleRigctlLine(QTcpSocket *socket, const QByteArray &line
             }
         }
         socket->write("RPRT 0\n");
+        return;
+    }
+
+    if (parts.size() >= 2
+        && (parts.at(0) == "V" || parts.at(0) == "\\set_vfo")) {
+        if (parts.at(1) == "?") {
+            socket->write("VFO\n");
+            return;
+        }
+        socket->write(parts.at(1) == "VFO" ? "RPRT 0\n" : "RPRT -1\n");
         return;
     }
 

@@ -82,6 +82,7 @@ private slots:
     void frequencyCoverageFollowsTheDevice();
     void sampleRatesAreSortedAndDefaultIsSane();
     void defaultSampleRateAvoidsUsbOverruns();
+    void automaticGainIsConservativeAndCorrectable();
     void invalidProfileIsRecognised();
 };
 
@@ -178,6 +179,15 @@ void TestSoapyProfile::defaultSampleRateAvoidsUsbOverruns()
     QVERIFY2(caps.defaultSampleRate <= 2'400'000.0,
              qPrintable(QStringLiteral("default troppo alto: %1").arg(caps.defaultSampleRate)));
     QCOMPARE(caps.defaultSampleRate, 2'400'000.0);
+}
+
+void TestSoapyProfile::automaticGainIsConservativeAndCorrectable()
+{
+    const SoapyDeviceProfile profile = rtlSdrProfile();
+    QCOMPARE(safeAutoGainDb(profile), 20.0);
+
+    const BackendCapabilities caps = capabilitiesFrom(profile);
+    QCOMPARE(caps.maxGainReductionDb, 49.6);
 }
 
 void TestSoapyProfile::invalidProfileIsRecognised()

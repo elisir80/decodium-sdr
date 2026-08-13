@@ -58,6 +58,11 @@ void SoapyWorker::requestGain(double db)
         m_gainAuto.store(false, std::memory_order_release);
         m_pendingGain.store(db, std::memory_order_release);
     }
+    // Il comando deve essere applicato una sola volta.  Lasciare il solo
+    // booleano m_gainAuto come condizione faceva riscrivere il gain a ogni
+    // readStream(): il driver Soapy veniva bloccato, il ring IQ si svuotava e
+    // l'audio entrava in underrun.
+    m_gainCommandPending.store(true, std::memory_order_release);
 }
 
 void SoapyWorker::requestAntenna(int index)
@@ -160,6 +165,7 @@ void SoapyWorker::applyPendingCommands(SoapySDR::Device *device)
     if (frequency > 0) {
         try {
             device->setFrequency(SOAPY_SDR_RX, 0, static_cast<double>(frequency));
+            qCInfo(dsdrHal) << "soapy: frequenza applicata" << frequency;
         } catch (const std::exception &e) {
             emit failed(tr("Sintonia rifiutata dal device: %1").arg(QString::fromUtf8(e.what())),
                         false);
@@ -186,11 +192,23 @@ void SoapyWorker::applyPendingCommands(SoapySDR::Device *device)
         }
     }
 
+    if (!m_gainCommandPending.exchange(false, std::memory_order_acq_rel))
+        return;
+
     if (m_gainAuto.load(std::memory_order_acquire)) {
         try {
-            if (device->hasGainMode(SOAPY_SDR_RX, 0) && !device->getGainMode(SOAPY_SDR_RX, 0))
-                device->setGainMode(SOAPY_SDR_RX, 0, true);
-        } catch (...) {
+            // AUTO is deliberately client-controlled.  Several Soapy RTL-SDR
+            // drivers combine tuner AGC and the RTL2832 AGC too aggressively,
+            // producing clipped CF32 samples even when the audio still sounds
+            // plausible.  Start at a conservative real gain and let the core
+            // overload guard move it in discrete requests.
+            if (device->hasGainMode(SOAPY_SDR_RX, 0))
+                device->setGainMode(SOAPY_SDR_RX, 0, false);
+            device->setGain(SOAPY_SDR_RX, 0, m_safeAutoGainDb);
+            qCInfo(dsdrHal) << "soapy: AUTO prudente" << m_safeAutoGainDb
+                            << "dB, AGC hardware off";
+        } catch (const std::exception &e) {
+            emit failed(tr("AUTO gain rifiutato: %1").arg(QString::fromUtf8(e.what())), false);
         }
     } else {
         const double gain = m_pendingGain.exchange(-1.0, std::memory_order_acq_rel);
@@ -249,6 +267,7 @@ void SoapyWorker::openAndRun(const QString &deviceArgs, qint64 frequencyHz, doub
     }
     // L'elenco antenne serve al ciclo per tradurre gli indici richiesti.
     m_antennas = profile.antennas;
+    m_safeAutoGainDb = safeAutoGainDb(profile);
     qCInfo(dsdrHal) << "soapy: profilo" << profile.driver << profile.hardware
                     << "label" << profile.label
                     << "sample rates" << profile.sampleRates
@@ -256,6 +275,10 @@ void SoapyWorker::openAndRun(const QString &deviceArgs, qint64 frequencyHz, doub
                     << "frequenza" << profile.minFrequencyHz << profile.maxFrequencyHz
                     << "gain" << profile.minGainDb << profile.maxGainDb
                     << "AGC hardware" << profile.hasAgc;
+    // Applica il comando iniziale prima di entrare nel ciclo readStream().
+    // In questo modo il primo blocco non può essere acquisito con l'AGC
+    // hardware ancora attivo.
+    applyPendingCommands(device);
     emit opened(profile);
 
     runLoop(device);

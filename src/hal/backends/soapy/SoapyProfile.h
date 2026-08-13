@@ -63,6 +63,11 @@ BackendCapabilities capabilitiesFrom(const SoapyDeviceProfile &profile);
 /// aprire dentro la banda campionata.
 inline constexpr int kMaxLogicalRxChannels = 4;
 
+/// Guadagno iniziale prudente per l'AUTO controllato dal client. Soapy espone
+/// range diversi per ogni radio, quindi si resta entro 20 dB sopra il minimo
+/// invece di affidarsi all'AGC hardware del driver.
+double safeAutoGainDb(const SoapyDeviceProfile &profile);
+
 } // namespace dsdr::hal::soapy
 
 Q_DECLARE_METATYPE(dsdr::hal::soapy::SoapyDeviceProfile)

@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "dsp/RdsDecoder.h"
+#include "dsp/FirDesign.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <numeric>
 #include <string>
 
 namespace dsdr::dsp {
 
 namespace {
 constexpr double kRdsSubcarrierHz = 57'000.0;
+constexpr double kRdsReferenceHz = 63'500.0;
 constexpr double kRdsBitRate = 1187.5;
+constexpr double kRdsTargetRate = 5'000.0;
+constexpr std::size_t kRdsWorkBufferSamples = 65'536;
+constexpr int kClockInterpPhaseCount = 128;
+constexpr int kClockInterpTapCount = 8;
 constexpr std::uint16_t kSyndromeA = 0b1111011000;
 constexpr std::uint16_t kSyndromeB = 0b1111010100;
 constexpr std::uint16_t kSyndromeC = 0b1001011100;
@@ -26,7 +33,20 @@ constexpr std::uint16_t kOffsetD = 0b0110110100;
 
 constexpr std::uint16_t kLfsrPoly = 0b0110111001;
 constexpr std::uint16_t kInputPoly = 0b1100011011;
+
 } // namespace
+
+RdsDecoder::BlockType RdsDecoder::nextBlockType(BlockType type) noexcept
+{
+    switch (type) {
+    case BlockType::A:  return BlockType::B;
+    case BlockType::B:  return BlockType::C;
+    case BlockType::C:
+    case BlockType::Cp: return BlockType::D;
+    case BlockType::D:  return BlockType::A;
+    }
+    return BlockType::A;
+}
 
 bool RdsDecoder::configure(double sampleRate)
 {
@@ -35,23 +55,168 @@ bool RdsDecoder::configure(double sampleRate)
 
     m_sampleRate = sampleRate;
     m_subcarrierOmega = kTwoPi * kRdsSubcarrierHz / sampleRate;
-    m_symbolPeriod = sampleRate / kRdsBitRate;
-    m_lowpassAlpha = 1.0 - std::exp(-kTwoPi * 3500.0 / sampleRate);
+    m_referenceOmega = kTwoPi * kRdsReferenceHz / sampleRate;
+    // Match SDR++'s rational RDS resampler: power-of-two predecimation,
+    // followed by an exact integer interpolation/decimation pair to 5 kHz.
+    // The latter matters because 256 kHz / 51 is 5019.6078 Hz, which moves
+    // the 1187.5 baud clock enough to make a marginal RDS stream drift.
+    const int power = std::clamp(static_cast<int>(std::floor(
+        std::log2(sampleRate / kRdsTargetRate))), 0, 8);
+    const int predecimation = 1 << power;
+    if (!m_rdsDecimator.configure(sampleRate, predecimation, 2500.0))
+        return false;
+    if (!m_referenceDecimator.configure(sampleRate, predecimation, 2500.0))
+        return false;
+
+    const double predecimatedRate = m_rdsDecimator.outputRate();
+    const int inputRate = std::max(1, static_cast<int>(std::lround(predecimatedRate)));
+    const int outputRate = static_cast<int>(std::lround(kRdsTargetRate));
+    const int divisor = std::gcd(inputRate, outputRate);
+    const int interpolation = outputRate / divisor;
+    m_rdsResampleDecimation = inputRate / divisor;
+    if (!m_rdsInterpolator.configure(predecimatedRate, interpolation, 2375.0))
+        return false;
+    m_rdsSampleRate = predecimatedRate * interpolation
+        / static_cast<double>(m_rdsResampleDecimation);
+    m_symbolPeriod = m_rdsSampleRate / kRdsBitRate;
+    m_clockNominalOmega = m_symbolPeriod;
+    m_clockOmega = m_clockNominalOmega;
+
+    // A narrow BPSK Costas loop removes residual phase/frequency error left
+    // by the 57 kHz translator. The differential decoder below still removes
+    // the 180-degree ambiguity of the loop.
+    constexpr double kCostasBandwidth = 0.005;
+    constexpr double kCostasDamping = 0.707;
+    const double costasDenominator = 1.0
+        + 2.0 * kCostasDamping * kCostasBandwidth
+        + kCostasBandwidth * kCostasBandwidth;
+    m_costasAlpha = 4.0 * kCostasDamping * kCostasBandwidth
+        / costasDenominator;
+    m_costasBeta = 4.0 * kCostasBandwidth * kCostasBandwidth
+        / costasDenominator;
+    // SDR++ leaves the first Costas loop at its default +/- pi capture range.
+    m_costasMaxFrequency = kPi;
+
+    // SDR++ uses a second, slow Costas loop at half the 2.375 kHz RDS
+    // channel bandwidth before converting the recovered stream to real.
+    // This removes the residual symbol-rate rotation and leaves a clean eye
+    // for the Mueller-Muller clock recovery.
+    constexpr double kClockCostasBandwidth = 0.01;
+    constexpr double kClockCostasDamping = 0.707;
+    const double clockCostasDenominator = 1.0
+        + 2.0 * kClockCostasDamping * kClockCostasBandwidth
+        + kClockCostasBandwidth * kClockCostasBandwidth;
+    m_clockCostasAlpha = 4.0 * kClockCostasDamping * kClockCostasBandwidth
+        / clockCostasDenominator;
+    m_clockCostasBeta = 4.0 * kClockCostasBandwidth * kClockCostasBandwidth
+        / clockCostasDenominator;
+    m_clockCostasFrequency = kTwoPi * (kRdsBitRate / m_rdsSampleRate);
+    m_clockCostasMinFrequency = m_clockCostasFrequency * 0.9;
+    m_clockCostasMaxFrequency = m_clockCostasFrequency * 1.1;
+
+    // The resampler output is now exactly 5 kHz, matching SDR++ and the RDS
+    // demodulator's 0..2375 Hz complex branch.
+    m_clockOmegaGain = 1.0e-6;
+    m_clockMuGain = 0.01;
+    m_rdsMixed.assign(kRdsWorkBufferSamples, Complex(0.0f, 0.0f));
+    m_referenceMixed.assign(kRdsWorkBufferSamples, Complex(0.0f, 0.0f));
+    m_rdsDecimated.assign(kRdsWorkBufferSamples, Complex(0.0f, 0.0f));
+    m_referenceDecimated.assign(kRdsWorkBufferSamples, Complex(0.0f, 0.0f));
+    m_rdsInterpolated.assign(kRdsWorkBufferSamples, Complex(0.0f, 0.0f));
+    // Select the positive-frequency half of the translated real RDS signal.
+    // `designBandpass` follows the normal e^(+j*omega*n) tap convention used
+    // by ComplexFir, so no additional conjugation is needed here.
+    std::vector<Complex> rdsTaps = designBandpass(
+        0.0, 2375.0, m_rdsSampleRate, 255, kaiserBeta(70.0));
+    m_rdsAnalyticFilter.setTaps(rdsTaps);
+
+    // SDR++ uses the same 128-phase, 8-tap windowed-sinc interpolator for
+    // its Mueller--Muller clock recovery.  Keep the phase bank in the
+    // decoder so the live path never has to interpolate linearly between
+    // samples whose eye opening is already only a few samples wide.
+    const int tapCount = kClockInterpPhaseCount * kClockInterpTapCount;
+    const double omega = kPi / static_cast<double>(kClockInterpPhaseCount);
+    m_clockInterpTaps.assign(
+        static_cast<std::size_t>(kClockInterpPhaseCount * kClockInterpTapCount),
+        0.0f);
+    std::vector<float> prototype(static_cast<std::size_t>(tapCount), 0.0f);
+    const double half = static_cast<double>(tapCount) * 0.5;
+    // SDR++ passes the phase count as the windowed-sinc normalization, so
+    // the polyphase branches retain unit gain instead of each carrying only
+    // 1/128 of the interpolator output.
+    const double correction = 1.0;
+    for (int i = 0; i < tapCount; ++i) {
+        const double t = static_cast<double>(i) - half + 0.5;
+        const double n = t - half;
+        const double windowPhase = kTwoPi * n / static_cast<double>(tapCount);
+        const double window = 0.355768
+            - 0.487396 * std::cos(windowPhase)
+            + 0.144232 * std::cos(2.0 * windowPhase)
+            - 0.012604 * std::cos(3.0 * windowPhase);
+        const double sinc = std::abs(t * omega) < 1.0e-12
+            ? 1.0
+            : std::sin(t * omega) / (t * omega);
+        prototype[static_cast<std::size_t>(i)] = static_cast<float>(
+            sinc * window * correction);
+    }
+    for (int i = 0; i < tapCount; ++i) {
+        const int phase = (kClockInterpPhaseCount - 1)
+            - (i % kClockInterpPhaseCount);
+        const int tap = i / kClockInterpPhaseCount;
+        m_clockInterpTaps[static_cast<std::size_t>(phase * kClockInterpTapCount + tap)]
+            = prototype[static_cast<std::size_t>(i)];
+    }
+    m_clockBuffer.reserve(kRdsWorkBufferSamples + kClockInterpTapCount);
     reset();
     return true;
 }
 
 void RdsDecoder::reset() noexcept
 {
+    m_rdsDecimator.reset();
+    m_referenceDecimator.reset();
+    m_rdsInterpolator.reset();
+    m_rdsAnalyticFilter.reset();
     m_subcarrierPhase = 0.0;
-    m_symbolClock = 0.0;
-    m_symbolSamples = 0;
-    m_lowpass = Complex(0.0f, 0.0f);
-    m_symbolAccumulator = Complex(0.0f, 0.0f);
+    m_referencePhase = 0.0;
+    m_costasPhase = 0.0;
+    m_costasFrequency = 0.0;
+    m_clockCostasPhase = 0.0;
+    m_clockCostasFrequency = m_rdsSampleRate > 0.0
+        ? kTwoPi * (kRdsBitRate / m_rdsSampleRate) : 0.0;
+    m_rdsAgcLevel = 0.0f;
+    m_rdsResamplePhase = 0;
+    m_subcarrierPower = 0.0;
+    m_referencePower = 0.0;
+    m_subcarrierToReferenceDb = -200.0f;
+    m_clockPosition = 0.0;
+    m_clockPhase = 0.0;
+    m_clockOmega = m_clockNominalOmega;
+    m_clockErrorAverage = 0.0;
+    m_clockSymbolCount = 0;
+    m_clockLocked = false;
+    m_clockAcquiring = true;
     m_previousSymbol = Complex(0.0f, 0.0f);
     m_havePreviousSymbol = false;
+    m_clockP0 = Complex(0.0f, 0.0f);
+    m_clockP1 = Complex(0.0f, 0.0f);
+    m_clockP2 = Complex(0.0f, 0.0f);
+    m_clockC0 = Complex(0.0f, 0.0f);
+    m_clockC1 = Complex(0.0f, 0.0f);
+    m_clockC2 = Complex(0.0f, 0.0f);
+    m_havePreviousClockSymbol = false;
+    m_clockAccumulator = Complex(0.0f, 0.0f);
+    m_clockSamples = 0;
+    m_clockBuffer.clear();
+    m_clockBuffer.assign(kClockInterpTapCount - 1, Complex(0.0f, 0.0f));
     m_shiftRegister = 0;
     m_skipBits = 0;
+    m_bitPosition = 0;
+    m_syncScore = 0;
+    m_blockLocked = false;
+    m_expectedBlock = BlockType::A;
+    m_lastBlockType = BlockType::A;
+    m_haveLastBlockType = false;
     m_groupStage = 0;
     m_groupA = 0;
     m_groupB = 0;
@@ -60,6 +225,15 @@ void RdsDecoder::reset() noexcept
     m_groupCPrime = false;
     m_synced = false;
     m_bitsSinceValid = 0;
+    m_bitsSinceGroup = 0;
+    m_candidatePi = 0;
+    m_validGroupStreak = 0;
+    clearDecodedFields();
+    m_validBlocks = 0;
+}
+
+void RdsDecoder::clearDecodedFields() noexcept
+{
     m_piCode = 0;
     m_countryCode = 0;
     m_programCoverage = 0;
@@ -73,36 +247,127 @@ void RdsDecoder::reset() noexcept
     m_alternateFrequencies.fill(0.0);
     m_alternateFrequencyCount = 0;
     m_radioTextAB = false;
-    m_validBlocks = 0;
 }
 
 void RdsDecoder::process(const float *mpx, std::size_t count) noexcept
 {
-    if (!mpx || count == 0 || m_sampleRate <= 0.0)
+    if (!mpx || count == 0 || m_sampleRate <= 0.0 || m_rdsMixed.empty())
         return;
 
-    for (std::size_t i = 0; i < count; ++i) {
-        const Complex oscillator(static_cast<float>(std::cos(m_subcarrierPhase)),
-                                 static_cast<float>(-std::sin(m_subcarrierPhase)));
-        const Complex mixed = Complex(mpx[i], 0.0f) * oscillator;
-        m_lowpass += static_cast<float>(m_lowpassAlpha) * (mixed - m_lowpass);
-        m_symbolAccumulator += m_lowpass;
-        ++m_symbolSamples;
+    std::size_t offset = 0;
+    while (offset < count) {
+        const std::size_t chunk = std::min(m_rdsMixed.size(), count - offset);
+        for (std::size_t i = 0; i < chunk; ++i) {
+            const Complex oscillator(static_cast<float>(std::cos(m_subcarrierPhase)),
+                                     static_cast<float>(-std::sin(m_subcarrierPhase)));
+            m_rdsMixed[i] = Complex(mpx[offset + i], 0.0f) * oscillator;
 
-        m_subcarrierPhase += m_subcarrierOmega;
-        if (m_subcarrierPhase > kPi)
-            m_subcarrierPhase -= kTwoPi;
+            const Complex referenceOscillator(
+                static_cast<float>(std::cos(m_referencePhase)),
+                static_cast<float>(-std::sin(m_referencePhase)));
+            m_referenceMixed[i] = Complex(mpx[offset + i], 0.0f) * referenceOscillator;
 
-        m_symbolClock += 1.0;
-        if (m_symbolClock < m_symbolPeriod)
-            continue;
+            m_subcarrierPhase += m_subcarrierOmega;
+            if (m_subcarrierPhase > kPi)
+                m_subcarrierPhase -= kTwoPi;
+            m_referencePhase += m_referenceOmega;
+            if (m_referencePhase > kPi)
+                m_referencePhase -= kTwoPi;
+        }
 
-        m_symbolClock -= m_symbolPeriod;
-        const float denominator = static_cast<float>(std::max<std::size_t>(1, m_symbolSamples));
-        processSymbol(m_symbolAccumulator / denominator);
-        m_symbolAccumulator = Complex(0.0f, 0.0f);
-        m_symbolSamples = 0;
+        const std::size_t decimated = m_rdsDecimator.process(
+            m_rdsMixed.data(), chunk, m_rdsDecimated.data());
+        const std::size_t referenceDecimated = m_referenceDecimator.process(
+            m_referenceMixed.data(), chunk, m_referenceDecimated.data());
+        const std::size_t powerSamples = std::min(decimated, referenceDecimated);
+        for (std::size_t i = 0; i < powerSamples; ++i) {
+            constexpr double kPowerSmoothing = 0.001;
+            const double subcarrierPower = magnitudeSquared(m_rdsDecimated[i]);
+            const double referencePower = magnitudeSquared(m_referenceDecimated[i]);
+            m_subcarrierPower += (subcarrierPower - m_subcarrierPower) * kPowerSmoothing;
+            m_referencePower += (referencePower - m_referencePower) * kPowerSmoothing;
+        }
+        if (m_referencePower > 1.0e-20) {
+            m_subcarrierToReferenceDb = static_cast<float>(10.0 * std::log10(
+                std::max(m_subcarrierPower, 1.0e-20) / m_referencePower));
+        }
+        const std::size_t interpolated = m_rdsInterpolator.process(
+            m_rdsDecimated.data(), decimated, m_rdsInterpolated.data());
+        for (std::size_t i = 0; i < interpolated; ++i) {
+            if (m_rdsResamplePhase == 0) {
+                processRdsSample(m_rdsInterpolated[i]);
+            }
+            m_rdsResamplePhase = (m_rdsResamplePhase + 1)
+                % m_rdsResampleDecimation;
+        }
+        offset += chunk;
     }
+}
+
+void RdsDecoder::processRdsSample(Complex sample) noexcept
+{
+    const float magnitude = std::sqrt(magnitudeSquared(sample));
+    m_rdsAgcLevel += (magnitude - m_rdsAgcLevel) * 0.01f;
+    const float gain = std::clamp(0.5f / std::max(m_rdsAgcLevel, 1.0e-6f),
+                                  0.1f, 100.0f);
+    sample *= gain;
+
+    const Complex oscillator(static_cast<float>(std::cos(m_costasPhase)),
+                             static_cast<float>(-std::sin(m_costasPhase)));
+    const Complex rotated = sample * oscillator;
+    const float error = std::clamp(rotated.real() * rotated.imag(),
+                                   -1.0f, 1.0f);
+    m_costasFrequency += m_costasBeta * static_cast<double>(error);
+    m_costasFrequency = std::clamp(m_costasFrequency,
+                                   -m_costasMaxFrequency, m_costasMaxFrequency);
+    m_costasPhase += m_costasFrequency + m_costasAlpha * error;
+    if (m_costasPhase > kPi)
+        m_costasPhase -= kTwoPi;
+    else if (m_costasPhase < -kPi)
+        m_costasPhase += kTwoPi;
+
+    const Complex clockOscillator(
+        static_cast<float>(std::cos(m_clockCostasPhase)),
+        static_cast<float>(-std::sin(m_clockCostasPhase)));
+    const Complex clockRotated = rotated * clockOscillator;
+    const float clockError = std::clamp(
+        clockRotated.real() * clockRotated.imag(), -1.0f, 1.0f);
+    m_clockCostasFrequency += m_clockCostasBeta
+        * static_cast<double>(clockError);
+    m_clockCostasFrequency = std::clamp(m_clockCostasFrequency,
+                                        m_clockCostasMinFrequency,
+                                        m_clockCostasMaxFrequency);
+    m_clockCostasPhase += m_clockCostasFrequency
+        + m_clockCostasAlpha * static_cast<double>(clockError);
+    if (m_clockCostasPhase > kPi)
+        m_clockCostasPhase -= kTwoPi;
+    else if (m_clockCostasPhase < -kPi)
+        m_clockCostasPhase += kTwoPi;
+
+    processClockSample(rotated);
+}
+
+void RdsDecoder::processClockSample(Complex sample) noexcept
+{
+    // The stream has already been resampled to exactly 5 kHz.  A bounded
+    // integrate-and-dump clock is deliberately used here: it is phase-stable
+    // for the 4.210526-sample RDS symbol period and avoids making the first
+    // valid group depend on a long interpolation-buffer transient.
+    m_clockAccumulator += sample;
+    ++m_clockSamples;
+    m_clockPhase += 1.0;
+    if (m_clockPhase < m_clockOmega)
+        return;
+
+    const Complex symbol = m_clockAccumulator
+        / static_cast<float>(std::max(1, m_clockSamples));
+    m_clockAccumulator = Complex(0.0f, 0.0f);
+    m_clockSamples = 0;
+    m_clockPhase -= m_clockOmega;
+    ++m_clockSymbolCount;
+    if (m_clockSymbolCount >= 64)
+        m_clockLocked = true;
+    processSymbol(symbol);
 }
 
 void RdsDecoder::processSymbol(Complex symbol) noexcept
@@ -124,6 +389,13 @@ void RdsDecoder::processSymbol(Complex symbol) noexcept
 void RdsDecoder::processBit(std::uint8_t bit) noexcept
 {
     m_shiftRegister = ((m_shiftRegister << 1) & 0x03ffffffu) | (bit & 1u);
+    ++m_bitPosition;
+    if (++m_bitsSinceGroup > 26u * 12u) {
+        // A lock which did not produce a complete group is stale.  Restart
+        // block acquisition as well as the public RDS lock.
+        dropBlockSync();
+        m_bitsSinceGroup = 0;
+    }
     if (m_skipBits > 0) {
         --m_skipBits;
         return;
@@ -133,19 +405,55 @@ void RdsDecoder::processBit(std::uint8_t bit) noexcept
     if (m_bitsSinceValid > 26u * 12u)
         m_synced = false;
 
-    BlockType type;
+    BlockType type = BlockType::A;
     const std::uint16_t value = syndrome(m_shiftRegister);
-    if (!blockTypeForSyndrome(value, type))
-        return;
+    const bool knownType = blockTypeForSyndrome(value, type);
+    if (knownType) {
+        m_bitsSinceValid = 0;
+        ++m_validBlocks;
+    }
 
-    m_bitsSinceValid = 0;
-    m_synced = true;
-    ++m_validBlocks;
-    acceptBlock(m_shiftRegister, type);
+    // SDR++ keeps a small confidence score instead of requiring three
+    // perfectly clean, consecutively spaced CRC words.  A real broadcast can
+    // lose a complete block to multipath or a single bad symbol; discarding
+    // the entire acquisition on that event prevents PI/PS from ever being
+    // reconstructed. Unknown words are assigned the next expected type while
+    // the score is still positive, exactly as a tolerant streaming decoder.
+    m_syncScore = std::clamp(m_syncScore + (knownType ? 1 : -1), 0, 4);
+    if (m_syncScore == 0) {
+        if (m_blockLocked || m_synced)
+            dropBlockSync();
+        return;
+    }
+
+    m_blockLocked = true;
+    const BlockType acceptedType = knownType ? type : m_expectedBlock;
+    if (!acceptBlock(m_shiftRegister, acceptedType)) {
+        m_groupStage = 0;
+        return;
+    }
+    m_lastBlockType = acceptedType;
+    m_haveLastBlockType = true;
+    m_expectedBlock = nextBlockType(acceptedType);
     // Dopo un blocco valido il prossimo blocco termina 26 bit più avanti.
     // Durante questi bit il registro continua a scorrere, ma non cerchiamo
     // falsi sincronismi dentro il payload già noto.
     m_skipBits = 25;
+}
+
+void RdsDecoder::dropBlockSync() noexcept
+{
+    m_blockLocked = false;
+    m_expectedBlock = BlockType::A;
+    m_lastBlockType = BlockType::A;
+    m_haveLastBlockType = false;
+    m_syncScore = 0;
+    m_skipBits = 0;
+    m_synced = false;
+    m_groupStage = 0;
+    m_candidatePi = 0;
+    m_validGroupStreak = 0;
+    clearDecodedFields();
 }
 
 std::uint16_t RdsDecoder::syndrome(std::uint32_t block) noexcept
@@ -247,9 +555,28 @@ std::string RdsDecoder::callsignForPi(std::uint16_t pi)
     return "Not Assigned";
 }
 
-void RdsDecoder::acceptBlock(std::uint32_t block, BlockType type) noexcept
+bool RdsDecoder::acceptBlock(std::uint32_t block, BlockType type) noexcept
 {
-    const std::uint32_t corrected = block ^ offsetFor(type);
+    // RDS uses a shortened BCH code.  Following SDR++, try to correct an
+    // error in the 16 data bits before allowing a block into a group.  Check
+    // bit errors do not affect the decoded payload and are already handled by
+    // the offset correction below.
+    std::uint32_t corrected = block ^ offsetFor(type);
+    std::uint16_t residual = syndrome(corrected);
+    if (residual != 0) {
+        bool errorFound = false;
+        for (int i = 15; i >= 0; --i) {
+            errorFound = errorFound || !(residual & 0x001fu);
+            const std::uint8_t output = (residual >> 9) & 1u;
+            if (errorFound && output)
+                corrected ^= static_cast<std::uint32_t>(1u << (i + 10));
+            residual = static_cast<std::uint16_t>((residual << 1) & 0x03ffu);
+            residual ^= static_cast<std::uint16_t>(kLfsrPoly * output
+                                                    * !errorFound);
+        }
+        if (residual & 0x001fu)
+            return false;
+    }
 
     // La sequenza A-B-C(D)/D identifica un gruppo. Blocchi isolati non
     // aggiornano la UI, evitando PS e RadioText composti da dati disallineati.
@@ -284,8 +611,29 @@ void RdsDecoder::acceptBlock(std::uint32_t block, BlockType type) noexcept
         m_groupD = corrected;
         decodeGroup();
         m_groupStage = 0;
+        m_bitsSinceGroup = 0;
+
+        // Require two complete groups carrying the same non-reserved PI.  A
+        // single group can still be a statistically valid CRC coincidence in
+        // noise; consecutive groups make the green RDS indicator meaningful.
+        const std::uint16_t pi = static_cast<std::uint16_t>(
+            (m_groupA >> 10) & 0xffffu);
+        if (pi == 0 || pi == 0xffff) {
+            m_synced = false;
+            m_candidatePi = 0;
+            m_validGroupStreak = 0;
+            clearDecodedFields();
+        } else if (pi == m_candidatePi) {
+            ++m_validGroupStreak;
+            m_synced = m_validGroupStreak >= 2;
+        } else {
+            m_candidatePi = pi;
+            m_validGroupStreak = 1;
+            m_synced = false;
+        }
         break;
     }
+    return true;
 }
 
 void RdsDecoder::decodeGroup() noexcept

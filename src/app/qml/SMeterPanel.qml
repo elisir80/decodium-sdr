@@ -26,7 +26,13 @@ PanelFrame {
     /// 2 la potenza.
     property int instrument: 0
 
-    readonly property bool showingPower: instrument === 2
+    /// La potenza è una misura TX reale, non una trasformazione del livello
+    /// ricevuto. Un RTL-SDR è solo RX e non può fornire watt o ROS: in quel
+    /// caso il tasto POTENZA va spento e il pannello torna al segnale RX,
+    /// invece di lasciare un quadrante vuoto con dei trattini.
+    readonly property bool powerMeterAvailable:
+        !Session.connected || Session.txMetersAvailable
+    readonly property bool showingPower: instrument === 2 && powerMeterAvailable
 
     title: showingPower ? qsTr("DECØMETER") : qsTr("DECØMETER-S")
     persistKey: "strumento"
@@ -38,7 +44,8 @@ PanelFrame {
     /// taratura che si perde chiudendo il programma non è una taratura, è una
     /// regolazione da rifare ogni sera. Il valore vale per il ricevitore, non
     /// per il canale: cambiando canale la scala non si sposta.
-    property real s9ReferenceDb: -55
+    readonly property real defaultS9ReferenceDb: -55
+    property real s9ReferenceDb: defaultS9ReferenceDb
 
     /// Se la taratura è stata fatta almeno una volta.
     ///
@@ -51,6 +58,30 @@ PanelFrame {
 
     /// Il fondo di rumore del canale corrente, per la prima taratura.
     property real currentFloorDb: -140
+
+    function normalizeInstrument() {
+        if (instrument === 2 && !powerMeterAvailable)
+            instrument = 0
+    }
+
+    // Una vecchia prima taratura poteva salvare S9 sopra 0 dBFS se l'app si
+    // apriva su una broadcast FM: non è una calibrazione valida e rende S1
+    // qualunque segnale. Ripararla qui aggiorna anche le preferenze esistenti.
+    function normalizeCalibration() {
+        if (!isFinite(s9ReferenceDb) || s9ReferenceDb > SMeterScale.maxS9ReferenceDb
+                || s9ReferenceDb < -140) {
+            s9ReferenceDb = defaultS9ReferenceDb
+            calibrated = false
+        }
+    }
+
+    Component.onCompleted: {
+        normalizeInstrument()
+        normalizeCalibration()
+    }
+    onInstrumentChanged: normalizeInstrument()
+    onPowerMeterAvailableChanged: normalizeInstrument()
+    onS9ReferenceDbChanged: normalizeCalibration()
 
     // La prima taratura non si fa sulla prima misura: la stima del fondo parte
     // dal livello che trova e scende, quindi appena connessi è alta di
@@ -78,6 +109,17 @@ PanelFrame {
         property alias calibrated: root.calibrated
     }
 
+    // Qt.labs.settings può applicare un valore persistito dopo il completion
+    // del contenitore. Rimandare di un giro garantisce che una preferenza
+    // precedente e impossibile, ad esempio S9 = +13 dBFS, venga riparata al
+    // primo avvio e non solo quando il pannello è già stato usato.
+    Timer {
+        interval: 0
+        repeat: false
+        running: true
+        onTriggered: root.normalizeCalibration()
+    }
+
     // ── Il selettore ─────────────────────────────────────────────────────
     RowLayout {
         Layout.fillWidth: true
@@ -93,7 +135,8 @@ PanelFrame {
             delegate: Rectangle {
                 required property var modelData
 
-                readonly property bool current: root.instrument === modelData.key
+                readonly property bool current:
+                    root.instrument === modelData.key && enabled
 
                 // Il nome serve al test che preme davvero il selettore: senza
                 // un modo di ritrovare questi rettangoli, l'unica prova
@@ -103,6 +146,8 @@ PanelFrame {
 
                 Layout.fillWidth: true
                 implicitHeight: Theme.controlHeight - 6
+                enabled: modelData.key !== 2 || root.powerMeterAvailable
+                opacity: enabled ? 1.0 : 0.45
                 radius: Theme.radiusSmall
                 color: current ? Theme.accentDim : Theme.surfaceSunken
                 border.width: 1
@@ -118,7 +163,8 @@ PanelFrame {
                     font.pixelSize: Theme.fontSmall
                     font.family: Theme.monoFamily
                     font.bold: parent.current
-                    color: parent.current ? Theme.textPrimary : Theme.textSecondary
+                    color: parent.current ? Theme.textPrimary
+                           : parent.enabled ? Theme.textSecondary : Theme.textDisabled
                 }
 
                 TapHandler {
@@ -126,6 +172,17 @@ PanelFrame {
                 }
             }
         }
+    }
+
+    Text {
+        Layout.fillWidth: true
+        visible: Session.connected && !root.powerMeterAvailable
+        text: Session.capabilities.canTransmit
+              ? qsTr("Wattmetro TX non fornito da questo backend.")
+              : qsTr("Ricevitore solo RX: il wattmetro TX non è disponibile.")
+        font.pixelSize: Theme.fontSmall
+        color: Theme.textDisabled
+        wrapMode: Text.WordWrap
     }
 
     // ── Lo strumento ─────────────────────────────────────────────────────

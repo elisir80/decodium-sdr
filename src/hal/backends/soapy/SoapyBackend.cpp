@@ -240,6 +240,8 @@ void SoapyBackend::open(const DeviceDescriptor &device)
 void SoapyBackend::onDeviceOpened(const SoapyDeviceProfile &profile)
 {
     m_profile = profile;
+    m_autoGainDb = safeAutoGainDb(profile);
+    m_gainReductionDb = 0.0;
 
     // Ora si sa davvero che device è: la frequenza va riportata dentro la sua
     // copertura, altrimenti si ascolterebbe rumore credendo a un guasto.
@@ -301,7 +303,12 @@ void SoapyBackend::close()
 void SoapyBackend::setCenterFrequency(qint64 hz)
 {
     const BackendCapabilities caps = capabilities();
-    if (!caps.coversFrequency(hz)) {
+    // `open()` marks the backend open before the worker has finished reading
+    // the device profile. During that short window capabilities() is only
+    // the generic pre-open fallback, which has no frequency range. A startup
+    // tune must still be queued; the worker applies it once the profile is
+    // known.
+    if (m_profile.isValid() && !caps.coversFrequency(hz)) {
         reportError(BackendError::Unsupported, tr("Il device non copre %1 Hz.").arg(hz));
         return;
     }
@@ -311,6 +318,8 @@ void SoapyBackend::setCenterFrequency(qint64 hz)
     m_centerHz = hz;
     if (m_worker)
         m_worker->requestFrequency(hz);
+    qCInfo(dsdrHal) << "soapy: centro richiesto" << hz
+                    << (m_profile.isValid() ? "profilo pronto" : "profilo in caricamento");
     emit centerFrequencyChanged(hz);
 }
 
@@ -440,10 +449,29 @@ SampleRing *SoapyBackend::spectrumStream(PanId pan) const
     return nullptr;
 }
 
+double SoapyBackend::setGainReduction(double db)
+{
+    const double operatorGain = m_gainDb >= 0.0 ? m_gainDb : m_autoGainDb;
+    const double minimumGain = m_profile.minGainDb;
+    const double room = std::max(0.0, operatorGain - minimumGain);
+    m_gainReductionDb = std::clamp(db, 0.0, room);
+
+    if (m_worker) {
+        const double effectiveGain = std::max(minimumGain,
+                                              operatorGain - m_gainReductionDb);
+        m_worker->requestGain(effectiveGain);
+        qCInfo(dsdrHal) << "soapy: correzione anti-overflow"
+                        << m_gainReductionDb << "dB, gain" << effectiveGain << "dB";
+    }
+    return m_gainReductionDb;
+}
+
 QVariant SoapyBackend::nativeCommand(const QString &command, const QVariantMap &args)
 {
     if (command == QLatin1String("soapy.setGain")) {
         const double db = args.value(QStringLiteral("db"), -1.0).toDouble();
+        m_gainDb = db;
+        m_gainReductionDb = 0.0;
         if (m_worker)
             m_worker->requestGain(db);
         return QVariant(db);

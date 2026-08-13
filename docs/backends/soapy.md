@@ -85,8 +85,11 @@ Il backend si esclude dalla build con `-DDSDR_BACKEND_SOAPY=OFF`.
   non compare e rigctl rifiuta `T 1` invece di registrare uno stato che non
   produce alcuna portante.
 - **Guadagno, AGC hardware e antenna sono nel pannello Soapy della UI**; il
-  pannello viene caricato tramite `capabilities().nativePanels` e usa i
-  comandi nativi solo all’interno del seam backend-specifico.
+- **AUTO non abilita l'AGC hardware alla cieca**: parte da un guadagno prudente
+  entro 20 dB sopra il minimo del device, disabilita l'AGC del driver e lascia
+  alla guardia anti-overflow del client la correzione successiva. Il pannello
+  viene caricato tramite `capabilities().nativePanels` e usa i comandi nativi
+  solo all’interno del seam backend-specifico.
 - **Un solo canale hardware usato** (`channel 0`), anche su device che ne hanno
   di più. La coerenza fra canali viene dichiarata ma non ancora sfruttata:
   arriverà con QuadBeam in Fase 3.

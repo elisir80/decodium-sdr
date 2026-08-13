@@ -222,6 +222,15 @@ public:
     bool ctcssDetected() const noexcept { return m_ctcss.detected(); }
     int fmIfNoiseReductionPreset() const noexcept { return m_fmIfNoiseReducer.preset(); }
     bool rdsSynced() const noexcept { return m_rds.synced(); }
+    bool rdsTimingLocked() const noexcept { return m_rds.timingLocked(); }
+    double rdsClockSamplesPerSymbol() const noexcept
+    { return m_rds.clockSamplesPerSymbol(); }
+    bool rdsBlockLocked() const noexcept { return m_rds.blockLocked(); }
+    int rdsSyncScore() const noexcept { return m_rds.syncScore(); }
+    int rdsValidGroupStreak() const noexcept { return m_rds.validGroupStreak(); }
+    std::uint64_t rdsValidBlocks() const noexcept { return m_rds.validBlocks(); }
+    float rdsSubcarrierToReferenceDb() const noexcept
+    { return m_rds.subcarrierToReferenceDb(); }
     std::uint16_t rdsPiCode() const noexcept { return m_rds.piCode(); }
     std::uint8_t rdsCountryCode() const noexcept { return m_rds.countryCode(); }
     std::uint8_t rdsProgramCoverage() const noexcept { return m_rds.programCoverage(); }

@@ -48,6 +48,8 @@ BackendCapabilities capabilitiesFrom(const SoapyDeviceProfile &profile)
     caps.hasPreamp = profile.maxGainDb > profile.minGainDb;
     caps.hasAttenuator = profile.minGainDb < 0.0;
     caps.adcBits = 0;    // SoapySDR non lo espone in modo uniforme
+    if (profile.maxGainDb > profile.minGainDb)
+        caps.maxGainReductionDb = profile.maxGainDb - profile.minGainDb;
 
     // Alcuni driver (soapyremote, rtl_tcp via soapy) parlano con hardware
     // che sta altrove, ma dal punto di vista dell'API restano device locali.
@@ -60,6 +62,14 @@ BackendCapabilities capabilitiesFrom(const SoapyDeviceProfile &profile)
     caps.nativePanels.append(QStringLiteral("SoapyDevicePanel"));
 
     return caps;
+}
+
+double safeAutoGainDb(const SoapyDeviceProfile &profile)
+{
+    if (!(profile.maxGainDb > profile.minGainDb))
+        return profile.minGainDb;
+    return profile.minGainDb
+        + std::min(20.0, profile.maxGainDb - profile.minGainDb);
 }
 
 } // namespace dsdr::hal::soapy

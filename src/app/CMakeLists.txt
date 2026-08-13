@@ -66,10 +66,12 @@ set(DSDR_QML_FILES
     qml/LevelBar.qml
     qml/ChannelStrip.qml
     qml/ChannelCard.qml
+    qml/RdsPanel.qml
     qml/DiscoveryPane.qml
     qml/PanelFrame.qml
     qml/BackendPanelHost.qml
     qml/SoapyDevicePanel.qml
+    qml/RtlSdrDevicePanel.qml
     qml/NetTcpDevicePanel.qml
     qml/ColibriDevicePanel.qml
     qml/AudiorigPanel.qml
@@ -310,7 +312,7 @@ endif()
 # cannot know which Soapy modules the user wants. The macOS release explicitly
 # bundles the RTL-SDR module and its USB runtime so a downloaded DMG works
 # without Homebrew.
-if(APPLE AND DSDR_BACKEND_SOAPY AND DSDR_BUNDLE_RTLSDR)
+if(APPLE AND (DSDR_BACKEND_SOAPY OR DSDR_BACKEND_RTLSDR) AND DSDR_BUNDLE_RTLSDR)
     find_program(DSDR_BREW_EXECUTABLE brew)
     if(DSDR_BREW_EXECUTABLE)
         execute_process(
@@ -341,10 +343,12 @@ if(APPLE AND DSDR_BACKEND_SOAPY AND DSDR_BUNDLE_RTLSDR)
             "${dsdr_root}/lib")
     endforeach()
 
-    find_file(DSDR_SOAPY_RTLSDR_MODULE
-        NAMES librtlsdrSupport.so
-        PATHS ${DSDR_SOAPY_MODULE_PATHS}
-        NO_DEFAULT_PATH)
+    if(DSDR_BACKEND_SOAPY)
+        find_file(DSDR_SOAPY_RTLSDR_MODULE
+            NAMES librtlsdrSupport.so
+            PATHS ${DSDR_SOAPY_MODULE_PATHS}
+            NO_DEFAULT_PATH)
+    endif()
     find_file(DSDR_LIBRTLSDR_LIBRARY
         NAMES librtlsdr.0.dylib
         PATHS ${DSDR_RTLSDR_LIBRARY_PATHS}
@@ -354,7 +358,8 @@ if(APPLE AND DSDR_BACKEND_SOAPY AND DSDR_BUNDLE_RTLSDR)
         PATHS ${DSDR_LIBUSB_LIBRARY_PATHS}
         NO_DEFAULT_PATH)
 
-    if(NOT DSDR_SOAPY_RTLSDR_MODULE OR NOT DSDR_LIBRTLSDR_LIBRARY OR NOT DSDR_LIBUSB_LIBRARY)
+    if((DSDR_BACKEND_SOAPY AND NOT DSDR_SOAPY_RTLSDR_MODULE)
+       OR NOT DSDR_LIBRTLSDR_LIBRARY OR NOT DSDR_LIBUSB_LIBRARY)
         message(FATAL_ERROR
             "DSDR_BUNDLE_RTLSDR=ON ma il runtime RTL-SDR non è completo.\n"
             "  macOS: brew install soapysdr soapyrtlsdr\n"
@@ -367,8 +372,10 @@ if(APPLE AND DSDR_BACKEND_SOAPY AND DSDR_BUNDLE_RTLSDR)
     get_filename_component(DSDR_LIBUSB_BASENAME "${DSDR_LIBUSB_LIBRARY}" NAME)
     set(DSDR_RTLSDR_SOURCE_NAME
         "${DSDR_BREW_PREFIX}/opt/librtlsdr/lib/${DSDR_RTLSDR_BASENAME}")
-    set(DSDR_SOAPY_SOURCE_NAME
-        "${DSDR_BREW_PREFIX}/opt/soapysdr/lib/libSoapySDR.0.8.dylib")
+    if(DSDR_BACKEND_SOAPY)
+        set(DSDR_SOAPY_SOURCE_NAME
+            "${DSDR_BREW_PREFIX}/opt/soapysdr/lib/libSoapySDR.0.8.dylib")
+    endif()
     set(DSDR_LIBUSB_SOURCE_NAME
         "${DSDR_BREW_PREFIX}/opt/libusb/lib/${DSDR_LIBUSB_BASENAME}")
     set(DSDR_LOADER_PATH "@loader_path")

@@ -31,6 +31,12 @@ if(DSDR_BACKEND_SOAPY)
         LIBRARIES dsdr::hal)
 endif()
 
+if(DSDR_BACKEND_RTLSDR)
+    dsdr_add_test(tst_rtlsdr_profile
+        SOURCES tst_rtlsdr_profile.cpp
+        LIBRARIES dsdr::hal)
+endif()
+
 if(DSDR_BACKEND_NETTCP)
     dsdr_add_test(tst_nettcp
         SOURCES

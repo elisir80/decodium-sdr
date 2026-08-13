@@ -37,6 +37,11 @@ QtObject {
     /// Decibel oltre S9 coperti dal quadrante.
     readonly property real plusRangeDb: 60
 
+    /// Nessun livello digitale può valere più di 0 dBFS. Una taratura S9
+    /// sopra questo limite nasce necessariamente da una misura presa mentre
+    /// il canale era occupato e comprimerebbe ogni segnale reale verso S0.
+    readonly property real maxS9ReferenceDb: 0
+
     /// Quanto sta S1 sopra il fondo di rumore. Un segnale che si distingue
     /// appena dal rumore è un S1: sotto, non lo si sente.
     readonly property real s1AboveFloorDb: 3
@@ -47,7 +52,8 @@ QtObject {
     function s9From(noiseFloorDb) {
         if (!isFinite(noiseFloorDb))
             return -80
-        return noiseFloorDb + s1AboveFloorDb + 8 * dbPerUnit
+        return Math.min(maxS9ReferenceDb,
+                        noiseFloorDb + s1AboveFloorDb + 8 * dbPerUnit)
     }
 
     /// Punti S continui: 9 vale S9, 19 vale S9+60 dB.

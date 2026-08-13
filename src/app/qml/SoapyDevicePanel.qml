@@ -22,7 +22,8 @@ PanelFrame {
     property real manualGainDb: 20
 
     function applyGain() {
-        // Un valore negativo significa "lascia decidere al device".
+        // Un valore negativo attiva l'AUTO prudente del backend: il driver
+        // non viene lasciato libero di saturare l'ADC con il proprio AGC.
         Session.nativeCommand("soapy.setGain",
                               { "db": automaticGain ? -1 : manualGainDb })
     }
@@ -46,8 +47,6 @@ PanelFrame {
             implicitHeight: 22
             checkable: true
             checked: root.automaticGain
-            // L'AGC hardware non c'è su tutti i device: se manca, resta solo
-            // il guadagno manuale.
             enabled: root.gainRange.hasAgc !== false
             onToggled: {
                 root.automaticGain = checked

@@ -1,17 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// DECODIUM SDR — backend SoapySDR (RF-01).
-//
-// «SoapySDR è il moltiplicatore di universalità: un solo backend copre decine
-// di hardware. Ogni device esotico che ha un driver Soapy funziona gratis.»
-// (spec §4.3)
-//
-// Classe raw-IQ. Le capability non sono costanti come negli altri backend: si
-// leggono dal driver all'apertura, perché una chiavetta da 30 € e un USRP
-// passano entrambi da qui.
+// DECODIUM SDR — backend RTL-SDR nativo, in stile SDR++.
 #pragma once
 
 #include "hal/IRadioBackend.h"
-#include "hal/backends/soapy/SoapyProfile.h"
+#include "hal/backends/rtlsdr/RtlSdrProfile.h"
 
 #include <QHash>
 #include <QPointer>
@@ -20,19 +12,19 @@
 
 class QThread;
 
-namespace dsdr::hal::soapy {
+namespace dsdr::hal::rtlsdr {
 
-class SoapyWorker;
+class RtlSdrWorker;
 
-class SoapyBackend : public IRadioBackend
+class RtlSdrBackend : public IRadioBackend
 {
     Q_OBJECT
 
 public:
-    explicit SoapyBackend(QObject *parent = nullptr);
-    ~SoapyBackend() override;
+    explicit RtlSdrBackend(QObject *parent = nullptr);
+    ~RtlSdrBackend() override;
 
-    QString backendId() const override { return QStringLiteral("soapy"); }
+    QString backendId() const override { return QStringLiteral("rtlsdr"); }
     QString displayName() const override;
     BackendCapabilities capabilities() const override;
     BackendState state() const override { return m_state; }
@@ -52,7 +44,6 @@ public:
     ChannelId createRxChannel(const RxChannelConfig &config) override;
     void destroyRxChannel(ChannelId channel) override;
     QList<ChannelId> channels() const override;
-
     void setFrequency(ChannelId channel, qint64 hz) override;
     void setDemod(ChannelId channel, DemodMode mode) override;
     void setFilter(ChannelId channel, int lowHz, int highHz) override;
@@ -61,7 +52,7 @@ public:
     void destroyPanadapter(PanId pan) override;
 
     void setPtt(bool transmit) override;
-    bool ptt() const override { return m_ptt; }
+    bool ptt() const override { return false; }
     void setTxFrequency(qint64 hz) override;
 
     SampleRing *iqStream(ChannelId channel = kInvalidChannel) const override;
@@ -69,25 +60,26 @@ public:
     SampleRing *spectrumStream(PanId pan) const override;
     double setGainReduction(double db) override;
     double gainReduction() const override { return m_gainReductionDb; }
-
     QVariant nativeCommand(const QString &command, const QVariantMap &args) override;
 
 private:
     void setState(BackendState state);
     void reportError(BackendError::Code code, const QString &message, bool fatal = false);
-    void onDeviceOpened(const SoapyDeviceProfile &profile);
+    void onDeviceOpened(const RtlSdrDeviceProfile &profile);
 
     BackendState m_state = BackendState::Idle;
     bool m_open = false;
-    bool m_ptt = false;
-
     DeviceDescriptor m_device;
-    SoapyDeviceProfile m_profile;
+    RtlSdrDeviceProfile m_profile;
     qint64 m_centerHz = 100'000'000;
     double m_sampleRate = 2'048'000.0;
     double m_gainDb = -1.0;
-    double m_autoGainDb = 0.0;
+    double m_autoGainDb = 19.8;
     double m_gainReductionDb = 0.0;
+    int m_ppm = 0;
+    bool m_biasTee = false;
+    int m_directSampling = 0;
+    bool m_offsetTuning = false;
 
     QHash<ChannelId, RxChannelConfig> m_channels;
     QHash<PanId, PanConfig> m_panadapters;
@@ -96,12 +88,12 @@ private:
 
     std::unique_ptr<SampleRing> m_iqRing;
     QThread *m_thread = nullptr;
-    QPointer<SoapyWorker> m_worker;
+    QPointer<RtlSdrWorker> m_worker;
     quint64 m_sequence = 0;
 };
 
-} // namespace dsdr::hal::soapy
+} // namespace dsdr::hal::rtlsdr
 
 namespace dsdr::hal {
-using soapy::SoapyBackend;
+using rtlsdr::RtlSdrBackend;
 }
