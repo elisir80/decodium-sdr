@@ -12,7 +12,8 @@
 ; `cmake --install`: l'installatore non sa costruire nulla e non deve saperlo.
 ;
 ;   cmake --install build --prefix staging
-;   ISCC /DStagingDir=<percorso assoluto> /DAppVersion=1.2.0 decodium-sdr.iss
+;   ISCC /DStagingDir=<percorso assoluto> /DAppVersion=1.2.0 ^
+;        /DAppVersionName=Armstrong decodium-sdr.iss
 
 #ifndef StagingDir
   #error Manca StagingDir: indicare la cartella prodotta da cmake --install
@@ -20,6 +21,12 @@
 
 #ifndef AppVersion
   #error Manca AppVersion: indicare la versione del progetto
+#endif
+
+; Il nome della versione. Non obbligatorio: un pacchetto tecnico costruito a
+; mano puo' farne a meno, e allora il titolo resta il solo numero.
+#ifndef AppVersionName
+  #define AppVersionName ""
 #endif
 
 #define MyAppName "DECODIUM SDR"
@@ -34,7 +41,14 @@
 AppId={{4D9C1E27-8F3A-4B65-9E10-2A7C6B5D3F84}
 AppName={#MyAppName}
 AppVersion={#AppVersion}
-AppVerName={#MyAppName} {#AppVersion}
+; Nel pannello «App installate» si legge questo, ed e' li' che il nome serve:
+; chi assiste chiede «che versione hai?» e si sente rispondere un nome.
+#if AppVersionName != ""
+  #define VerLabel AppVersion + " «" + AppVersionName + "»"
+#else
+  #define VerLabel AppVersion
+#endif
+AppVerName={#MyAppName} {#VerLabel}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppUrl}
 AppSupportURL={#MyAppUrl}

@@ -4,7 +4,15 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
-## [1.2.0] — 2026-08-13
+## [1.2.0] «Armstrong» — 2026-08-13
+
+> Da questa versione i rilasci hanno **un nome oltre al numero**, in ordine
+> alfabetico: il nome dice l'ordine da sé, e si ricorda dove un numero di tre
+> cifre non ci riesce. Sono cognomi di chi ha fatto la radio. Il primo è Edwin
+> **Armstrong** — la reazione, la supereterodina, la FM — l'uomo che ha reso i
+> ricevitori utilizzabili e che ha passato la vita a discutere di che cosa un
+> circuito facesse davvero. Per una versione fatta di strumenti di misura non
+> ce n'era uno più adatto.
 
 Una versione con un tema solo: **le cose che un operatore non può misurare da
 solo**. La propria voce mentre parla, il momento buono su una banda, dove sta

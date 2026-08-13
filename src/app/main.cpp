@@ -89,7 +89,12 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
 
     QGuiApplication::setApplicationName(QStringLiteral("DECODIUM SDR"));
-    QGuiApplication::setApplicationVersion(QStringLiteral(DSDR_VERSION));
+    // Numero e nome insieme: `--version` deve dire tutte e due le cose,
+    // perché è quello che si copia dentro una segnalazione di guasto e chi la
+    // legge riconosce il nome molto prima del numero.
+    QGuiApplication::setApplicationVersion(
+        QStringLiteral(DSDR_VERSION) + QStringLiteral(" «")
+        + QStringLiteral(DSDR_VERSION_NAME) + QStringLiteral("»"));
     QGuiApplication::setOrganizationName(QStringLiteral("DECODIUM"));
     QGuiApplication::setOrganizationDomain(QStringLiteral("decodium.it"));
 

@@ -9,6 +9,27 @@ project(decodium-sdr
     # vuota — è già successo.
     LANGUAGES CXX C)
 
+# Il nome della versione.
+#
+# Le versioni hanno un numero e un nome, e il nome serve a una cosa che il
+# numero non sa fare: farsi ricordare. «Ce l'hai la 1.2.0 o la 1.1.13?» non se
+# lo ricorda nessuno; «ce l'hai la Armstrong?» sì.
+#
+# **I nomi vanno in ordine alfabetico**, e questo li rende un numero
+# progressivo a loro volta: dal nome si sa quale viene prima, senza consultare
+# niente. È la stessa idea di Ubuntu e di Android, e funziona per la stessa
+# ragione.
+#
+# Sono cognomi di chi ha fatto la radio. Il primo è Edwin **Armstrong** — la
+# reazione, la supereterodina, la FM: l'uomo che ha reso i ricevitori
+# utilizzabili, e che ha passato la vita a litigare su che cosa un circuito
+# facesse *davvero*. Per una versione che è tutta strumenti di misura, non ce
+# n'era uno più adatto.
+#
+# Chi taglia la prossima prende la lettera dopo: Braun, Colpitts, De Forest,
+# Fessenden… La lettera è il numero d'ordine, e non si salta.
+set(DSDR_VERSION_NAME "Armstrong" CACHE STRING "Il nome di questa versione")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

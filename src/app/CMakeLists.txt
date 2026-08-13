@@ -163,7 +163,9 @@ set_target_properties(dsdr_app PROPERTIES OUTPUT_NAME "decodium-sdr")
 if(WIN32)
     set_target_properties(dsdr_app PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
-target_compile_definitions(dsdr_app PRIVATE DSDR_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(dsdr_app PRIVATE
+    DSDR_VERSION="${PROJECT_VERSION}"
+    DSDR_VERSION_NAME="${DSDR_VERSION_NAME}")
 
 # Su macOS l'applicazione dev'essere un bundle, e non lo è per default: senza,
 # il deploy di Qt si limita a copiare l'eseguibile e avvisa che «executable
