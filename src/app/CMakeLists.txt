@@ -39,6 +39,7 @@ set(DSDR_QML_FILES
     qml/EqCurve.qml
     qml/VoiceCompare.qml
     qml/GreylinePanel.qml
+    qml/ConditionsPanel.qml
     qml/RotorDial.qml
     qml/AudioLevelBar.qml
     qml/ChainBlock.qml
@@ -104,6 +105,7 @@ qt_add_qml_module(dsdr_qml
         WaterfallPalette.cpp
         GreylineForeign.h
         RotorForeign.h
+        ConditionsForeign.h
         GreylineMap.h
         GreylineMap.cpp
     # La scansione degli import serve solo per linkare staticamente i plugin

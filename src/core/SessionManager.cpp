@@ -4,6 +4,7 @@
 #include "audio/AudioRouter.h"
 #include "core/DspEngine.h"
 #include "core/TxEngine.h"
+#include "core/BandConditions.h"
 #include "core/TxProfiles.h"
 #include "plugins/PluginBridge.h"
 #include "hal/RadioScout.h"
@@ -168,6 +169,10 @@ SessionManager::SessionManager(QObject *parent)
     // deve diventare un ritardo dell'altra.
     m_mic = new audio::MicSource(this);
     m_tx = new TxEngine;
+    // Il registro delle condizioni nasce presto e vive quanto la sessione: si
+    // riempie da sé mentre si ascolta, e nessuno deve accenderlo.
+    m_conditions = new BandConditions(this);
+
     // I profili nascono prima del thread: il primo va applicato ai comandi
     // appena la catena esiste, non alla prima trasmissione.
     m_txProfiles = new TxProfiles(this);
@@ -267,6 +272,16 @@ SessionManager::SessionManager(QObject *parent)
                    float snrDb, float audioLevelDb, float agcGainDb) {
                 m_channels.updateMeters(id, signalDb, noiseFloorDb, snrDb,
                                         audioLevelDb, agcGainDb);
+
+                // Il registro delle condizioni annota solo il canale che si
+                // sta guardando: gli altri possono stare su un'altra banda, e
+                // mescolarli darebbe una giornata che non è di nessuna banda.
+                const ChannelEntry *current = m_channels.at(m_channels.currentIndex());
+                if (m_conditions && current && current->id == id) {
+                    m_conditions->observe(current->frequencyHz, noiseFloorDb,
+                                          m_gainReductionDb,
+                                          m_backendId + QLatin1Char('/') + m_deviceName);
+                }
                 if (!m_scanning || m_scanRow < 0)
                     return;
                 const ChannelEntry *entry = m_channels.at(m_scanRow);

@@ -27,7 +27,8 @@ TestCase {
     /// fallire tutte e tre parlando di un «7» che non spiegava niente.
     readonly property var expectedKeys: [
         "sintonia", "strumento", "audio", "flusso", "tempo", "catena",
-        "trasmissione", "device", "waterfall", "canali", "greyline"
+        "trasmissione", "device", "waterfall", "canali", "greyline",
+        "condizioni"
     ]
 
     function keysOf(strip) {

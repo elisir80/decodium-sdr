@@ -50,6 +50,7 @@ class DspEngine;
 class TxEngine;
 
 class TxProfiles;
+class BandConditions;
 
 class SessionManager : public QObject
 {
@@ -162,6 +163,10 @@ class SessionManager : public QObject
     Q_PROPERTY(QVariantList pluginParameters READ pluginParameters NOTIFY pluginChanged)
     Q_PROPERTY(bool pluginScanning READ pluginScanning NOTIFY pluginListChanged)
     Q_PROPERTY(QString pluginTrouble READ pluginTrouble NOTIFY pluginChanged)
+
+    /// Il registro delle condizioni: com'è messa la banda oggi rispetto a
+    /// com'è di solito (SPEC-003 §9).
+    Q_PROPERTY(dsdr::core::BandConditions *conditions READ conditions CONSTANT)
 
     Q_PROPERTY(int txProfile READ txProfile NOTIFY txProfileChanged)
     Q_PROPERTY(QString txProfileName READ txProfileName NOTIFY txProfileChanged)
@@ -424,6 +429,8 @@ public:
     /// mescolato al fruscio della banda non si giudica.
     Q_INVOKABLE void playVoiceRecording(int source = 1);
     Q_INVOKABLE void stopVoiceRecording();
+
+    BandConditions *conditions() const { return m_conditions; }
 
     bool pluginHostAvailable() const;
     bool pluginEnabled() const;
@@ -895,6 +902,7 @@ private:
     double m_micGainDb = 6.0;
     /// I profili della catena TX e quello che è in vigore adesso.
     TxProfiles *m_txProfiles = nullptr;
+    BandConditions *m_conditions = nullptr;
 
     QVariantList m_pluginList;
     bool m_pluginScanning = false;

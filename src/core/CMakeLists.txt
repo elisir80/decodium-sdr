@@ -11,6 +11,8 @@ add_library(dsdr_core STATIC
     Greyline.cpp
     RotorController.h
     RotorController.cpp
+    BandConditions.h
+    BandConditions.cpp
     IqModuleApi.h
     ChannelModel.h
     ChannelModel.cpp

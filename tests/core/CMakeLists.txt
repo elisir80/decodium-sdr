@@ -17,3 +17,9 @@ dsdr_add_test(tst_greyline
 dsdr_add_test(tst_rotor
     SOURCES tst_rotor.cpp RotctldMockServer.cpp RotctldMockServer.h
     LIBRARIES dsdr::core Qt6::Network)
+
+# Il registro delle condizioni. Un registro che sbaglia non da' un errore: da'
+# un grafico, e chi lo guarda conclude qualcosa di sbagliato sulla banda.
+dsdr_add_test(tst_band_conditions
+    SOURCES tst_band_conditions.cpp
+    LIBRARIES dsdr::core)

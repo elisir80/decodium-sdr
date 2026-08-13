@@ -113,12 +113,19 @@ Lo stato dell'arte non-neurale, implementazione originale dalla letteratura (Eph
 
 ---
 
-## 7. Rifiniture di demodulazione
+## 7. Rifiniture di demodulazione — **fatte**
 
-- **SAM potenziato:** PLL con range di cattura ±500 Hz e banda commutabile, selezione banda laterale (DSB/LSB/USB sincrono) — l'arma contro l'interferenza adiacente in AM; indicatore di lock sul channel strip.
-- **APF CW:** risuonatore a picco regolabile (Q 5–50) centrato sul pitch CW impostato; attivabile con un tasto.
-- **Binaurale CW:** il canale ruotato in fase tra L e R in funzione dell'offset dal centro filtro — la "spazializzazione" che fa emergere il segnale nel pile-up. Costo: una rotazione complessa per campione.
-- **Passband tuning / IF shift** sul filtro di canale esistente (i coefficienti si rigenerano già: manca solo il controllo).
+> Erano quattro voci di un elenco «da fare», ed erano già tutte e quattro nel
+> codice: `ChannelProcessor` le implementa e `ChannelCard` le comanda. Questa
+> riga sta qui perché una specifica che dice «manca» di una cosa che c'è manda
+> a rifarla — ed è quasi successo.
+
+- ~~**SAM potenziato**~~: PLL con range di cattura ±500 Hz e banda commutabile, selezione banda laterale (DSB/LSB/USB sincrono) — l'arma contro l'interferenza adiacente in AM; indicatore di lock sul channel strip.
+- ~~**APF CW**~~: risuonatore a picco regolabile (Q 5–50) centrato sul pitch CW impostato; attivabile con un tasto.
+- ~~**Binaurale CW**~~: il canale ruotato in fase tra L e R in funzione dell'offset dal centro filtro — la "spazializzazione" che fa emergere il segnale nel pile-up. Costo: una rotazione complessa per campione.
+- ~~**Passband tuning / IF shift**~~: fatto. `passbandShiftHz` sposta i due
+  bordi insieme quando si rigenerano i coefficienti, e il cursore sta sulla
+  scheda del canale.
 
 ---
 
@@ -146,9 +153,61 @@ Lo stadio neurale è per **l'orecchio umano** (SSB/CW/AM). Non va mai inserito n
 
 ## 9. [G] Misura onesta
 
-- **S-meter calibrato:** offset di calibrazione per-device nel SettingsStore (`dBFS→dBm`), procedura guidata con generatore o segnale noto; default dichiarati per i device noti (Colibri, RTL-SDR con dongle tipico). S-unit IARU (S9 = −73 dBm su HF).
+- ~~**S-meter calibrato**~~: fatto, con una differenza dichiarata rispetto a
+  qui sotto. La taratura è **una**, non una per device: `s9ReferenceDb` dice a
+  quanti dBFS corrisponde S9, si fa da sé sul fondo di rumore al primo avvio —
+  chi apre il programma la prima volta non sa che esiste un tasto da premere —
+  e poi resta ferma, che è quello che distingue una taratura da un
+  inseguimento. Cambiando ricevitore va rifatta.
+
+- ~~**Stima continua del noise floor**~~: fatta, per canale, con l'SNR in dB
+  reali sul channel strip.
+
+- ~~**Registro delle condizioni**~~: **fatto**, ed è §9.1 qui sotto.
+
+- **Il testo originale, per riferimento:** *S-meter calibrato:* offset di calibrazione per-device nel SettingsStore (`dBFS→dBm`), procedura guidata con generatore o segnale noto; default dichiarati per i device noti (Colibri, RTL-SDR con dongle tipico). S-unit IARU (S9 = −73 dBm su HF).
 - **Stima continua del noise floor** per canale (minima statistica, condivisa con MCRA di §6) → mostrata sul pan come linea sottile; abilita lo "SNR del segnale selezionato" in dB reali sul channel strip — il numero che trasforma le impressioni in confronti.
-- **Registro delle condizioni:** noise floor per banda registrato nel tempo (SQLite) → mini-grafico "com'è messa la banda oggi vs ieri". Feature piccola, amatissima, che nessun client ha.
+- *Registro delle condizioni:* noise floor per banda registrato nel tempo (SQLite) → mini-grafico "com'è messa la banda oggi vs ieri". Feature piccola, amatissima, che nessun client ha.
+
+### 9.1 Il registro delle condizioni, com'è stato costruito
+
+«Stasera i quaranta sono rumorosi» è una frase che tutti dicono e che nessuno
+può verificare: il fondo lo si guarda adesso, e adesso non ha niente con cui
+confrontarsi.
+
+Si annota la **mediana su un quarto d'ora** — non i campioni, che sono rumore,
+e la mediana e non la media perché tre secondi di frigorifero muovono una media
+e non una mediana. Novantasei quarti d'ora per giornata, trenta giornate.
+
+**Le tre cose che rendono onesto il confronto**, e che sono tutto il lavoro:
+
+1. **Il guadagno si toglie.** Quello che si legge al convertitore è il rumore
+   dell'antenna più il guadagno. Si annota la differenza, cioè il rumore
+   riferito all'antenna. Senza, il grafico di «com'è messa la banda» sarebbe il
+   grafico del proprio AGC.
+2. **Il ricevitore si annota.** Due radio hanno due fondi, e non c'è correzione
+   che li renda uno: giornate di ricevitori diversi non si confrontano.
+3. **La banda si separa**, e il quarto d'ora si chiude *prima* di cambiarla —
+   metà su una banda e metà su un'altra non è una misura di nessuna delle due.
+
+**Non SQLite**, contro quanto scritto sopra. Il dato ha forma fissa e pesa
+duecentoquaranta kilobyte: un motore di interrogazione per leggere un vettore
+di novantasei numeri sarebbe un modulo Qt in più da distribuire, un plugin di
+driver che deve arrivare nel pacchetto, e un modo nuovo di fallire il primo
+avvio su una macchina che non ce l'ha.
+
+**Il confronto è con «il solito», non con «ieri».** Ieri può essere stato un
+temporale, e confrontarsi con un temporale non dice niente: la curva di
+riferimento è la mediana delle sette giornate precedenti, quarto d'ora per
+quarto d'ora.
+
+**I buchi restano buchi.** Dove non si è misurato la curva si interrompe: una
+riga tirata da prima del buco a dopo sarebbe un'interpolazione che nessuno ha
+misurato, e sullo schermo sembrerebbe un dato come gli altri.
+
+Il quarto d'ora in corso si mostra come **un punto**, non come un tratto: è una
+misura che si sta ancora formando. Senza, chi apre il pannello guarda un
+riquadro vuoto per un quarto d'ora e conclude che non funziona.
 
 ---
 
