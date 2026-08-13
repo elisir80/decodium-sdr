@@ -7,6 +7,8 @@ add_library(dsdr_core STATIC
     TxEngine.cpp
     TxProfiles.h
     TxProfiles.cpp
+    Greyline.h
+    Greyline.cpp
     IqModuleApi.h
     ChannelModel.h
     ChannelModel.cpp

@@ -47,6 +47,7 @@ Rectangle {
         ListElement { key: "device" }
         ListElement { key: "waterfall" }
         ListElement { key: "canali" }
+        ListElement { key: "greyline" }
     }
 
     /// Il nome e il glifo di ogni pannello, per la fila di icone.
@@ -66,6 +67,7 @@ Rectangle {
         { key: "device",       glyph: "⚙", label: qsTr("Device") },
         { key: "waterfall",    glyph: "▤", label: qsTr("Waterfall") },
         { key: "canali",       glyph: "≡", label: qsTr("Canali") },
+        { key: "greyline",     glyph: "◐", label: qsTr("Linea grigia") },
     ]
 
     // ── Pannelli spenti ──────────────────────────────────────────────────
@@ -248,6 +250,7 @@ Rectangle {
         case "sintonia":  return tuningPanel
         case "strumento": return sMeterPanel
         case "audio":     return audioStudioPanel
+        case "greyline":  return greylinePanel
         case "flusso":    return chainFlowPanel
         case "tempo":     return timeMachinePanel
         case "catena":    return rxChainPanel
@@ -410,6 +413,12 @@ Rectangle {
         id: chainFlowPanel
 
         ChainFlowPanel {}
+    }
+
+    Component {
+        id: greylinePanel
+
+        GreylinePanel {}
     }
 
     Component {

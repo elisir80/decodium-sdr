@@ -4,9 +4,12 @@ DECODIUM SDR — dipendenze di terze parti
 Il progetto è distribuito sotto GPL-3.0-or-later. Ogni dipendenza elencata qui
 è stata verificata compatibile con quella licenza.
 
-Nessun codice di terze parti è vendorizzato in questo repository. Ciò che sta
-in `third_party/` arriva da monte a cura di chi compila, è escluso da git e
+Nessun **codice** di terze parti è vendorizzato in questo repository. Ciò che
+sta in `third_party/` arriva da monte a cura di chi compila, è escluso da git e
 resta della sua licenza originale: qui se ne dichiarano provenienza e termini.
+
+Un solo **dato** fa eccezione ed è versionato — le coste di Natural Earth, di
+pubblico dominio, diciannove kilobyte. La deroga è motivata dove è elencato.
 
 
 COSTRUITE DAL SORGENTE, NON REDISTRIBUITE
@@ -24,6 +27,26 @@ RNNoise
               Senza, `DSDR_NEURAL_NR` resta spento e la capability assente.
     Note    : BSD-3 è compatibile con GPL-3.0. I pesi del modello sono
               distribuiti da Xiph con la stessa licenza del codice.
+
+
+Natural Earth — coste del mondo
+    Licenza : dominio pubblico (nessuna restrizione)
+    Sito    : https://www.naturalearthdata.com
+    Uso     : la mappa del pannello «Linea grigia». `ne_110m_coastline`
+              semplificato a un centesimo di grado e convertito in polilinee
+              binarie: `data/coste.bin`, diciannove kilobyte.
+    Come    : rigenerabile con `data/coste.py`, che documenta il formato.
+                curl -sL -o ne.geojson https://raw.githubusercontent.com/                    nvkelso/natural-earth-vector/master/geojson/ne_110m_coastline.geojson
+                python3 data/coste.py ne.geojson data/coste.bin 0.05
+    Note    : Natural Earth dichiara i propri dati di pubblico dominio e non
+              chiede nemmeno l'attribuzione. Sta qui lo stesso: un dato di cui
+              non si sa la provenienza è un dato che nessuno può correggere.
+
+              **È l'unico dato di terze parti versionato in questo
+              repository**, ed è una deroga consapevole a quanto scritto in
+              testa. Il motivo è che diciannove kilobyte non giustificano di
+              far scaricare a chi compila un archivio da centoquaranta per
+              rifare una conversione che dà sempre lo stesso risultato.
 
 
 VST 3 SDK

@@ -38,6 +38,8 @@ set(DSDR_QML_FILES
     qml/AudioScope.qml
     qml/EqCurve.qml
     qml/VoiceCompare.qml
+    qml/GreylinePanel.qml
+    qml/RotorDial.qml
     qml/AudioLevelBar.qml
     qml/ChainBlock.qml
     qml/ChainGlyph.qml
@@ -100,6 +102,9 @@ qt_add_qml_module(dsdr_qml
         PanadapterRenderer.cpp
         WaterfallPalette.h
         WaterfallPalette.cpp
+        GreylineForeign.h
+        GreylineMap.h
+        GreylineMap.cpp
     # La scansione degli import serve solo per linkare staticamente i plugin
     # QML. Con un Qt dinamico non aggiunge nulla, e toglierla ci rende
     # indipendenti da qmlimportscanner, che in alcune distribuzioni (MSYS2)
@@ -204,6 +209,14 @@ elseif(APPLE)
     set_target_properties(dsdr_app PROPERTIES
         MACOSX_BUNDLE_ICON_FILE "decodium-sdr.icns")
 endif()
+
+# Le coste del mondo, semplificate a un centesimo di grado: diciannove
+# kilobyte di polilinee, di pubblico dominio (Natural Earth). Si rigenerano da
+# `data/coste.py` — vedi il commento in testa a quel file.
+qt_add_resources(dsdr_qml "dsdr_greyline_data"
+    PREFIX "/data"
+    BASE "${CMAKE_SOURCE_DIR}/data"
+    FILES "${CMAKE_SOURCE_DIR}/data/coste.bin")
 
 qt_add_resources(dsdr_app "dsdr_appicon"
     PREFIX "/icons"
