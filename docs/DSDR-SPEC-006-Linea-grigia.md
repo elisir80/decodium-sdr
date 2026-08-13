@@ -85,9 +85,10 @@ spento: vederlo lì dice che esiste, e sulle bande alte — quando la via breve
 passa sopra una calotta polare disturbata — la via lunga è spesso l'unica che
 porta il segnale.
 
-C'è posto anche per un terzo indice, tratteggiato, che mostra dove sta puntando
-davvero l'antenna. Compare solo se qualcuno sa dirlo: **finché non c'è un
-rotore collegato non si disegna un ago che finge di sapere.**
+Il terzo indice, tratteggiato, mostra dove sta puntando **davvero** l'antenna.
+Compare solo se un rotore lo sa dire: finché non c'è, non si disegna un ago che
+finge di sapere. Sotto al quadrante c'è lo scarto — «161° da girare» — che è
+l'unica cosa che si guarda mentre il rotore gira.
 
 ### 3.6 Il numero che conta
 
@@ -106,6 +107,68 @@ chilometri di quota e restano illuminati quando la superficie è già al buio.
 
 Per questo la fascia ha una semilarghezza regolabile — sei gradi di partenza —
 invece di essere una riga.
+
+## 3.8 Il rotore
+
+Via **`rotctld`**, il demone rotori di Hamlib, che parla con una quarantina di
+modelli — Yaesu GS-232, Prosistel, SPID, Green Heron, M2 — e permette di
+riusare quel lavoro senza linkare hamlib e senza copiarne una riga:
+
+```
+rotctld -m 603 -r COM7 -s 9600 -t 4533
+```
+
+È lo stesso mestiere che fa già `RigctldDriver` per il CAT, e con lo stesso
+riconoscimento dei **due dialetti**: `rotctld` capisce il prefisso `+` e chiude
+con `RPRT`, i server minimi rispondono i soli valori. La differenza è che qui il
+silenzio *è* una risposta — un server minimo al `+` non dice niente — e la si
+aspetta 1,2 secondi invece di quattro, altrimenti ogni collegamento con mezzo
+ecosistema costerebbe quattro secondi di attesa muta.
+
+### Un rotore è una massa su un palo
+
+Girarlo non è come cambiare un filtro: c'è un motore, ci sono relè che chiudono,
+e c'è un'antenna in cima a una torre. Da qui discendono tutte le scelte.
+
+**Non insegue niente da solo.** Puntare è un comando esplicito. Un rotore che
+parte perché qualcuno ha toccato una mappa è una sorpresa su un palo, e sui pali
+le sorprese costano. C'è un test che lascia girare tutto e verifica che non
+parta un solo comando di movimento.
+
+**Non si martella.** Un comando di puntamento ogni secondo e mezzo, non di più:
+ogni comando chiude dei relè, e trascinare un cursore ne manderebbe cento in tre
+secondi. Il rifiuto si dice, non si tace.
+
+**FERMA passa davanti a tutto.** Se qualcuno lo preme mentre un puntamento è in
+coda, il puntamento non parte — sarebbe l'esatto contrario di quello che è stato
+chiesto, e il rotore ripartirebbe subito dopo essersi fermato.
+
+**Se il collegamento cade mentre gira, il rotore continua.** Non lo si può
+fermare e non si finge di poterlo fare: lo si dice, perché chi opera possa
+scendere in torre o staccare l'alimentazione.
+
+**Un server che tace non blocca la coda.** Chi smette di rispondere non chiude
+il socket: resta lì. Senza un guinzaglio l'indicatore resterebbe sul valore di
+mezz'ora prima, sembrando giusto.
+
+### 4532 non è 4533
+
+Sono due porte vicine e due demoni che si somigliano, e su una stazione vera
+capita di avere un server **rigctl** dove ci si aspettava rotctld. Chiedere una
+posizione a una radio non dà una posizione: dà `RPRT -11`. Lì il controller si
+stacca e lo dice, invece di restare collegato a un indicatore che non si
+muoverà mai.
+
+Verificato dal vivo su questa macchina, dove sulla 4533 c'è il rigctl di
+DECODIUM 4.
+
+### L'elevazione, se c'è
+
+`hasElevation` è falso finché `dump_caps` non dichiara un intervallo di
+elevazione non nullo. Non vuol dire «zero gradi»: vuol dire che non c'è, e un
+indicatore d'elevazione fermo sullo zero sarebbe una bugia che nessuno può
+smentire guardandola. Con il dialetto corto non si può chiedere, e non si
+inventa.
 
 ## 4. Precisione, e come si controlla
 
@@ -129,6 +192,18 @@ momento buono. Tutto quello che si può verificare contro un valore indipendente
 | locatore non valido | zero-zero, che è nel golfo di Guinea |
 | ortodromia spezzata | la riga che attraversa tutta la mappa |
 
+E per il rotore, in `tst_rotor`, con un finto `rotctld` che parla i due dialetti:
+
+| Prova | Che cosa prende |
+|---|---|
+| dialetto esteso e corto | mezzo ecosistema che ignora il `+` |
+| non si muove da solo | un'antenna che parte all'avvio del programma |
+| dieci puntamenti, uno parte | i relè di un controller consumati in tre secondi |
+| FERMA cancella la coda | il rotore che riparte subito dopo essersi fermato |
+| il server tace | una coda bloccata per sempre |
+| il collegamento cade | un rotore che gira e nessuno lo dice |
+| un rigctl sulla 4533 | una radio scambiata per un rotore |
+
 ## 5. I dati
 
 Coste da **Natural Earth** `ne_110m_coastline`, di pubblico dominio,
@@ -141,8 +216,10 @@ kilobyte in `data/coste.bin`, rigenerabili con `data/coste.py`.
 ```
 src/core/Greyline.h/.cpp      il motore: Sole, rotte, locatori. Solo Qt Core
 src/app/GreylineMap.h/.cpp    la mappa dipinta, con la basemap in cache
+src/core/RotorController.*    il rotore via rotctld
 src/app/qml/RotorDial.qml     il quadrante
 src/app/qml/GreylinePanel.qml il pannello che li tiene insieme
 tests/core/tst_greyline.cpp
+tests/core/tst_rotor.cpp      con il suo finto rotctld
 data/coste.py                 come si rigenerano le coste
 ```

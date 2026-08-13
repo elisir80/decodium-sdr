@@ -9,6 +9,8 @@ add_library(dsdr_core STATIC
     TxProfiles.cpp
     Greyline.h
     Greyline.cpp
+    RotorController.h
+    RotorController.cpp
     IqModuleApi.h
     ChannelModel.h
     ChannelModel.cpp

@@ -53,6 +53,17 @@ PanelFrame {
         property alias home: root.homeLocator
         property alias target: root.targetLocator
         property alias longPath: longPathButton.checked
+        property alias rotorHost: rotor.host
+        property alias rotorPort: rotor.port
+    }
+
+    // ── Il rotore ────────────────────────────────────────────────────────
+    //
+    // Non si collega da solo all'avvio, e non e' una dimenticanza: aprire il
+    // programma non deve poter mettere in moto un'antenna in cima a una torre.
+    // Ci si collega quando lo si chiede.
+    RotorController {
+        id: rotor
     }
 
     Greyline {
@@ -141,13 +152,40 @@ PanelFrame {
         Layout.topMargin: Theme.spacingTight
         spacing: Theme.spacing
 
-        RotorDial {
-            Layout.preferredWidth: 168
-            Layout.preferredHeight: 168
+        ColumnLayout {
             Layout.alignment: Qt.AlignTop
+            spacing: Theme.spacingTight
 
-            bearing: root.shortPath
-            useLongPath: longPathButton.checked
+            RotorDial {
+                Layout.preferredWidth: 168
+                Layout.preferredHeight: 168
+
+                bearing: root.shortPath
+                useLongPath: longPathButton.checked
+                // L'indice tratteggiato: dove punta davvero l'antenna. Compare
+                // solo se un rotore lo sa dire — finche' non c'e', non si
+                // disegna un ago che finge di sapere.
+                heading: rotor.connected ? rotor.azimuth : -1
+            }
+
+            // Lo scarto fra dove si punta e dove si dovrebbe: e' l'unica cosa
+            // che si guarda mentre il rotore gira.
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                visible: rotor.connected && root.haveTarget
+                text: {
+                    const want = longPathButton.checked ? (root.shortPath + 180) % 360
+                                                        : root.shortPath
+                    let d = Math.abs(rotor.azimuth - want) % 360
+                    if (d > 180)
+                        d = 360 - d
+                    return d < 1 ? qsTr("in punta")
+                                 : qsTr("%1° da girare").arg(Math.round(d))
+                }
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.monoFamily
+                color: rotor.moving ? Theme.spectrumPeak : Theme.textSecondary
+            }
         }
 
         ColumnLayout {
@@ -352,6 +390,86 @@ PanelFrame {
                         color: Theme.spectrumPeak
                     }
                 }
+            }
+
+            // ── Il rotore (SPEC-006 §3.5) ────────────────────────────────
+            //
+            // Puntare e' un comando esplicito. Un rotore che parte perche'
+            // qualcuno ha toccato una mappa e' una sorpresa su un palo, e sui
+            // pali le sorprese costano.
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.spacingTight
+                spacing: Theme.spacingTight
+
+                Text {
+                    text: qsTr("ROTORE")
+                    font.pixelSize: Theme.fontSmall
+                    font.bold: true
+                    font.letterSpacing: 1.2
+                    color: Theme.textDisabled
+                }
+
+                DsdrButton {
+                    implicitWidth: 84
+                    implicitHeight: 26
+                    fontSize: Theme.fontSmall
+                    text: rotor.connected ? qsTr("STACCA") : qsTr("COLLEGA")
+                    onClicked: rotor.connected ? rotor.disconnectFromRotor()
+                                               : rotor.connectToRotor()
+                }
+
+                DsdrButton {
+                    implicitWidth: 76
+                    implicitHeight: 26
+                    fontSize: Theme.fontSmall
+                    text: qsTr("PUNTA")
+                    enabled: rotor.connected && root.haveTarget
+                    onClicked: rotor.pointTo(longPathButton.checked
+                                             ? (root.shortPath + 180) % 360
+                                             : root.shortPath)
+                }
+
+                // Rosso, largo e sempre acceso finche' c'e' un rotore. Non e'
+                // decorazione: e' l'unico comando che qualcuno cerchera' di
+                // fretta, e un tasto di emergenza che si spegne quando «non
+                // serve» non si trova proprio quando serve.
+                DsdrButton {
+                    implicitWidth: 76
+                    implicitHeight: 26
+                    fontSize: Theme.fontSmall
+                    text: qsTr("FERMA")
+                    danger: true
+                    enabled: rotor.connected
+                    onClicked: rotor.stop()
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: {
+                        if (!rotor.connected)
+                            return qsTr("rotctld su %1:%2").arg(rotor.host).arg(rotor.port)
+                        let s = qsTr("%1°").arg(Math.round(rotor.azimuth))
+                        if (rotor.hasElevation)
+                            s += qsTr(" · el %1°").arg(Math.round(rotor.elevation))
+                        if (rotor.model !== "")
+                            s += " · " + rotor.model
+                        return s
+                    }
+                    font.pixelSize: Theme.fontSmall
+                    font.family: Theme.monoFamily
+                    color: rotor.connected ? Theme.textSecondary : Theme.textDisabled
+                    elide: Text.ElideRight
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: rotor.trouble !== ""
+                text: rotor.trouble
+                font.pixelSize: Theme.fontSmall
+                color: Theme.danger
+                wrapMode: Text.WordWrap
             }
 
             // ── La fascia utile ──────────────────────────────────────────

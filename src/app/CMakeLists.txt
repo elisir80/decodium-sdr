@@ -103,6 +103,7 @@ qt_add_qml_module(dsdr_qml
         WaterfallPalette.h
         WaterfallPalette.cpp
         GreylineForeign.h
+        RotorForeign.h
         GreylineMap.h
         GreylineMap.cpp
     # La scansione degli import serve solo per linkare staticamente i plugin
