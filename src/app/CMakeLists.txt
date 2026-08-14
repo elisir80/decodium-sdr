@@ -40,6 +40,7 @@ set(DSDR_QML_FILES
     qml/VoiceCompare.qml
     qml/GreylinePanel.qml
     qml/ConditionsPanel.qml
+    qml/PanelGlyphs.qml
     qml/RotorDial.qml
     qml/AudioLevelBar.qml
     qml/ChainBlock.qml
@@ -85,6 +86,7 @@ endforeach()
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/BandPlan.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/PanelGlyphs.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/Memories.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/Markers.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/Tuning.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)

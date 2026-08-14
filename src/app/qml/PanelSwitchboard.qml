@@ -39,6 +39,8 @@ Flow {
 
             readonly property bool on: root.hidden.indexOf(modelData.key) < 0
 
+            // Un filo più larghi di prima: un segno disegnato ha bisogno di
+            // respiro dove un carattere si arrangiava con il proprio.
             width: 30
             height: 26
             radius: Theme.radiusSmall
@@ -52,12 +54,21 @@ Flow {
                 NumberAnimation { duration: Theme.animationFast }
             }
 
-            Text {
+            // Il segno è disegnato, non scritto. Un carattere preso perché
+            // somigliava a qualcosa non si impara: si prova, e ci si ricorda
+            // la posizione invece del segno. Qui vale la regola dei blocchi
+            // della catena — si disegna quello che il pannello *fa* — e i due
+            // alfabeti sono la stessa lingua.
+            ChainGlyph {
                 anchors.centerIn: parent
-                text: chip.modelData.glyph
-                font.pixelSize: Theme.fontNormal
-                color: chip.on ? Theme.accent
-                     : hover.hovered ? Theme.textPrimary : Theme.textDisabled
+                width: 18
+                height: 18
+                boxWidth: PanelGlyphs.box
+                boxHeight: PanelGlyphs.box
+                thickness: 1.5
+                path: PanelGlyphs.of(chip.modelData.key)
+                stroke: chip.on ? Theme.accent
+                      : hover.hovered ? Theme.textPrimary : Theme.textDisabled
             }
 
             HoverHandler {

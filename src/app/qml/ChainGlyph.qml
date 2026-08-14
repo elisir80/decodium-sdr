@@ -15,8 +15,18 @@ import DecodiumSdr
 Item {
     id: root
 
-    /// Il tracciato, in coordinate del riquadro 72×26.
+    /// Il tracciato, in coordinate del riquadro sorgente.
     property string path: ""
+
+    /// Il riquadro in cui il tracciato è disegnato.
+    ///
+    /// Settantadue per ventisei è quello dei blocchi della catena, che sono
+    /// larghi e bassi. La barra dei pannelli ha bisogno di un riquadro
+    /// quadrato: schiacciare un disegno tondo in un pulsante quadrato lo
+    /// trasforma in un'ellisse, e il globo della linea grigia diventava un
+    /// uovo. Il riquadro va dichiarato da chi disegna.
+    property real boxWidth: 72
+    property real boxHeight: 26
     property color stroke: Theme.accent
     property real thickness: 1.6
 
@@ -26,14 +36,14 @@ Item {
     Shape {
         id: shape
 
-        width: 72
-        height: 26
+        width: root.boxWidth
+        height: root.boxHeight
         // Il disegno nasce in un riquadro fisso e si adatta a quello che c'è:
         // così i glifi di due blocchi larghi diversamente restano confrontabili
         // fra loro, che è tutto il punto di avere un alfabeto.
         transform: Scale {
-            xScale: root.width / 72
-            yScale: root.height / 26
+            xScale: root.width / root.boxWidth
+            yScale: root.height / root.boxHeight
         }
 
         ShapePath {
