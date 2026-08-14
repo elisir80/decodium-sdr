@@ -37,7 +37,7 @@ public:
 
     QString driverId() const override { return QStringLiteral("civ"); }
 
-    bool open(const QString &portName, int baudRate) override;
+    bool open(const QString &portName, const CatSerialConfig &serial) override;
     void close() override;
     bool isOpen() const override;
 
@@ -77,9 +77,9 @@ public:
     static QByteArray buildFrame(quint8 radioAddress, const QByteArray &payload);
 
 private:
-    /// Apre la porta e mette subito giù RTS e DTR. Separata dal resto perché
+    /// Apre la porta con la configurazione scelta. Separata dal resto perché
     /// la sonda la chiama una volta e poi cambia solo la velocità.
-    bool openPort(const QString &portName, int baudRate);
+    bool openPort(const QString &portName, const CatSerialConfig &serial);
 
     /// Cerca l'indirizzo del telaio sulla porta già aperta. Vero se dall'altra
     /// parte c'è una Icom.

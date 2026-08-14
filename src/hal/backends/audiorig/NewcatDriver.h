@@ -28,7 +28,7 @@ public:
 
     QString driverId() const override { return QStringLiteral("newcat"); }
 
-    bool open(const QString &portName, int baudRate) override;
+    bool open(const QString &portName, const CatSerialConfig &serial) override;
     void close() override;
     bool isOpen() const override;
 
@@ -54,13 +54,9 @@ public:
     static QString modelFromId(const QByteArray &reply);
 
 private:
-    /// Apre la porta e mette subito giù RTS e DTR. Separata dal resto perché
-    /// la sonda la chiama una volta e poi cambia solo la velocità.
-    /// Apre la porta. Con `handshake` la linea RTS la governa Qt, che la
-    /// alza quando è pronto a ricevere: è quello che si aspetta una Yaesu con
-    /// «CAT RTS» abilitato — e con quell'opzione attiva, RTS basso significa
-    /// che la radio non manda risposte e ogni domanda scade.
-    bool openPort(const QString &portName, int baudRate, bool handshake = false);
+    /// Apre la porta con la configurazione scelta. Con RTS/CTS la linea RTS
+    /// la governa Qt, come richiedono le Yaesu con «CAT RTS» abilitato.
+    bool openPort(const QString &portName, const CatSerialConfig &serial);
 
     /// Chiede `ID;` e ne ricava il modello. Vero se dall'altra parte c'è una
     /// radio che parla newcat.

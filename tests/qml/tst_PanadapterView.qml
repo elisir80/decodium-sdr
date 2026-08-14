@@ -43,6 +43,30 @@ TestCase {
                                     currentStart, currentSpan)
     }
 
+    function deliveredView(bandSpanHz, clientDemod) {
+        const pane = createTemporaryObject(paneComponent, testCase)
+        verify(pane !== null, "panadattatore non istanziato")
+        return pane.deliveredBandView(bandSpanHz, clientDemod)
+    }
+
+    // Audio CAT: 48 kHz arrivano dal codec, ma la vista operativa è larga
+    // 7 kHz e deve avere il VFO esattamente al centro dopo ogni aggiornamento
+    // dalla radio. Un viewStart conservato dal VFO precedente sposta invece
+    // cursore, griglia e waterfall assieme verso un bordo.
+    function test_audio_radio_view_is_centred_on_the_cat_vfo() {
+        const view = deliveredView(48000, false)
+        compare(view.span, 7000 / 48000)
+        compare(view.start + view.span / 2, 0.5)
+    }
+
+    // Per un ricevitore IQ il centro può muoversi dentro tutta la banda;
+    // ricentrare qui cancellerebbe pan e zoom scelti dall'operatore.
+    function test_iq_radio_keeps_the_full_delivered_band() {
+        const view = deliveredView(2048000, true)
+        compare(view.start, 0)
+        compare(view.span, 1)
+    }
+
     // Un canale fuori dalla finestra la fa spostare, e ci finisce dentro.
     function test_a_channel_outside_the_window_brings_it_in() {
         const span = 0.1                      // si guarda un decimo di banda

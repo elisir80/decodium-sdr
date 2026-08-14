@@ -46,10 +46,10 @@ signals:
     void opened(const QString &radioModel, const QString &portName, int baudRate);
 
 public slots:
-    /// Apre la porta indicata. Con `baudRate` a zero le prova tutte, dalla più
-    /// probabile: è la differenza fra «scegli FT-991A e funziona» e una
-    /// tendina di velocità da indovinare.
-    void open(const QString &portName, int baudRate);
+    /// Apre la porta indicata. Con `baudRate` a zero prova le velocità note
+    /// mantenendo invariati formato, handshake e linee di controllo.
+    void open(const QString &portName, int baudRate, int dataBits, int parity,
+              int stopBits, int flowControl, bool dtr, bool rts);
     void close();
 
     void setFrequency(qint64 hz);

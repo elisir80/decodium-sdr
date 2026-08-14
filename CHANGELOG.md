@@ -4,6 +4,38 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.2.4] «Fessenden» — 2026-08-15
+
+Una release per rendere la radio tradizionale una sorgente che resta
+configurata e centrata, invece di doverla ricostruire a ogni avvio.
+
+### Aggiunto
+
+- **Profilo CAT persistente.** Driver, porta, velocità, bit dati, parità, bit
+  stop, handshake e stati DTR/RTS vengono salvati quando la radio è aggiunta
+  all'elenco. All'avvio successivo il profilo riappare pronto da connettere,
+  senza aprire la porta seriale finché l'operatore non sceglie `Connetti`.
+
+- **Configurazione seriale completa.** La dichiarazione manuale inoltra al
+  backend tutti i parametri UART, non solo la velocità: una CI-V o una CAT non
+  deve più dipendere per caso dai valori predefiniti della piattaforma.
+
+### Corretto
+
+- **Centro del panadapter con CAT audio.** Quando il VFO viene aggiornato via
+  CAT, la vista audio a 7 kHz viene nuovamente centrata attorno alla frequenza
+  della radio, invece di rimanere sulla precedente porzione dello spettro.
+
+- **Identificazione delle porte seriali.** L'elenco mostra anche produttore e
+  seriale USB quando disponibili: distingue, ad esempio, l'adattatore della
+  radio da altri convertitori collegati al Mac.
+
+### Verificato
+
+- Aggiunti test QML per la persistenza del profilo CAT e per il recente
+  centraggio del panadapter, più test HAL per l'inoltro della configurazione
+  seriale.
+
 ## [1.2.3] «De Forest» — 2026-08-14
 
 Nessuna funzione nuova: **due test che cadevano da soli**. Sembra poco e non lo

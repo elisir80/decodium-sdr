@@ -115,7 +115,9 @@ void TestNewcat::aRadioOnTheBenchAnswers()
     NewcatDriver driver;
     QString found;
     for (int baud : driver.candidateBaudRates()) {
-        if (driver.open(port, baud)) {
+        CatSerialConfig serial;
+        serial.baudRate = baud;
+        if (driver.open(port, serial)) {
             found = QStringLiteral("%1 a %2 baud").arg(driver.radioModel()).arg(baud);
             break;
         }

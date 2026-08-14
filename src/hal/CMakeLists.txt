@@ -126,6 +126,7 @@ if(DSDR_BACKEND_AUDIORIG)
     if(Qt6SerialPort_FOUND AND Qt6Multimedia_FOUND)
         list(APPEND DSDR_HAL_SOURCES
             backends/audiorig/ICatDriver.h
+            backends/audiorig/CatSerialPort.h
             backends/audiorig/NewcatDriver.h
             backends/audiorig/NewcatDriver.cpp
             backends/audiorig/CivDriver.h

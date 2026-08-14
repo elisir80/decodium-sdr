@@ -47,6 +47,23 @@ struct CatState
     double signalDbm = std::numeric_limits<double>::quiet_NaN();
 };
 
+/// Parametri della porta che porta il CAT. I valori numerici sono intenzionali:
+/// attraversano il confine QML → comando nativo senza introdurre metatype Qt
+/// in un punto che deve restare un dettaglio del backend.
+///
+/// `flowControl` vale -1 per l'automatismo del driver, 0 per nessuno, 1 per
+/// RTS/CTS e 2 per XON/XOFF. Per i bit di stop, 15 rappresenta 1,5.
+struct CatSerialConfig
+{
+    int baudRate = 0;
+    int dataBits = 8;
+    int parity = 0;       ///< 0 nessuna, 1 pari, 2 dispari, 3 mark, 4 space
+    int stopBits = 1;     ///< 1, 15 (1,5) oppure 2
+    int flowControl = -1; ///< automatico; vedi sopra
+    bool dtr = false;
+    bool rts = false;
+};
+
 class ICatDriver
 {
 public:
@@ -58,7 +75,7 @@ public:
     /// Apre la porta e verifica che dall'altra parte ci sia davvero una radio.
     /// Fallire qui è normale — si sondano porte che possono essere qualunque
     /// cosa — e non deve costare più di qualche centinaio di millisecondi.
-    virtual bool open(const QString &portName, int baudRate) = 0;
+    virtual bool open(const QString &portName, const CatSerialConfig &serial) = 0;
     virtual void close() = 0;
     virtual bool isOpen() const = 0;
 

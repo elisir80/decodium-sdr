@@ -54,6 +54,12 @@ endif()
 # fa fallire il collegamento parlando di simboli mancanti invece che del
 # modulo Qt che manca davvero.
 if(DSDR_BUILT_AUDIORIG)
+    # Formato della porta CAT: i controlli QML devono arrivare ai valori Qt
+    # esatti, e i valori corrotti non devono diventare una radio muta.
+    dsdr_add_test(tst_cat_serial_config
+        SOURCES tst_cat_serial_config.cpp
+        LIBRARIES dsdr::hal)
+
     # La tabella dei modi newcat è l'unica parte del backend verificabile
     # senza radio, ed è quella in cui un errore manda in aria il modo
     # sbagliato invece di far fallire qualcosa.

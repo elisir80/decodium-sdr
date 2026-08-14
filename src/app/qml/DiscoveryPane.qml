@@ -6,6 +6,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtCore
 import DecodiumSdr
 
 Rectangle {
@@ -82,6 +83,8 @@ Rectangle {
         // chi opera la propria stazione sa che radio ha molto meglio di
         // quanto possa scoprirlo una sonda.
         ColumnLayout {
+            id: manualRadioEntry
+
             Layout.fillWidth: true
             Layout.topMargin: Theme.spacing
             spacing: Theme.spacingTight
@@ -95,6 +98,186 @@ Rectangle {
             property var drivers: Session.capabilities.manualDeviceEntry
                                   ? (Session.nativeCommand("device.catDrivers", {}) || [])
                                   : []
+            // Una radio dichiarata non è una preferenza effimera: porta,
+            // formato seriale e linee di controllo sono parte della sua
+            // identità operativa. Senza questa memoria, a ogni riavvio si
+            // rischia di selezionare il primo adattatore della lista invece
+            // del CAT della radio.
+            property bool savedProfileDeclared: false
+            readonly property bool serialDriver: driverBox.currentIndex >= 0
+                                                 && drivers.length > driverBox.currentIndex
+                                                 && drivers[driverBox.currentIndex].id !== "rigctld"
+
+            Settings {
+                id: manualRadioSettings
+
+                category: "radio/manual-cat"
+                property string driverId: ""
+                property string port: ""
+                property int baud: 0
+                property int dataBits: 8
+                property int parity: 0
+                property int stopBits: 1
+                property int flowControl: -1
+                property bool dtr: false
+                property bool rts: false
+            }
+
+            function driverIndex(driverId) {
+                for (let i = 0; i < drivers.length; ++i) {
+                    if (drivers[i].id === driverId)
+                        return i
+                }
+                return -1
+            }
+
+            function portIndex(portName) {
+                for (let i = 0; i < ports.length; ++i) {
+                    if (ports[i].port === portName)
+                        return i
+                }
+                return -1
+            }
+
+            function indexOf(model, value) {
+                const text = String(value)
+                for (let i = 0; i < model.length; ++i) {
+                    if (String(model[i]) === text)
+                        return i
+                }
+                return -1
+            }
+
+            function currentProfile() {
+                const driversList = drivers
+                if (driverBox.currentIndex < 0 || driverBox.currentIndex >= driversList.length)
+                    return null
+
+                const driver = driversList[driverBox.currentIndex].id
+                let port = netField.text.trim()
+                let baud = 0
+                if (serialDriver) {
+                    if (portBox.currentIndex < 0 || portBox.currentIndex >= ports.length)
+                        return null
+                    port = ports[portBox.currentIndex].port
+                    baud = baudBox.currentIndex > 0 ? parseInt(baudBox.currentText) : 0
+                }
+                if (!port)
+                    return null
+
+                return {
+                    "driver": driver,
+                    "model": driverBox.currentText,
+                    "port": port,
+                    "baud": baud,
+                    "dataBits": parseInt(dataBitsBox.currentText),
+                    "parity": parityBox.currentIndex,
+                    "stopBits": [1, 15, 2][stopBitsBox.currentIndex],
+                    "flowControl": handshakeBox.currentIndex - 1,
+                    "dtr": dtrButton.checked,
+                    "rts": rtsButton.checked
+                }
+            }
+
+            function saveProfile(profile) {
+                manualRadioSettings.driverId = profile.driver
+                manualRadioSettings.port = profile.port
+                manualRadioSettings.baud = profile.baud
+                manualRadioSettings.dataBits = profile.dataBits
+                manualRadioSettings.parity = profile.parity
+                manualRadioSettings.stopBits = profile.stopBits
+                manualRadioSettings.flowControl = profile.flowControl
+                manualRadioSettings.dtr = profile.dtr
+                manualRadioSettings.rts = profile.rts
+            }
+
+            // Ripristina anche la selezione grafica: vedere "debug-console"
+            // mentre l'app sta per aprire un IC-7300 salvato è ambiguo quanto
+            // non conservare nulla. Il profilo viene dichiarato, ma non
+            // aperto: la porta seriale resta intatta fino a «Connetti».
+            function restoreSavedProfile() {
+                if (!visible || savedProfileDeclared || !manualRadioSettings.driverId)
+                    return
+
+                const driver = driverIndex(manualRadioSettings.driverId)
+                if (driver < 0)
+                    return
+                driverBox.currentIndex = driver
+
+                if (serialDriver) {
+                    const port = portIndex(manualRadioSettings.port)
+                    if (port < 0)
+                        return // radio scollegata: non si sostituisce con una porta a caso
+                    portBox.currentIndex = port
+                    const baud = manualRadioSettings.baud > 0
+                                 ? indexOf(baudBox.model, manualRadioSettings.baud) : 0
+                    baudBox.currentIndex = baud >= 0 ? baud : 0
+                } else {
+                    netField.text = manualRadioSettings.port
+                }
+
+                const dataBits = indexOf(dataBitsBox.model, manualRadioSettings.dataBits)
+                dataBitsBox.currentIndex = dataBits >= 0 ? dataBits : 0
+                parityBox.currentIndex = Math.max(0, Math.min(parityBox.model.length - 1,
+                                                               manualRadioSettings.parity))
+                stopBitsBox.currentIndex = indexOf([1, 15, 2], manualRadioSettings.stopBits)
+                if (stopBitsBox.currentIndex < 0)
+                    stopBitsBox.currentIndex = 0
+                handshakeBox.currentIndex = Math.max(0, Math.min(handshakeBox.model.length - 1,
+                                                                   manualRadioSettings.flowControl + 1))
+                dtrButton.checked = manualRadioSettings.dtr
+                rtsButton.checked = manualRadioSettings.rts
+
+                const profile = currentProfile()
+                if (profile && Session.nativeCommand("device.declare", profile))
+                    savedProfileDeclared = true
+            }
+
+            Timer {
+                id: restoreSavedProfileTimer
+
+                interval: 0
+                repeat: false
+                onTriggered: manualRadioEntry.restoreSavedProfile()
+            }
+
+            Component.onCompleted: restoreSavedProfileTimer.start()
+            onVisibleChanged: {
+                if (visible)
+                    restoreSavedProfileTimer.restart()
+                else
+                    savedProfileDeclared = false
+            }
+            // In caso di cambio backend, la lista arriva dopo che il pannello
+            // è diventato visibile. Ritentiamo solo finché non è stata
+            // dichiarata la radio salvata, senza sovrascrivere una scelta che
+            // l'operatore sta modificando a mano.
+            onPortsChanged: {
+                if (visible && !savedProfileDeclared)
+                    restoreSavedProfileTimer.restart()
+            }
+            onDriversChanged: {
+                if (visible && !savedProfileDeclared)
+                    restoreSavedProfileTimer.restart()
+            }
+
+            // Un nome di chip, da solo, non identifica il cavo giusto quando
+            // ci sono più convertitori USB-seriali. Aggiungiamo quindi
+            // produttore e seriale USB: la radio può esporre qui il proprio
+            // modello/numero di serie (per esempio "IC-7300 03018172").
+            function serialPortLabel(port) {
+                const detail = []
+                if (port.description)
+                    detail.push(port.description)
+                if (port.manufacturer && port.manufacturer !== port.description)
+                    detail.push(port.manufacturer)
+                if (port.serial)
+                    detail.push(port.serial)
+                const suffix = detail.join(" · ") || qsTr("porta seriale")
+                return port.busy
+                       ? qsTr("%1 · occupata — %2").arg(port.port).arg(suffix)
+                       : qsTr("%1 · %2").arg(port.port).arg(suffix)
+            }
 
             RowLayout {
                 Layout.fillWidth: true
@@ -137,9 +320,7 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Theme.spacingTight
-                visible: driverBox.currentIndex >= 0
-                         && parent.drivers.length > driverBox.currentIndex
-                         && parent.drivers[driverBox.currentIndex].id !== "rigctld"
+                visible: manualRadioEntry.serialDriver
 
                 DsdrComboBox {
                     id: portBox
@@ -149,10 +330,7 @@ Rectangle {
                         const list = []
                         for (let i = 0; i < parent.parent.ports.length; ++i) {
                             const p = parent.parent.ports[i]
-                            list.push(p.busy
-                                      ? qsTr("%1 · occupata — %2").arg(p.port)
-                                            .arg(p.description)
-                                      : qsTr("%1 · %2").arg(p.port).arg(p.description))
+                            list.push(manualRadioEntry.serialPortLabel(p))
                         }
                         return list
                     }
@@ -166,6 +344,138 @@ Rectangle {
                     Layout.preferredWidth: 110
                     model: [qsTr("automatica"), "4800", "9600", "19200",
                             "38400", "57600", "115200"]
+                    currentIndex: 0
+                }
+            }
+
+            // Una velocità sola non descrive una seriale. Il valore di
+            // fabbrica resta 8N1 senza linee attive, così collegare un cavo
+            // non può far partire il PTT; ogni altro valore qui sotto viene
+            // passato al driver senza essere reinterpretato dalla UI.
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 3
+                columnSpacing: Theme.spacingTight
+                rowSpacing: Theme.spacingTight
+                visible: manualRadioEntry.serialDriver
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("BIT DATI")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textDisabled
+                    }
+
+                    DsdrComboBox {
+                        id: dataBitsBox
+
+                        Layout.fillWidth: true
+                        model: ["8", "7", "6", "5"]
+                        currentIndex: 0
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("PARITÀ")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textDisabled
+                    }
+
+                    DsdrComboBox {
+                        id: parityBox
+
+                        Layout.fillWidth: true
+                        model: [qsTr("nessuna"), qsTr("pari"), qsTr("dispari"),
+                                qsTr("mark"), qsTr("space")]
+                        currentIndex: 0
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("BIT STOP")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textDisabled
+                    }
+
+                    DsdrComboBox {
+                        id: stopBitsBox
+
+                        Layout.fillWidth: true
+                        model: ["1", "1,5", "2"]
+                        currentIndex: 0
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("HANDSHAKE")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textDisabled
+                    }
+
+                    DsdrComboBox {
+                        id: handshakeBox
+
+                        Layout.fillWidth: true
+                        model: [qsTr("automatico"), qsTr("nessuno"),
+                                "RTS/CTS", "XON/XOFF"]
+                        currentIndex: 0
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("DTR")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textDisabled
+                    }
+
+                    DsdrButton {
+                        id: dtrButton
+
+                        Layout.fillWidth: true
+                        checkable: true
+                        text: checked ? qsTr("DTR ON") : qsTr("DTR OFF")
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("RTS")
+                        font.pixelSize: Theme.fontSmall
+                        color: Theme.textDisabled
+                    }
+
+                    DsdrButton {
+                        id: rtsButton
+
+                        Layout.fillWidth: true
+                        checkable: true
+                        enabled: handshakeBox.currentIndex !== 2
+                        text: handshakeBox.currentIndex === 2
+                              ? qsTr("GESTITO")
+                              : (checked ? qsTr("RTS ON") : qsTr("RTS OFF"))
+                    }
                 }
             }
 
@@ -200,31 +510,20 @@ Rectangle {
                 text: qsTr("METTI NELL'ELENCO")
                 enabled: driverBox.currentIndex >= 0
                 onClicked: {
-                    const drivers = parent.drivers
-                    if (driverBox.currentIndex >= drivers.length)
+                    const profile = manualRadioEntry.currentProfile()
+                    if (!profile)
                         return
-                    const driver = drivers[driverBox.currentIndex].id
-                    const ports = parent.ports
-
-                    let port = netField.text
-                    let baud = 0
-                    if (driver !== "rigctld") {
-                        if (portBox.currentIndex < 0 || portBox.currentIndex >= ports.length)
-                            return
-                        port = ports[portBox.currentIndex].port
-                        baud = baudBox.currentIndex > 0
-                               ? parseInt(baudBox.currentText) : 0
-                    }
-
-                    Session.nativeCommand("device.declare", {
-                        "driver": driver, "port": port, "baud": baud
-                    })
+                    manualRadioEntry.saveProfile(profile)
+                    if (Session.nativeCommand("device.declare", profile))
+                        manualRadioEntry.savedProfileDeclared = true
                 }
             }
 
             Text {
                 Layout.fillWidth: true
-                text: qsTr("La radio compare nell'elenco qui sopra e si apre come le altre. Se la porta è occupata da un altro programma, il collegamento fallirà dicendolo.")
+                text: manualRadioEntry.serialDriver
+                      ? qsTr("Il profilo CAT viene salvato quando lo metti nell'elenco e ricompare al prossimo avvio senza aprire la porta. Predefiniti sicuri: 8N1 e DTR/RTS bassi. L'handshake automatico prova prima nessuno; con RTS/CTS, RTS è gestito dal protocollo. Se la porta è occupata da un altro programma, il collegamento fallirà dicendolo.")
+                      : qsTr("La radio compare nell'elenco qui sopra e si apre come le altre. Se il demone di rete non risponde, il collegamento fallirà dicendolo.")
                 font.pixelSize: Theme.fontSmall
                 color: Theme.textDisabled
                 wrapMode: Text.WordWrap

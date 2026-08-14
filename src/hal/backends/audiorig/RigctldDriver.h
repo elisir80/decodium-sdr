@@ -58,9 +58,9 @@ public:
     QString driverId() const override { return QStringLiteral("rigctld"); }
 
     /// `portName` è `host:porta`, oppure il solo host: la porta di fabbrica di
-    /// `rigctld` è la 4532. `baudRate` non ha significato su una connessione di
-    /// rete e viene ignorato.
-    bool open(const QString &portName, int baudRate) override;
+    /// `rigctld` è la 4532. I parametri seriali non hanno significato su una
+    /// connessione di rete e vengono ignorati.
+    bool open(const QString &portName, const CatSerialConfig &serial) override;
     void close() override;
     bool isOpen() const override;
 

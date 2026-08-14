@@ -168,12 +168,12 @@ double RigctldDriver::dbmFromStrengthDb(int strengthDb)
     return -73.0 + static_cast<double>(strengthDb);
 }
 
-bool RigctldDriver::open(const QString &portName, int baudRate)
+bool RigctldDriver::open(const QString &portName, const CatSerialConfig &serial)
 {
     // Su una connessione di rete non esiste una velocità di linea: quella la
     // governa `rigctld`, che è chi ha la porta seriale in mano. Il seam la
     // porta comunque, perché agli altri driver serve.
-    Q_UNUSED(baudRate)
+    Q_UNUSED(serial)
 
     close();
 
@@ -358,7 +358,7 @@ qint64 RigctldDriver::negotiate()
 
 int RigctldDriver::probe(const QString &portName)
 {
-    if (!open(portName, 0))
+    if (!open(portName, CatSerialConfig{}))
         return -1;
 
     // Zero e non una velocità: su una connessione di rete non ce n'è una, e

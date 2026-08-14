@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hal/backends/audiorig/CivDriver.h"
+#include "hal/backends/audiorig/CatSerialPort.h"
 #include "hal/HalLog.h"
 
 #include <QElapsedTimer>
@@ -170,7 +171,9 @@ int CivDriver::probe(const QString &portName)
     // e RTS per qualche millisecondo, e su molte interfacce quelle linee sono
     // il PTT. Cinque velocità aperte cinque volte sono cinque colpi di
     // trasmissione su una radio che nessuno stava usando.
-    if (!openPort(portName, candidateBaudRates().value(0, 19200)))
+    CatSerialConfig serial;
+    serial.baudRate = candidateBaudRates().value(0, 19200);
+    if (!openPort(portName, serial))
         return -1;
 
     for (int rate : candidateBaudRates()) {
@@ -190,31 +193,30 @@ int CivDriver::probe(const QString &portName)
     return -1;
 }
 
-bool CivDriver::open(const QString &portName, int baudRate)
+bool CivDriver::open(const QString &portName, const CatSerialConfig &serial)
 {
     close();
-    if (!openPort(portName, baudRate))
+    if (!openPort(portName, serial))
         return false;
     if (findAddress()) {
-        qCInfo(dsdrHal) << "civ:" << m_model << "su" << portName << baudRate
+        qCInfo(dsdrHal) << "civ:" << m_model << "su" << portName << serial.baudRate
                         << "baud, indirizzo" << QString::number(m_address, 16);
         return true;
     }
     m_error = QStringLiteral("nessuna radio CI-V su %1 a %2 baud")
-                  .arg(portName).arg(baudRate);
+                  .arg(portName).arg(serial.baudRate);
     close();
     return false;
 }
 
-bool CivDriver::openPort(const QString &portName, int baudRate)
+bool CivDriver::openPort(const QString &portName, const CatSerialConfig &serial)
 {
     m_port = std::make_unique<QSerialPort>();
     m_port->setPortName(portName);
-    m_port->setBaudRate(baudRate);
-    m_port->setDataBits(QSerialPort::Data8);
-    m_port->setParity(QSerialPort::NoParity);
-    m_port->setStopBits(QSerialPort::OneStop);
-    m_port->setFlowControl(QSerialPort::NoFlowControl);
+    if (!configureSerialPort(m_port.get(), serial, &m_error)) {
+        m_port.reset();
+        return false;
+    }
 
     if (!m_port->open(QIODevice::ReadWrite)) {
         m_error = m_port->errorString();
@@ -222,11 +224,10 @@ bool CivDriver::openPort(const QString &portName, int baudRate)
         return false;
     }
 
-    // Come per il newcat: RTS e DTR bassi prima di tutto. Su molte interfacce
-    // quelle linee sono il PTT, e aprire la porta manderebbe la radio in
-    // trasmissione prima di aver detto una parola.
-    m_port->setRequestToSend(false);
-    m_port->setDataTerminalReady(false);
+    if (!applySerialControlLines(m_port.get(), serial, &m_error)) {
+        close();
+        return false;
+    }
     m_port->clear();
     return true;
 }

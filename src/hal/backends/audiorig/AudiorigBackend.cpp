@@ -498,8 +498,17 @@ void AudiorigBackend::open(const DeviceDescriptor &device)
 
     const QString port = device.extra.value(QStringLiteral("catPort")).toString();
     const int baud = device.extra.value(QStringLiteral("catBaud")).toInt();
+    const int dataBits = device.extra.value(QStringLiteral("catDataBits"), 8).toInt();
+    const int parity = device.extra.value(QStringLiteral("catParity"), 0).toInt();
+    const int stopBits = device.extra.value(QStringLiteral("catStopBits"), 1).toInt();
+    const int flowControl = device.extra.value(QStringLiteral("catFlowControl"), -1).toInt();
+    const bool dtr = device.extra.value(QStringLiteral("catDtr"), false).toBool();
+    const bool rts = device.extra.value(QStringLiteral("catRts"), false).toBool();
     QMetaObject::invokeMethod(controller, "open", Qt::QueuedConnection,
-                              Q_ARG(QString, port), Q_ARG(int, baud));
+                              Q_ARG(QString, port), Q_ARG(int, baud),
+                              Q_ARG(int, dataBits), Q_ARG(int, parity),
+                              Q_ARG(int, stopBits), Q_ARG(int, flowControl),
+                              Q_ARG(bool, dtr), Q_ARG(bool, rts));
 
     // L'audio si annuncia a cadenza fissa: i campioni sono già nel ring, il
     // segnale porta solo il descrittore (§4.1).
@@ -791,6 +800,11 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
             entry.insert(QStringLiteral("port"), info.portName());
             entry.insert(QStringLiteral("description"), info.description());
             entry.insert(QStringLiteral("manufacturer"), info.manufacturer());
+            // Descrizione e produttore da soli sono spesso identici per più
+            // adattatori. Il seriale USB è invece ciò che consente di
+            // distinguere, ad esempio, il CP2102 interno di un IC-7300 da un
+            // secondo convertitore USB-seriale collegato alla stessa stazione.
+            entry.insert(QStringLiteral("serial"), info.serialNumber());
 
             // Se è occupata si dice, e non si nasconde la voce: «COM5 occupata
             // da un altro programma» è un'informazione, una tendina senza COM5
@@ -839,6 +853,18 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
         device.extra.insert(QStringLiteral("catPort"), port);
         device.extra.insert(QStringLiteral("catBaud"),
                             args.value(QStringLiteral("baud"), 0).toInt());
+        device.extra.insert(QStringLiteral("catDataBits"),
+                            args.value(QStringLiteral("dataBits"), 8).toInt());
+        device.extra.insert(QStringLiteral("catParity"),
+                            args.value(QStringLiteral("parity"), 0).toInt());
+        device.extra.insert(QStringLiteral("catStopBits"),
+                            args.value(QStringLiteral("stopBits"), 1).toInt());
+        device.extra.insert(QStringLiteral("catFlowControl"),
+                            args.value(QStringLiteral("flowControl"), -1).toInt());
+        device.extra.insert(QStringLiteral("catDtr"),
+                            args.value(QStringLiteral("dtr"), false).toBool());
+        device.extra.insert(QStringLiteral("catRts"),
+                            args.value(QStringLiteral("rts"), false).toBool());
         device.extra.insert(QStringLiteral("catDriver"), driverId);
 
         // L'audio resta quello che si sceglie dal pannello: qui si dichiara il
@@ -853,7 +879,13 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
         }
 
         qCInfo(dsdrHal) << "audiorig: radio dichiarata a mano" << driverId << port
-                        << args.value(QStringLiteral("baud")).toInt();
+                        << "baud=" << args.value(QStringLiteral("baud")).toInt()
+                        << "dataBits=" << args.value(QStringLiteral("dataBits"), 8).toInt()
+                        << "parity=" << args.value(QStringLiteral("parity"), 0).toInt()
+                        << "stopBits=" << args.value(QStringLiteral("stopBits"), 1).toInt()
+                        << "flowControl=" << args.value(QStringLiteral("flowControl"), -1).toInt()
+                        << "DTR=" << args.value(QStringLiteral("dtr"), false).toBool()
+                        << "RTS=" << args.value(QStringLiteral("rts"), false).toBool();
         emit deviceFound(device);
         return true;
     }

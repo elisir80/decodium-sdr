@@ -28,26 +28,39 @@ CatController::~CatController()
     close();
 }
 
-void CatController::open(const QString &portName, int baudRate)
+void CatController::open(const QString &portName, int baudRate, int dataBits,
+                         int parity, int stopBits, int flowControl,
+                         bool dtr, bool rts)
 {
     if (!m_driver)
         return;
 
+    CatSerialConfig serial;
+    serial.baudRate = baudRate;
+    serial.dataBits = dataBits;
+    serial.parity = parity;
+    serial.stopBits = stopBits;
+    serial.flowControl = flowControl;
+    serial.dtr = dtr;
+    serial.rts = rts;
+
     const QList<int> candidates = m_driver->candidateBaudRates();
 
     bool ok = false;
-    if (baudRate > 0) {
-        ok = m_driver->open(portName, baudRate);
+    if (serial.baudRate > 0) {
+        ok = m_driver->open(portName, serial);
     } else if (candidates.isEmpty()) {
         // Un driver che non propone velocità non ha una linea seriale da
         // regolare — è il caso di rigctld, che parla su TCP. Si apre e basta:
         // il ciclo qui sotto, su un elenco vuoto, non aprirebbe mai e il
         // device fallirebbe con «la radio non risponde», che sarebbe falso.
-        ok = m_driver->open(portName, 0);
+        ok = m_driver->open(portName, serial);
     } else {
         for (int rate : candidates) {
-            if (m_driver->open(portName, rate)) {
-                baudRate = rate;
+            CatSerialConfig attempt = serial;
+            attempt.baudRate = rate;
+            if (m_driver->open(portName, attempt)) {
+                serial.baudRate = rate;
                 ok = true;
                 break;
             }
@@ -59,7 +72,7 @@ void CatController::open(const QString &portName, int baudRate)
         return;
     }
 
-    emit opened(m_driver->radioModel(), portName, baudRate);
+    emit opened(m_driver->radioModel(), portName, serial.baudRate);
 
     if (!m_timer) {
         m_timer = new QTimer(this);

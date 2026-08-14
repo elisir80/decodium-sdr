@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hal/backends/audiorig/NewcatDriver.h"
+#include "hal/backends/audiorig/CatSerialPort.h"
 #include "hal/HalLog.h"
 
 #include <QElapsedTimer>
@@ -112,7 +113,10 @@ int NewcatDriver::probe(const QString &portName)
     // e RTS per qualche millisecondo prima che si possano abbassare, e su una
     // radio con «CAT RTS» attivo quelle linee sono il PTT: aprire sei volte
     // per provare sei velocità vuol dire sei colpi di trasmissione.
-    if (!openPort(portName, candidateBaudRates().value(0, 38400)))
+    CatSerialConfig serial;
+    serial.baudRate = candidateBaudRates().value(0, 38400);
+    serial.flowControl = 0;
+    if (!openPort(portName, serial))
         return -1;
 
     for (int rate : candidateBaudRates()) {
@@ -131,50 +135,51 @@ int NewcatDriver::probe(const QString &portName)
     return -1;
 }
 
-bool NewcatDriver::open(const QString &portName, int baudRate)
+bool NewcatDriver::open(const QString &portName, const CatSerialConfig &serial)
 {
     close();
 
-    // Due tentativi, e l'ordine conta. Prima senza handshake, con RTS basso:
-    // è la configurazione sicura, perché su molte interfacce esterne RTS è il
-    // PTT. Poi, se la radio non ha risposto, con l'handshake hardware.
-    //
-    // Il secondo tentativo esiste per una ragione trovata sul campo: su un
-    // FTDX3000 «CAT RTS» è abilitato di fabbrica, e con quell'opzione la radio
-    // aspetta RTS alto prima di mandare qualunque risposta. Ogni domanda
-    // scadeva, e dall'esterno sembrava una radio muta o una porta sbagliata.
-    //
-    // Solo qui e non nella sonda automatica: là si aprono porte che non
-    // sappiamo cosa siano, e alzare RTS su un'interfaccia in cui è il PTT
-    // manderebbe in aria una portante. Qui la porta l'ha scelta l'operatore.
-    for (const bool handshake : {false, true}) {
-        if (!openPort(portName, baudRate, handshake))
+    QList<CatSerialConfig> attempts;
+    if (serial.flowControl == -1) {
+        // L'automatico conserva il comportamento che già funzionava sul
+        // campo: prima linee basse e nessun flow-control, poi RTS/CTS per
+        // le Yaesu con «CAT RTS». Una scelta esplicita non viene cambiata.
+        CatSerialConfig withoutFlow = serial;
+        withoutFlow.flowControl = 0;
+        attempts.append(withoutFlow);
+        CatSerialConfig hardwareFlow = serial;
+        hardwareFlow.flowControl = 1;
+        attempts.append(hardwareFlow);
+    } else {
+        attempts.append(serial);
+    }
+
+    for (const CatSerialConfig &attempt : attempts) {
+        if (!openPort(portName, attempt))
             return false;
 
         if (identify()) {
             qCInfo(dsdrHal) << "newcat:" << m_model << "su" << portName
-                            << baudRate << "baud"
-                            << (handshake ? "con handshake RTS/CTS" : "");
+                            << attempt.baudRate << "baud"
+                            << (attempt.flowControl == 1 ? "con handshake RTS/CTS" : "");
             return true;
         }
         close();
     }
 
     m_error = QStringLiteral("nessuna radio newcat su %1 a %2 baud")
-                  .arg(portName).arg(baudRate);
+                  .arg(portName).arg(serial.baudRate);
     return false;
 }
 
-bool NewcatDriver::openPort(const QString &portName, int baudRate, bool handshake)
+bool NewcatDriver::openPort(const QString &portName, const CatSerialConfig &serial)
 {
     m_port = std::make_unique<QSerialPort>();
     m_port->setPortName(portName);
-    m_port->setBaudRate(baudRate);
-    m_port->setDataBits(QSerialPort::Data8);
-    m_port->setParity(QSerialPort::NoParity);
-    m_port->setStopBits(QSerialPort::OneStop);
-    m_port->setFlowControl(handshake ? QSerialPort::HardwareControl
-                                     : QSerialPort::NoFlowControl);
+    if (!configureSerialPort(m_port.get(), serial, &m_error)) {
+        m_port.reset();
+        return false;
+    }
 
     if (!m_port->open(QIODevice::ReadWrite)) {
         m_error = m_port->errorString();
@@ -182,17 +187,10 @@ bool NewcatDriver::openPort(const QString &portName, int baudRate, bool handshak
         return false;
     }
 
-    // Le linee di handshake vanno messe basse: su molte interfacce RTS o DTR
-    // alti *sono* il PTT, e aprire la porta manderebbe la radio in
-    // trasmissione prima ancora di aver detto una parola.
-    //
-    // Con l'handshake hardware RTS non si tocca: lo governa Qt, che lo alza
-    // quando è pronto a ricevere. È il caso delle Yaesu con «CAT RTS»
-    // abilitato — dove quella linea non è il PTT ma il controllo di flusso, e
-    // tenerla bassa significa che la radio non manda mai una risposta.
-    if (!handshake)
-        m_port->setRequestToSend(false);
-    m_port->setDataTerminalReady(false);
+    if (!applySerialControlLines(m_port.get(), serial, &m_error)) {
+        close();
+        return false;
+    }
     m_port->clear();
     return true;
 }

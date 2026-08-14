@@ -55,21 +55,38 @@ Item {
     /// La finestra è simmetrica attorno al VFO e non spostata sulla banda
     /// laterale in uso: in USB metà resta vuota, ma passando a LSB non si
     /// perde il segnale — che sarebbe il modo peggiore di essere precisi.
-    function fitToDeliveredBand() {
-        if (Session.capabilities.clientDemod || !(spanHz > 0)) {
-            resetZoom()
-            return
-        }
+    function deliveredBandView(bandSpanHz, clientDemod) {
+        if (clientDemod || !(bandSpanHz > 0))
+            return { "start": 0, "span": 1 }
 
-        const span = Math.max(0.005, Math.min(1, 7000 / spanHz))
-        viewSpan = span
-        viewStart = Math.max(0, Math.min(1 - span, 0.5 - span / 2))
+        const span = Math.max(0.005, Math.min(1, 7000 / bandSpanHz))
+        return {
+            "span": span,
+            // La passata audio non ha un lato privilegiato: la parte visibile
+            // deve restare centrata esattamente sul VFO CAT.
+            "start": Math.max(0, Math.min(1 - span, 0.5 - span / 2))
+        }
+    }
+
+    function fitToDeliveredBand() {
+        const view = deliveredBandView(spanHz, Session.capabilities.clientDemod)
+        viewSpan = view.span
+        viewStart = view.start
     }
 
     Connections {
         target: Session
         function onConnectionChanged() { root.fitToDeliveredBand() }
         function onSampleRateChanged() { root.fitToDeliveredBand() }
+        // In una radio a demodulazione interna (CAT + codec audio) il VFO è
+        // anche il centro della banda consegnata. Il model del canale viene
+        // aggiornato prima di questo segnale: senza il riallineamento qui,
+        // `bringIntoView()` può calcolare la posizione con il vecchio centro
+        // e lasciare il cursore spostato lateralmente.
+        function onCenterFrequencyChanged() {
+            if (!Session.capabilities.clientDemod)
+                root.fitToDeliveredBand()
+        }
     }
 
     /// Porta una frequenza dentro la finestra visibile, se non c'è già.
