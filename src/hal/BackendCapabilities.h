@@ -68,6 +68,21 @@ struct BackendCapabilities
     // ── Suggerimenti per la UI ───────────────────────────────────────────
     QStringList nativePanels;     ///< componenti QML extra da caricare
 
+    /// Il backend accetta che un apparato gli venga **dichiarato**, invece di
+    /// doverlo trovare.
+    ///
+    /// Serve dove il rilevamento non può funzionare, non dove è comodo
+    /// saltarlo: una porta seriale tenuta da un altro programma non risponde
+    /// alla sonda, e l'elenco resta vuoto senza che ci sia niente da fare. Chi
+    /// dichiara vero risponde a `device.setupFields`, `device.serialPorts` e
+    /// `device.declare`.
+    ///
+    /// È una capability e non un controllo sul nome del backend perché la UI
+    /// non deve sapere che radio ci sia dall'altra parte (CONSTITUTION §7) —
+    /// e perché domani lo stesso bisogno lo avrà un backend che oggi non
+    /// esiste.
+    bool manualDeviceEntry = false;
+
     bool canTransmit() const noexcept { return tx != TxSupport::None; }
     bool isRawIq() const noexcept { return demod == DspLocation::Client; }
 

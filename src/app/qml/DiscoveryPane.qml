@@ -85,13 +85,15 @@ Rectangle {
             Layout.fillWidth: true
             Layout.topMargin: Theme.spacing
             spacing: Theme.spacingTight
-            visible: Session.backendId === "audiorig"
+            // La capability, non il nome del backend: la UI non deve sapere
+            // che radio ci sia dall'altra parte (CONSTITUTION §7).
+            visible: Session.capabilities.manualDeviceEntry
 
-            property var ports: Session.backendId === "audiorig"
-                                ? (Session.nativeCommand("audiorig.serialPorts", {}) || [])
+            property var ports: Session.capabilities.manualDeviceEntry
+                                ? (Session.nativeCommand("device.serialPorts", {}) || [])
                                 : []
-            property var drivers: Session.backendId === "audiorig"
-                                  ? (Session.nativeCommand("audiorig.catDrivers", {}) || [])
+            property var drivers: Session.capabilities.manualDeviceEntry
+                                  ? (Session.nativeCommand("device.catDrivers", {}) || [])
                                   : []
 
             RowLayout {
@@ -115,7 +117,7 @@ Rectangle {
                     text: qsTr("AGGIORNA")
                     onClicked: {
                         parent.parent.ports =
-                            Session.nativeCommand("audiorig.serialPorts", {}) || []
+                            Session.nativeCommand("device.serialPorts", {}) || []
                     }
                 }
             }
@@ -214,7 +216,7 @@ Rectangle {
                                ? parseInt(baudBox.currentText) : 0
                     }
 
-                    Session.nativeCommand("audiorig.declare", {
+                    Session.nativeCommand("device.declare", {
                         "driver": driver, "port": port, "baud": baud
                     })
                 }

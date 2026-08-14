@@ -196,6 +196,9 @@ BackendCapabilities AudiorigBackend::capabilities() const
     caps.remoteCapable = false;        // lo diventerà con DECOLINK
     caps.supportsRecording = true;
     caps.nativePanels = {QStringLiteral("AudiorigPanel")};
+    // La porta seriale di una radio la tiene spesso un altro programma, e
+    // allora la sonda non trova niente: qui l'apparato si dichiara.
+    caps.manualDeviceEntry = true;
     return caps;
 }
 
@@ -781,7 +784,7 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
     // rilevamento non può funzionare — e chi opera la propria stazione sa che
     // radio ha molto meglio di quanto possa scoprirlo una sonda.
 
-    if (command == QLatin1String("audiorig.serialPorts")) {
+    if (command == QLatin1String("device.serialPorts")) {
         QVariantList ports;
         for (const QSerialPortInfo &info : QSerialPortInfo::availablePorts()) {
             QVariantMap entry;
@@ -803,7 +806,7 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
         return ports;
     }
 
-    if (command == QLatin1String("audiorig.catDrivers")) {
+    if (command == QLatin1String("device.catDrivers")) {
         // I nomi che `makeCatDriver` riconosce, con un'etichetta leggibile.
         // Stanno qui e non in QML perché chi aggiunge un driver tocca questo
         // file, e una tendina scritta altrove resterebbe indietro in silenzio.
@@ -817,7 +820,7 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
         };
     }
 
-    if (command == QLatin1String("audiorig.declare")) {
+    if (command == QLatin1String("device.declare")) {
         const QString driverId = args.value(QStringLiteral("driver")).toString();
         const QString port = args.value(QStringLiteral("port")).toString().trimmed();
         if (port.isEmpty())

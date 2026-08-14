@@ -34,6 +34,7 @@ class CapabilitiesInfo : public QObject
     Q_PROPERTY(bool remoteCapable READ remoteCapable NOTIFY changed)
     Q_PROPERTY(bool supportsRecording READ supportsRecording NOTIFY changed)
     Q_PROPERTY(QStringList nativePanels READ nativePanels NOTIFY changed)
+    Q_PROPERTY(bool manualDeviceEntry READ manualDeviceEntry NOTIFY changed)
 
 public:
     explicit CapabilitiesInfo(QObject *parent = nullptr) : QObject(parent) {}
@@ -63,6 +64,7 @@ public:
     bool remoteCapable() const { return m_capabilities.remoteCapable; }
     bool supportsRecording() const { return m_capabilities.supportsRecording; }
     QStringList nativePanels() const { return m_capabilities.nativePanels; }
+    bool manualDeviceEntry() const { return m_capabilities.manualDeviceEntry; }
 
     QVariantList sampleRates() const
     {
