@@ -89,6 +89,12 @@ TestCase {
         wait(120)
         compare(panel.instrument, 1, "premere BARRE non ha cambiato lettura")
 
+        // Il tasto della potenza c'è solo dove c'è una potenza da misurare:
+        // lo dichiarano le capability del backend. Qui non c'è nessuna radio
+        // collegata, quindi lo si dichiara a mano.
+        panel.powerMeterAvailable = true
+        wait(120)
+
         const power = findByName(panel, "instrument-2")
         verify(power !== null, "tasto della potenza non trovato")
         mouseClick(power, power.width / 2, power.height / 2)
@@ -119,6 +125,11 @@ TestCase {
         const panel = createTemporaryObject(panelComponent, testCase)
         verify(panel !== null, "pannello non istanziato")
 
+        // Senza wattmetro il pannello torna al segnale, e il titolo con lui:
+        // qui si sta verificando il legame fra strumento e titolo, non quella
+        // regola — che ha una prova sua.
+        panel.powerMeterAvailable = true
+
         // Lo strumento si sceglie dopo la creazione, come fa chi preme il
         // selettore. Passarlo fra le proprietà iniziali non servirebbe: la
         // scelta si ricorda fra un avvio e l'altro, e il valore salvato viene
@@ -127,6 +138,30 @@ TestCase {
         panel.instrument = data.instrument
         wait(50)
         compare(panel.title, data.title)
+    }
+
+    // Senza una radio che trasmetta, il tasto della potenza non c'è.
+    //
+    // Non spento: assente. Un tasto grigio resta lì a far chiedere che cosa
+    // manchi per accenderlo, e su un RTL-SDR la risposta è «un'altra radio».
+    //
+    // E se lo strumento scelto era la potenza, il pannello torna al segnale
+    // invece di mostrare un quadrante di trattini: la scelta salvata di ieri
+    // non deve poter lasciare oggi uno strumento vuoto.
+    function test_without_a_transmitter_there_is_no_power_button() {
+        const panel = createTemporaryObject(panelComponent, testCase)
+        panel.powerMeterAvailable = true
+        panel.instrument = 2
+        wait(120)
+
+        panel.powerMeterAvailable = false
+        wait(120)
+
+        const power = findByName(panel, "instrument-2")
+        verify(power === null || !power.visible,
+               "il tasto della potenza c'è senza niente da misurare")
+        compare(panel.instrument, 0, "lo strumento non è tornato al segnale")
+        compare(panel.title, "DECØMETER-S")
     }
 
     // Lo strumento nascosto non deve occupare spazio.
@@ -143,6 +178,7 @@ TestCase {
         verify(meterHeight > 80, "lo strumento non ha altezza: " + meterHeight)
 
         const panel = createTemporaryObject(panelComponent, testCase)
+        panel.powerMeterAvailable = true
         panel.instrument = 2
         wait(300)
 
@@ -157,6 +193,7 @@ TestCase {
     // strumento scelto.
     function test_collapsing_hides_the_instrument() {
         const panel = createTemporaryObject(panelComponent, testCase)
+        panel.powerMeterAvailable = true
         panel.instrument = 2
         wait(300)
         const open = panel.implicitHeight

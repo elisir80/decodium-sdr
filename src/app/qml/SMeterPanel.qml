@@ -27,11 +27,25 @@ PanelFrame {
     property int instrument: 0
 
     /// La potenza è una misura TX reale, non una trasformazione del livello
-    /// ricevuto. Un RTL-SDR è solo RX e non può fornire watt o ROS: in quel
-    /// caso il tasto POTENZA va spento e il pannello torna al segnale RX,
-    /// invece di lasciare un quadrante vuoto con dei trattini.
-    readonly property bool powerMeterAvailable:
-        !Session.connected || Session.txMetersAvailable
+    /// ricevuto. Un RTL-SDR è solo RX e non può fornire watt o ROS: lì il
+    /// quadrante mostrerebbe dei trattini, e il tasto non deve esserci.
+    ///
+    /// **A dirlo sono le capability, non una misura arrivata.** Il primo
+    /// criterio era «è arrivato un valore sopra zero», e aveva due difetti che
+    /// si incontrano tutti e due con una radio vera collegata: il tasto restava
+    /// spento finché non si era **già trasmesso** — e un rosmetro lo si guarda
+    /// mentre si accorda, non dopo — mentre da scollegati era acceso, cioè
+    /// proprio quando non c'è certamente niente da misurare.
+    ///
+    /// Chi trasmette può misurare: è quello che dichiara il backend, e si sa
+    /// prima di premere qualunque cosa.
+    /// Assegnabile, e non `readonly`: il legame con le capability regge
+    /// finché nessuno scrive, ed è quello che serve al programma. Una prova
+    /// però deve poter esercitare tutti e due i casi — con e senza wattmetro —
+    /// e senza questo seam l'unico modo sarebbe collegare una radio vera al
+    /// banco di prova.
+    property bool powerMeterAvailable:
+        Session.connected && Session.capabilities.canTransmit
     readonly property bool showingPower: instrument === 2 && powerMeterAvailable
 
     title: showingPower ? qsTr("DECØMETER") : qsTr("DECØMETER-S")
@@ -144,10 +158,13 @@ PanelFrame {
                 // esattamente ciò che non fa chi usa il programma.
                 objectName: "instrument-" + modelData.key
 
+                // Non spento: assente. Un blocco che non fa niente è peggio di
+                // un blocco che manca (CONSTITUTION §7), e un tasto grigio
+                // resta lì a far chiedere che cosa manchi per accenderlo.
+                visible: modelData.key !== 2 || root.powerMeterAvailable
+
                 Layout.fillWidth: true
                 implicitHeight: Theme.controlHeight - 6
-                enabled: modelData.key !== 2 || root.powerMeterAvailable
-                opacity: enabled ? 1.0 : 0.45
                 radius: Theme.radiusSmall
                 color: current ? Theme.accentDim : Theme.surfaceSunken
                 border.width: 1

@@ -10,6 +10,7 @@
 
 #include <QAudioDevice>
 #include <QMap>
+#include <QSerialPort>
 #include <QSerialPortInfo>
 #include <QThread>
 #include <QTimer>
@@ -765,6 +766,94 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
         }
         return list;
     };
+
+    // ── La radio dichiarata a mano ───────────────────────────────────────
+    //
+    // Il rilevamento sonda le porte e annuncia una radio solo quando qualcuno
+    // risponde. È la cosa giusta — non si mette nell'elenco un apparato che
+    // non c'è — ma lascia fuori il caso più frequente che ci sia: **la porta
+    // è occupata da un altro programma**. Su una stazione dove gira anche
+    // DECODIUM 4 la seriale ce l'ha lui, la sonda trova «Accesso negato», e
+    // l'elenco resta vuoto senza che si possa fare niente.
+    //
+    // Da qui si dichiara la radio invece di cercarla: driver, porta,
+    // velocità. Non è un aggiramento del rilevamento, è il caso in cui il
+    // rilevamento non può funzionare — e chi opera la propria stazione sa che
+    // radio ha molto meglio di quanto possa scoprirlo una sonda.
+
+    if (command == QLatin1String("audiorig.serialPorts")) {
+        QVariantList ports;
+        for (const QSerialPortInfo &info : QSerialPortInfo::availablePorts()) {
+            QVariantMap entry;
+            entry.insert(QStringLiteral("port"), info.portName());
+            entry.insert(QStringLiteral("description"), info.description());
+            entry.insert(QStringLiteral("manufacturer"), info.manufacturer());
+
+            // Se è occupata si dice, e non si nasconde la voce: «COM5 occupata
+            // da un altro programma» è un'informazione, una tendina senza COM5
+            // è un mistero. È esattamente il caso della porta CAT tenuta da
+            // DECODIUM 4.
+            QSerialPort probe(info);
+            const bool free = probe.open(QIODevice::ReadWrite);
+            if (free)
+                probe.close();
+            entry.insert(QStringLiteral("busy"), !free);
+            ports.append(entry);
+        }
+        return ports;
+    }
+
+    if (command == QLatin1String("audiorig.catDrivers")) {
+        // I nomi che `makeCatDriver` riconosce, con un'etichetta leggibile.
+        // Stanno qui e non in QML perché chi aggiunge un driver tocca questo
+        // file, e una tendina scritta altrove resterebbe indietro in silenzio.
+        return QVariantList{
+            QVariantMap{{QStringLiteral("id"), QStringLiteral("newcat")},
+                        {QStringLiteral("label"), tr("Yaesu · CAT (newcat)")}},
+            QVariantMap{{QStringLiteral("id"), QStringLiteral("civ")},
+                        {QStringLiteral("label"), tr("Icom · CI-V")}},
+            QVariantMap{{QStringLiteral("id"), QStringLiteral("rigctld")},
+                        {QStringLiteral("label"), tr("Hamlib · rigctld in rete")}},
+        };
+    }
+
+    if (command == QLatin1String("audiorig.declare")) {
+        const QString driverId = args.value(QStringLiteral("driver")).toString();
+        const QString port = args.value(QStringLiteral("port")).toString().trimmed();
+        if (port.isEmpty())
+            return false;
+
+        DeviceDescriptor device;
+        device.backendId = backendId();
+        device.deviceId = QStringLiteral("manuale@") + port;
+        device.model = args.value(QStringLiteral("model")).toString();
+        if (device.model.isEmpty())
+            device.model = tr("Radio dichiarata");
+        device.displayName = tr("%1 · %2").arg(device.model, port);
+        device.transport = driverId == QLatin1String("rigctld")
+            ? QStringLiteral("net") : QStringLiteral("serial");
+        device.address = port;
+        device.extra.insert(QStringLiteral("catPort"), port);
+        device.extra.insert(QStringLiteral("catBaud"),
+                            args.value(QStringLiteral("baud"), 0).toInt());
+        device.extra.insert(QStringLiteral("catDriver"), driverId);
+
+        // L'audio resta quello che si sceglie dal pannello: qui si dichiara il
+        // piano di controllo, e mescolare le due cose vorrebbe dire far
+        // ricominciare da capo chi ha già scelto l'ingresso giusto.
+        const QAudioDevice input =
+            pickInput(args.value(QStringLiteral("audioInput")).toString());
+        if (!input.isNull()) {
+            device.extra.insert(QStringLiteral("audioInput"),
+                                QString::fromUtf8(input.id()));
+            device.extra.insert(QStringLiteral("audioInputName"), input.description());
+        }
+
+        qCInfo(dsdrHal) << "audiorig: radio dichiarata a mano" << driverId << port
+                        << args.value(QStringLiteral("baud")).toInt();
+        emit deviceFound(device);
+        return true;
+    }
 
     if (command == QLatin1String("audiorig.inputs"))
         return describe(dsdr::audio::MicSource::inputs());
