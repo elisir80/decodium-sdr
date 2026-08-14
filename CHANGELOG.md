@@ -4,6 +4,37 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.2.3] «De Forest» — 2026-08-14
+
+Nessuna funzione nuova: **due test che cadevano da soli**. Sembra poco e non lo
+è — una suite che ogni tanto fallisce senza motivo insegna a guardare i
+fallimenti e tirare avanti, e il giorno in cui uno è vero passa inosservato. È
+il danno peggiore che dei test possano fare, ed è peggiore di non averli.
+
+### Corretto
+
+- **`tst_hal_conformance` sfiorava il proprio limite.** Apre ogni backend
+  registrato e ne prova il contratto; su una macchina con delle porte seriali
+  la sonda di `audiorig` le apre una per una, e sono centoquattordici secondi
+  misurati su un limite di centoventi. Sei secondi di margine non sono un
+  margine: sono un fallimento in attesa di una giornata storta.
+
+  Il limite ora si dichiara per prova, e questa ne chiede seicento. La lentezza
+  è fisica — ci sono delle porte da aprire — e non c'è niente da rendere più
+  veloce.
+
+- **`tst_nettcp` cedeva sui tempi sotto carico.** Le attese erano di quattro,
+  cinque e sei secondi: bastano su una macchina scarica e non bastano su un
+  runner che sta compilando altri tre progetti, dove una stretta di mano su
+  localhost può aspettare.
+
+  Adesso l'attesa è una sola e vale venti secondi. Non è generosità: **questi
+  test verificano che una cosa succeda, non che succeda in fretta.** Su una
+  macchina normale tornano tutti in qualche centinaio di millisecondi, e se
+  un'attesa arrivasse davvero a scadenza il difetto non sarebbe la lentezza —
+  sarebbe che non succede.
+
+
 ## [1.2.2] «Carson» — 2026-08-14
 
 Una versione su una cosa sola: **quello che l'operatore vede e comanda**. La

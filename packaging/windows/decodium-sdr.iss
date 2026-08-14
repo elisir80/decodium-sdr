@@ -12,8 +12,8 @@
 ; `cmake --install`: l'installatore non sa costruire nulla e non deve saperlo.
 ;
 ;   cmake --install build --prefix staging
-;   ISCC /DStagingDir=<percorso assoluto> /DAppVersion=1.2.2 ^
-;        /DAppVersionName=Carson decodium-sdr.iss
+;   ISCC /DStagingDir=<percorso assoluto> /DAppVersion=1.2.3 ^
+;        /DAppVersionName="De Forest" decodium-sdr.iss
 
 #ifndef StagingDir
   #error Manca StagingDir: indicare la cartella prodotta da cmake --install
@@ -61,8 +61,11 @@ OutputDir=.
 ; installatore scaricato finisce in una cartella insieme ad altri dieci, e fra
 ; sei mesi «DECODIUM_SDR_1.2.1_x64_Setup.exe» non dice a nessuno che cosa
 ; contiene. «Braun» si'.
+; Lo spazio sparisce dal nome del file e resta nel titolo. «De Forest» e' come
+; si chiamava; «DECODIUM_SDR_1.2.3_De Forest_x64_Setup.exe» e' un nome di file
+; che si spezza in due alla prima riga di comando che lo tocca.
 #if AppVersionName != ""
-  #define FileVer AppVersion + "_" + AppVersionName
+  #define FileVer AppVersion + "_" + StringChange(AppVersionName, " ", "")
 #else
   #define FileVer AppVersion
 #endif

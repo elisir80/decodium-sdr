@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(decodium-sdr
-    VERSION 1.2.2
+    VERSION 1.2.3
     DESCRIPTION "DECODIUM SDR — client SDR universale dell'ecosistema DECODIUM"
     HOMEPAGE_URL "https://decodium.it"
     # Il C serve a RNNoise, che è l'unico codice C del progetto: senza,
@@ -30,7 +30,7 @@ project(decodium-sdr
 # Fessenden… La lettera è il numero d'ordine, e non si salta.
 # È metadato di release, non una preferenza di chi compila: lasciarlo in cache
 # farebbe sopravvivere il nome della versione precedente a un aggiornamento.
-set(DSDR_VERSION_NAME "Carson")
+set(DSDR_VERSION_NAME "De Forest")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -50,7 +50,21 @@ private:
     std::unique_ptr<dsdr::test::SpyServerMockServer> m_spyServer;
     std::unique_ptr<IRadioBackend> m_backend;
 
-    bool waitFor(std::function<bool()> predicate, int timeoutMs = 5000)
+    /// Quanto si è disposti ad aspettare.
+    ///
+    /// Venti secondi, e non è generosità: **questi test verificano che una
+    /// cosa succeda, non che succeda in fretta**. Su una macchina scarica
+    /// tornano tutti in qualche centinaio di millisecondi; su un runner di CI
+    /// che compila altri tre progetti, una stretta di mano su localhost può
+    /// aspettare qualche secondo. Con cinque secondi di limite cadeva, e un
+    /// test che cade da solo insegna a ignorare i fallimenti veri — che è il
+    /// danno peggiore che una suite possa fare.
+    ///
+    /// Se una di queste attese arrivasse davvero a scadenza, il difetto non
+    /// sarebbe la lentezza: sarebbe che non succede.
+    static constexpr int kPatience = 20'000;
+
+    bool waitFor(std::function<bool()> predicate, int timeoutMs = kPatience)
     {
         QElapsedTimer timer;
         timer.start();
@@ -80,7 +94,7 @@ private:
     {
         QSignalSpy found(m_backend.get(), &IRadioBackend::deviceFound);
         m_backend->startDiscovery();
-        if (!found.wait(4000) || found.isEmpty())
+        if (!found.wait(kPatience) || found.isEmpty())
             return false;
 
         const auto device = found.first().first().value<DeviceDescriptor>();
@@ -123,7 +137,7 @@ void TestNetTcp::discoveryFindsOnlyRealRtlTcpServers()
     QSignalSpy finished(m_backend.get(), &IRadioBackend::discoveryFinished);
 
     m_backend->startDiscovery();
-    QVERIFY2(finished.wait(5000), "la discovery non è terminata");
+    QVERIFY2(finished.wait(kPatience), "la discovery non è terminata");
     QCOMPARE(found.count(), 1);
 
     const auto device = found.first().first().value<DeviceDescriptor>();
@@ -145,7 +159,7 @@ void TestNetTcp::discoveryIgnoresServersWithoutGreeting()
     QSignalSpy finished(m_backend.get(), &IRadioBackend::discoveryFinished);
 
     m_backend->startDiscovery();
-    QVERIFY(finished.wait(5000));
+    QVERIFY(finished.wait(kPatience));
     QCOMPARE(found.count(), 0);
 }
 
@@ -170,7 +184,7 @@ void TestNetTcp::samplesAreCentredAndScaled()
 
     SampleRing *ring = m_backend->iqStream();
     QVERIFY(ring);
-    QVERIFY2(waitFor([ring] { return ring->available() >= 4096; }, 5000),
+    QVERIFY2(waitFor([ring] { return ring->available() >= 4096; }),
              "nessun campione ricevuto dal server");
 
     std::vector<float> samples(4096);
@@ -269,7 +283,7 @@ void TestNetTcp::spyServerIsRecognisedByItsSilence()
     QSignalSpy finished(m_backend.get(), &IRadioBackend::discoveryFinished);
 
     m_backend->startDiscovery();
-    QVERIFY2(finished.wait(6000), "la discovery non è terminata");
+    QVERIFY2(finished.wait(kPatience), "la discovery non è terminata");
     QCOMPARE(found.count(), 1);
 
     // Il riconoscimento si regge su una differenza di comportamento: rtl_tcp
@@ -330,7 +344,7 @@ void TestNetTcp::spyServerSamplesAreScaled()
 
     SampleRing *ring = m_backend->iqStream();
     QVERIFY(ring);
-    QVERIFY2(waitFor([ring] { return ring->available() >= 4096; }, 6000),
+    QVERIFY2(waitFor([ring] { return ring->available() >= 4096; }),
              "nessun campione ricevuto dal SpyServer");
 
     std::vector<float> samples(4096);

@@ -55,7 +55,10 @@ jobs:
                  | sed -E 's/.*"([^"]+)".*/\1/')
           echo "DSDR_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "DSDR_NAME=$NAME" >> "$GITHUB_ENV"
-          echo "DSDR_TAG=${VERSION}_${NAME}" >> "$GITHUB_ENV"
+          # Lo spazio sparisce dal nome del file e resta nel titolo: un nome
+          # come «De Forest» e' come si chiamava quella persona, ma dentro un
+          # nome di file si spezza in due alla prima riga di comando.
+          echo "DSDR_TAG=${VERSION}_${NAME// /}" >> "$GITHUB_ENV"
           echo "versione $VERSION, nome $NAME"
 
       - name: Dipendenze di sistema (Linux)
