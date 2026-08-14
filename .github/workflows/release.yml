@@ -43,6 +43,21 @@ jobs:
       - uses: actions/checkout@v4
 
       # ── Dipendenze ──────────────────────────────────────────────────────
+      # Versione e nome, una volta sola: li leggono tutti i passi che
+      # confezionano, e ricavarli tre volte con tre `grep` diversi e' il modo
+      # in cui prima o poi due pacchetti della stessa build escono con due
+      # nomi diversi.
+      - name: Versione e nome
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 -E '^\s+VERSION [0-9]' CMakeLists.txt | tr -dc '0-9.')
+          NAME=$(grep -m1 'set(DSDR_VERSION_NAME' CMakeLists.txt \
+                 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "DSDR_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "DSDR_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "DSDR_TAG=${VERSION}_${NAME}" >> "$GITHUB_ENV"
+          echo "versione $VERSION, nome $NAME"
+
       - name: Dipendenze di sistema (Linux)
         if: matrix.os == 'ubuntu-24.04'
         shell: bash
@@ -332,7 +347,7 @@ jobs:
           cd ..
 
           mv build/decodium-sdr-*-Windows-*.exe "${{ matrix.artifact }}"
-          mv build/decodium-sdr-*-Windows-*.zip decodium-sdr-windows-x86_64.zip
+          mv build/decodium-sdr-*-Windows-*.zip "DECODIUM_SDR_${DSDR_TAG}_windows-x64.zip"
 
       # L'installatore Inno Setup, lo stesso strumento con cui si confeziona
       # DECODIUM: chi installa i due programmi incontra la stessa procedura.
@@ -353,24 +368,27 @@ jobs:
             exit 1
           fi
 
-          VERSION=$(grep -m1 'VERSION' CMakeLists.txt | tr -dc '0-9.')
-          "$ISCC" //DStagingDir="$(cygpath -w "$(pwd)/staging")"                   //DAppVersion="$VERSION"                   packaging/windows/decodium-sdr.iss
+          "$ISCC" //DStagingDir="$(cygpath -w "$(pwd)/staging")" \
+                  //DAppVersion="$DSDR_VERSION" \
+                  //DAppVersionName="$DSDR_NAME" \
+                  packaging/windows/decodium-sdr.iss
 
-          mv "packaging/windows/DECODIUM_SDR_${VERSION}_x64_Setup.exe"              decodium-sdr-windows-x86_64-innosetup.exe
+          mv "packaging/windows/DECODIUM_SDR_${DSDR_TAG}_x64_Setup.exe" \
+             "DECODIUM_SDR_${DSDR_TAG}_windows-x64-innosetup.exe"
 
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'windows-latest'
         with:
-          name: decodium-sdr-windows-x86_64-innosetup.exe
-          path: decodium-sdr-windows-x86_64-innosetup.exe
+          name: DECODIUM_SDR_${{ env.DSDR_TAG }}_windows-x64-innosetup.exe
+          path: DECODIUM_SDR_${{ env.DSDR_TAG }}_windows-x64-innosetup.exe
           retention-days: 14
 
       - name: Carica anche lo ZIP portable (Windows)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: decodium-sdr-windows-x86_64.zip
-          path: decodium-sdr-windows-x86_64.zip
+          name: DECODIUM_SDR_${{ env.DSDR_TAG }}_windows-x64.zip
+          path: DECODIUM_SDR_${{ env.DSDR_TAG }}_windows-x64.zip
           retention-days: 14
 
       # ── Verifica minima del pacchetto ───────────────────────────────────
@@ -393,10 +411,25 @@ jobs:
           fi
           echo "$((BYTES / 1024 / 1024)) MB"
 
+      # Il nome definitivo arriva qui e non nella matrice, che non puo'
+      # leggere `CMakeLists.txt`. Un pacchetto scaricato finisce in una
+      # cartella insieme ad altri dieci, e fra sei mesi «decodium-sdr-linux-
+      # x86_64.AppImage» non dice a nessuno quale versione sia.
+      - name: Il nome definitivo del pacchetto
+        shell: bash
+        run: |
+          case "${{ matrix.artifact }}" in
+            *.AppImage) FINAL="DECODIUM_SDR_${DSDR_TAG}_linux-x86_64.AppImage" ;;
+            *.dmg)      FINAL="DECODIUM_SDR_${DSDR_TAG}_macos-arm64.dmg" ;;
+            *)          FINAL="DECODIUM_SDR_${DSDR_TAG}_windows-x64-setup.exe" ;;
+          esac
+          mv "${{ matrix.artifact }}" "$FINAL"
+          echo "DSDR_FINAL=$FINAL" >> "$GITHUB_ENV"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: ${{ env.DSDR_FINAL }}
+          path: ${{ env.DSDR_FINAL }}
           retention-days: 14
 
   publish:
@@ -405,19 +438,33 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
+      # Il checkout serve solo a leggere il nome della versione da
+      # `CMakeLists.txt`: senza, il passo qui sotto cerca un file che in questo
+      # lavoro non c'e' mai stato.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
+      # Il nome della versione anche qui: il titolo della bozza e' la prima
+      # cosa che si legge, e «v1.2.1» da solo non si ricorda.
+      - name: Versione e nome
+        shell: bash
+        run: |
+          NAME=$(sed -n 's/.*set(DSDR_VERSION_NAME "\([^"]*\)".*/\1/p' CMakeLists.txt | head -1)
+          echo "DSDR_NAME=$NAME" >> "$GITHUB_ENV"
+
       - name: Crea la bozza
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          name: ${{ github.ref_name }} «${{ env.DSDR_NAME }}»
           files: artifacts/*
           generate_release_notes: true
           body: |
-            ## DECODIUM SDR ${{ github.ref_name }}
+            ## DECODIUM SDR ${{ github.ref_name }} «${{ env.DSDR_NAME }}»
 
             Pacchetti per Linux (AppImage), macOS (DMG) e Windows — installatore
             e ZIP portable.

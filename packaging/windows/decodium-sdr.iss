@@ -57,7 +57,16 @@ DefaultDirName={autopf}\DECODIUM SDR
 DefaultGroupName=DECODIUM SDR
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=DECODIUM_SDR_{#AppVersion}_x64_Setup
+; Il nome della versione entra nel nome del file, e non e' decorazione: un
+; installatore scaricato finisce in una cartella insieme ad altri dieci, e fra
+; sei mesi «DECODIUM_SDR_1.2.1_x64_Setup.exe» non dice a nessuno che cosa
+; contiene. «Braun» si'.
+#if AppVersionName != ""
+  #define FileVer AppVersion + "_" + AppVersionName
+#else
+  #define FileVer AppVersion
+#endif
+OutputBaseFilename=DECODIUM_SDR_{#FileVer}_x64_Setup
 SetupIconFile=decodium-sdr.ico
 UninstallDisplayIcon={app}\bin\{#MyAppExeName}
 Compression=lzma2/ultra64
