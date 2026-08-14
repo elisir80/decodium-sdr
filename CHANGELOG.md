@@ -4,6 +4,61 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
 ## [Non rilasciato]
 
+## [1.2.2] «Carson» — 2026-08-14
+
+Una versione su una cosa sola: **quello che l'operatore vede e comanda**. La
+radio si dichiara invece di sperare che venga trovata, un tasto che prometteva
+una misura senza poterla fare non c'è più, e la fila di icone della colonna
+smette di essere un rebus.
+
+### Aggiunto
+
+- **Dichiara la radio.** Nel dialogo delle sorgenti si sceglie il driver CAT
+  — Yaesu, Icom CI-V, oppure `rigctld` di Hamlib in rete — la porta e la
+  velocità, e la radio compare nell'elenco senza che nessuno l'abbia dovuta
+  trovare.
+
+  Il rilevamento sonda le porte e annuncia una radio solo quando qualcuno
+  risponde. È la cosa giusta — non si mette nell'elenco un apparato che non
+  c'è — ma lascia fuori il caso più frequente che esista: **la porta è occupata
+  da un altro programma**. Su una stazione dove gira anche DECODIUM 4 la
+  seriale ce l'ha lui, la sonda trova «Accesso negato», e l'elenco resta vuoto
+  senza che si possa fare niente.
+
+  L'elenco delle porte mostra **anche quelle occupate**, e lo dice: una tendina
+  senza COM5 è un mistero, «COM5 · occupata» è un'informazione e indica pure da
+  che parte guardare. Con `rigctld` sparisce la velocità e compare l'indirizzo:
+  là non c'è una seriale, e una velocità di linea farebbe cercare a qualcuno
+  una porta che non esiste.
+
+### Cambiato
+
+- **Le icone della colonna disegnano quello che il pannello fa.** Erano
+  ⌗ ◔ ♫ ⇉ ⏱ ⨍ ▲ ⚙ ▤ ≡ ◐ ◢: un simbolo matematico, una nota musicale, due
+  frecce, un integrale e quattro figure geometriche prese perché somigliavano a
+  qualcosa. Una fila così non si impara — si prova, e ci si ricorda la
+  posizione invece del segno.
+
+  Adesso valgono la regola che il progetto usa già per i blocchi della catena:
+  una scala con la sua tacca è la sintonia, un ago su un arco è lo strumento,
+  una campana è il filtro di canale, un globo tagliato dal terminatore è la
+  linea grigia, due curve che si scostano sono le condizioni della banda. Sono
+  lo stesso alfabeto dei blocchi, quindi chi ne impara uno ha imparato gli
+  altri.
+
+### Corretto
+
+- **Il tasto POTENZA.** Il criterio era «è arrivata una misura sopra zero», e
+  aveva due difetti che con una radio vera si incontrano tutti e due: restava
+  spento finché non si era **già trasmesso** — e un rosmetro lo si guarda
+  mentre si accorda, non dopo — mentre da scollegati era acceso, cioè proprio
+  quando non c'è certamente niente da misurare.
+
+  Adesso lo dicono le capability del backend: chi trasmette può misurare, e si
+  sa prima di premere qualunque cosa. E il tasto non si spegne — **sparisce**:
+  un tasto grigio resta lì a far chiedere che cosa manchi per accenderlo.
+
+
 ## [1.2.1] «Braun» — 2026-08-13
 
 Una release di ricezione: il ricevitore, gli strumenti con cui lo si legge e
