@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hal/backends/audiorig/AudiorigBackend.h"
 #include "hal/backends/audiorig/CatController.h"
-#include "hal/backends/audiorig/CivDriver.h"
-#include "hal/backends/audiorig/NewcatDriver.h"
-#include "hal/backends/audiorig/RigctldDriver.h"
+#include "hal/backends/audiorig/CatDriverFactory.h"
 #include "audio/AudioOut.h"
 #include "audio/MicSource.h"
 #include "hal/HalLog.h"
@@ -17,8 +15,21 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
+#include <utility>
 
 namespace dsdr::hal::audiorig {
+
+/// Stato condiviso fra il backend (thread grafico) e la sonda CAT. Il thread
+/// non può mai chiamare un backend già distrutto: la distruzione chiude prima
+/// la porta di consegna sotto lo stesso lock che protegge l'accodamento degli
+/// eventi Qt.
+struct DiscoveryLifecycle
+{
+    std::atomic<bool> abort{false};
+    std::mutex deliveryMutex;
+    bool acceptsDelivery = true; // protetto da deliveryMutex
+};
 
 namespace {
 
@@ -30,21 +41,6 @@ constexpr double kAudioRate = 48000.0;
 /// Cadenza con cui si annuncia l'audio disponibile: ~21 ms, la stessa misura
 /// del blocco degli altri backend.
 constexpr int kPublishIntervalMs = 20;
-
-/// Il driver CAT che porta questo nome.
-///
-/// Restava da fare: `open()` costruiva sempre un NewcatDriver, anche quando la
-/// sonda aveva trovato una Icom — la radio compariva nell'elenco e poi non
-/// rispondeva a nessun comando. Con tre driver la scelta va fatta per nome, e
-/// il nome è quello che la sonda ha messo nel descrittore.
-std::unique_ptr<ICatDriver> makeCatDriver(const QString &driverId)
-{
-    if (driverId == QLatin1String("civ"))
-        return std::make_unique<CivDriver>();
-    if (driverId == QLatin1String("rigctld"))
-        return std::make_unique<RigctldDriver>();
-    return std::make_unique<NewcatDriver>();
-}
 
 /// Gli indirizzi dove cercare un `rigctld`.
 ///
@@ -147,12 +143,11 @@ AudiorigBackend::AudiorigBackend(QObject *parent)
 
 AudiorigBackend::~AudiorigBackend()
 {
-    // Prima la sonda, poi il resto: finché quel thread gira tiene `this`, e
-    // distruggere sotto di lui è il genere di errore che non si manifesta
-    // dove è stato commesso.
+    // La sonda può essere in attesa della risposta CAT per quasi due secondi.
+    // Fermarla non deve rendere il cambio sorgente un freeze della UI: il suo
+    // stato condiviso resta vivo nel thread e nessun callback può più arrivare
+    // a questo oggetto una volta chiusa la consegna.
     stopDiscovery();
-    if (m_prober)
-        m_prober->wait();
     close();
 }
 
@@ -223,6 +218,11 @@ void AudiorigBackend::startDiscovery()
     if (m_discovering || (m_prober && m_prober->isRunning()))
         return;
 
+    // Un'eventuale sonda appena terminata può avere ancora un callback nella
+    // coda del thread grafico. Lo si invalida prima di crearne una nuova: i
+    // risultati vecchi non devono comparire nella nuova ricerca.
+    stopDiscovery();
+
     // Una via d'uscita, e non è un dettaglio da configurazione.
     //
     // Sondare le porte seriali significa aprirle, e aprire una porta su
@@ -244,14 +244,28 @@ void AudiorigBackend::startDiscovery()
     }
 
     m_discovering = true;
-    m_abortDiscovery.store(false, std::memory_order_release);
+    auto lifecycle = std::make_shared<DiscoveryLifecycle>();
+    m_discoveryLifecycle = lifecycle;
     setState(BackendState::Discovering);
 
     // Le porte si sondano su un thread a parte: sei velocità per porta, ognuna
     // con la sua attesa, sono secondi interi. Sul thread del seam sarebbero
     // secondi di applicazione ferma, e nessuno collegherebbe la cosa alla
     // porta seriale.
-    QThread *prober = QThread::create([this, probeSerial] {
+    QThread *prober = QThread::create([this, lifecycle, probeSerial] {
+        // `this` entra qui soltanto mentre deliveryMutex è preso. Il
+        // distruttore prende lo stesso lock prima di eliminare il backend;
+        // gli eventi già accodati vengono quindi scartati da Qt, e quelli
+        // successivi non vengono più accodati.
+        const auto post = [this, lifecycle](auto &&callback) {
+            std::lock_guard<std::mutex> guard(lifecycle->deliveryMutex);
+            if (!lifecycle->acceptsDelivery)
+                return;
+            QMetaObject::invokeMethod(this,
+                                      std::forward<decltype(callback)>(callback),
+                                      Qt::QueuedConnection);
+        };
+
         /// Le porte che non si sono aperte, con il motivo. Si raccolgono e si
         /// dicono in fondo: una per volta sarebbero sei righe uguali a porta.
         QMap<QString, QString> busy;
@@ -265,7 +279,7 @@ void AudiorigBackend::startDiscovery()
         // ha sul tavolo diventa comandabile, e costa una connessione TCP che
         // su localhost o fallisce o riesce in un millesimo di secondo.
         for (const QString &endpoint : rigctldEndpoints()) {
-            if (m_abortDiscovery.load(std::memory_order_acquire))
+            if (lifecycle->abort.load(std::memory_order_acquire))
                 break;
 
             RigctldDriver driver;
@@ -273,7 +287,7 @@ void AudiorigBackend::startDiscovery()
                 continue;
 
             DeviceDescriptor device;
-            device.backendId = backendId();
+            device.backendId = QStringLiteral("audiorig");
             // L'indirizzo *è* l'identità: è quello che resta uguale fra un
             // riavvio e l'altro, e due demoni su due porte sono due radio.
             device.deviceId = QStringLiteral("rigctld@") + endpoint.trimmed();
@@ -282,7 +296,7 @@ void AudiorigBackend::startDiscovery()
             // può esserci rigctld o un rigctl minimo — DECODIUM 4 ne espone
             // uno — e dirlo sbagliato è peggio che non dirlo. L'indirizzo sì:
             // con due server accesi è l'unica cosa che li distingue.
-            device.displayName = tr("%1 · %2")
+            device.displayName = AudiorigBackend::tr("%1 · %2")
                                      .arg(driver.radioModel(), endpoint.trimmed());
             device.transport = QStringLiteral("net");
             device.address = endpoint.trimmed();
@@ -299,16 +313,19 @@ void AudiorigBackend::startDiscovery()
 
             driver.close();
             ++devices;
-            QMetaObject::invokeMethod(this, [this, device] {
+            post([this, lifecycle, device] {
+                std::lock_guard<std::mutex> guard(lifecycle->deliveryMutex);
+                if (!lifecycle->acceptsDelivery || m_discoveryLifecycle != lifecycle)
+                    return;
                 emit deviceFound(device);
-            }, Qt::QueuedConnection);
+            });
         }
 
         // ── Le porte seriali ────────────────────────────────────────────
         const QList<QSerialPortInfo> ports =
             probeSerial ? QSerialPortInfo::availablePorts() : QList<QSerialPortInfo>();
         for (const QSerialPortInfo &info : ports) {
-            if (m_abortDiscovery.load(std::memory_order_acquire))
+            if (lifecycle->abort.load(std::memory_order_acquire))
                 break;
             if (info.isNull())
                 continue;
@@ -331,7 +348,7 @@ void AudiorigBackend::startDiscovery()
             bool found = false;
             bool opened = false;
             for (auto &candidate : drivers) {
-                if (found || m_abortDiscovery.load(std::memory_order_acquire))
+                if (found || lifecycle->abort.load(std::memory_order_acquire))
                     break;
 
                 ICatDriver &driver = *candidate;
@@ -352,7 +369,7 @@ void AudiorigBackend::startDiscovery()
                 opened = true;
 
                 DeviceDescriptor device;
-                device.backendId = backendId();
+                device.backendId = QStringLiteral("audiorig");
                 // La chiave deve restare stabile fra riavvii: il numero di
                 // serie dell'adattatore lo è, il nome della porta no — su
                 // Windows COM4 diventa COM7 al cambio di presa.
@@ -379,9 +396,12 @@ void AudiorigBackend::startDiscovery()
                 driver.close();
                 found = true;
                 ++devices;
-                QMetaObject::invokeMethod(this, [this, device] {
+                post([this, lifecycle, device] {
+                    std::lock_guard<std::mutex> guard(lifecycle->deliveryMutex);
+                    if (!lifecycle->acceptsDelivery || m_discoveryLifecycle != lifecycle)
+                        return;
                     emit deviceFound(device);
-                }, Qt::QueuedConnection);
+                });
             }
             Q_UNUSED(found)
             Q_UNUSED(opened)
@@ -401,19 +421,25 @@ void AudiorigBackend::startDiscovery()
                 qCWarning(dsdrHal) << "audiorig: porta" << it.key() << "non apribile —" << it.value();
 
             const QStringList names = busy.keys();
-            QMetaObject::invokeMethod(this, [this, names] {
+            post([this, lifecycle, names] {
+                std::lock_guard<std::mutex> guard(lifecycle->deliveryMutex);
+                if (!lifecycle->acceptsDelivery || m_discoveryLifecycle != lifecycle)
+                    return;
                 reportError(BackendError::Code::PermissionDenied,
                             tr("La porta %1 è occupata da un altro programma: "
                                "chiudilo e riprova la ricerca.")
                                 .arg(names.join(QStringLiteral(", "))));
-            }, Qt::QueuedConnection);
+            });
         }
 
-        QMetaObject::invokeMethod(this, [this] {
+        post([this, lifecycle] {
+            std::lock_guard<std::mutex> guard(lifecycle->deliveryMutex);
+            if (!lifecycle->acceptsDelivery || m_discoveryLifecycle != lifecycle)
+                return;
             m_discovering = false;
             setState(m_open ? BackendState::Streaming : BackendState::Idle);
             emit discoveryFinished();
-        }, Qt::QueuedConnection);
+        });
     });
 
     connect(prober, &QThread::finished, prober, &QObject::deleteLater);
@@ -427,7 +453,12 @@ void AudiorigBackend::stopDiscovery()
     // Il flag si legge fra una porta e l'altra: la sonda si ferma al prossimo
     // confine invece che a metà di un'apertura, così nessuna porta seriale
     // resta aperta dietro di lei.
-    m_abortDiscovery.store(true, std::memory_order_release);
+    const std::shared_ptr<DiscoveryLifecycle> lifecycle = m_discoveryLifecycle;
+    if (lifecycle) {
+        lifecycle->abort.store(true, std::memory_order_release);
+        std::lock_guard<std::mutex> guard(lifecycle->deliveryMutex);
+        lifecycle->acceptsDelivery = false;
+    }
     m_discovering = false;
 }
 
@@ -504,11 +535,12 @@ void AudiorigBackend::open(const DeviceDescriptor &device)
     const int flowControl = device.extra.value(QStringLiteral("catFlowControl"), -1).toInt();
     const bool dtr = device.extra.value(QStringLiteral("catDtr"), false).toBool();
     const bool rts = device.extra.value(QStringLiteral("catRts"), false).toBool();
+    const int hamlibModel = device.extra.value(QStringLiteral("catHamlibModel"), 0).toInt();
     QMetaObject::invokeMethod(controller, "open", Qt::QueuedConnection,
                               Q_ARG(QString, port), Q_ARG(int, baud),
                               Q_ARG(int, dataBits), Q_ARG(int, parity),
                               Q_ARG(int, stopBits), Q_ARG(int, flowControl),
-                              Q_ARG(bool, dtr), Q_ARG(bool, rts));
+                              Q_ARG(bool, dtr), Q_ARG(bool, rts), Q_ARG(int, hamlibModel));
 
     // L'audio si annuncia a cadenza fissa: i campioni sono già nel ring, il
     // segnale porta solo il descrittore (§4.1).
@@ -736,7 +768,7 @@ SampleRing *AudiorigBackend::spectrumStream(PanId pan) const
 }
 
 void AudiorigBackend::onCatState(qint64 frequencyHz, int mode, bool transmitting,
-                                 int sMeterRaw, double signalDbm)
+                                 bool pttKnown, int sMeterRaw, double signalDbm)
 {
     m_sMeterRaw = sMeterRaw;
     m_signalDbm = signalDbm;
@@ -750,7 +782,7 @@ void AudiorigBackend::onCatState(qint64 frequencyHz, int mode, bool transmitting
         emit centerFrequencyChanged(frequencyHz);
     }
 
-    if (transmitting != m_ptt) {
+    if (pttKnown && transmitting != m_ptt) {
         // Il PTT può essere stato premuto sul microfono della radio: da qui si
         // scopre, e la UI resta allineata a ciò che la radio sta facendo
         // davvero invece che a ciò che le abbiamo chiesto.
@@ -829,9 +861,28 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
                         {QStringLiteral("label"), tr("Yaesu · CAT (newcat)")}},
             QVariantMap{{QStringLiteral("id"), QStringLiteral("civ")},
                         {QStringLiteral("label"), tr("Icom · CI-V")}},
+            QVariantMap{{QStringLiteral("id"), QStringLiteral("hamlib-local")},
+                        {QStringLiteral("label"), tr("Hamlib · radio locale via USB/seriale")},
+                        {QStringLiteral("requiresModel"), true}},
             QVariantMap{{QStringLiteral("id"), QStringLiteral("rigctld")},
                         {QStringLiteral("label"), tr("Hamlib · rigctld in rete")}},
         };
+    }
+
+    if (command == QLatin1String("device.hamlibModels")) {
+        QString error;
+        const QVariantList models = LocalRigctldDriver::availableModels(&error);
+        if (models.isEmpty() && !error.isEmpty())
+            qCWarning(dsdrHal) << "hamlib:" << error;
+        return models;
+    }
+
+    if (command == QLatin1String("device.catDefaults")) {
+        const QString driver = args.value(QStringLiteral("driver")).toString();
+        if (driver == QLatin1String("hamlib-local"))
+            return LocalRigctldDriver::serialDefaultsForModel(
+                args.value(QStringLiteral("hamlibModel"), 2011).toInt());
+        return QVariantMap{};
     }
 
     if (command == QLatin1String("device.declare")) {
@@ -866,6 +917,8 @@ QVariant AudiorigBackend::nativeCommand(const QString &command, const QVariantMa
         device.extra.insert(QStringLiteral("catRts"),
                             args.value(QStringLiteral("rts"), false).toBool());
         device.extra.insert(QStringLiteral("catDriver"), driverId);
+        device.extra.insert(QStringLiteral("catHamlibModel"),
+                            args.value(QStringLiteral("hamlibModel"), 0).toInt());
 
         // L'audio resta quello che si sceglie dal pannello: qui si dichiara il
         // piano di controllo, e mescolare le due cose vorrebbe dire far

@@ -227,18 +227,33 @@ void DspEngine::setAudioRecorder(IqRecorder *recorder)
     m_audioRecorder.store(recorder, std::memory_order_release);
 }
 
+void DspEngine::setNetworkAudioSink(audio::NetworkAudioSink *sink)
+{
+    m_networkAudioSink.store(sink, std::memory_order_release);
+}
+
 bool DspEngine::loadIqModule(const QString &path)
 {
-    const QString absolutePath = QFileInfo(path).absoluteFilePath();
+    m_lastIqModuleError.clear();
+    const QFileInfo fileInfo(path);
+    const QString absolutePath = fileInfo.canonicalFilePath().isEmpty()
+        ? fileInfo.absoluteFilePath() : fileInfo.canonicalFilePath();
     if (path.isEmpty() || !QFileInfo::exists(absolutePath)) {
         qCWarning(dsdrDsp) << "modulo IQ non trovato:" << path;
+        m_lastIqModuleError = tr("File del modulo non trovato.");
         return false;
+    }
+
+    for (const auto &loaded : m_iqModules) {
+        if (loaded && loaded->path == absolutePath)
+            return true;
     }
 
     auto library = std::make_unique<QLibrary>(absolutePath);
     if (!library->load()) {
         qCWarning(dsdrDsp) << "caricamento modulo IQ fallito:" << absolutePath
                            << library->errorString();
+        m_lastIqModuleError = library->errorString();
         return false;
     }
 
@@ -246,6 +261,7 @@ bool DspEngine::loadIqModule(const QString &path)
         library->resolve("dsdr_create_iq_module_v1"));
     if (!creator) {
         qCWarning(dsdrDsp) << "modulo IQ senza dsdr_create_iq_module_v1:" << absolutePath;
+        m_lastIqModuleError = tr("Simbolo dsdr_create_iq_module_v1 assente.");
         library->unload();
         return false;
     }
@@ -254,6 +270,7 @@ bool DspEngine::loadIqModule(const QString &path)
     if (!module || module->abi_version != DSDR_IQ_MODULE_ABI_VERSION
         || !module->process_iq || !module->name || !*module->name) {
         qCWarning(dsdrDsp) << "ABI modulo IQ non valido:" << absolutePath;
+        m_lastIqModuleError = tr("ABI IQ v1 non valido o incompleto.");
         if (module && module->destroy)
             module->destroy(module->user);
         library->unload();
@@ -266,6 +283,27 @@ bool DspEngine::loadIqModule(const QString &path)
     loaded->path = absolutePath;
     qCInfo(dsdrDsp) << "modulo IQ caricato:" << module->name << absolutePath;
     m_iqModules.push_back(std::move(loaded));
+    return true;
+}
+
+bool DspEngine::unloadIqModule(const QString &path)
+{
+    const QFileInfo fileInfo(path);
+    const QString absolutePath = fileInfo.canonicalFilePath().isEmpty()
+        ? fileInfo.absoluteFilePath() : fileInfo.canonicalFilePath();
+    const auto found = std::find_if(m_iqModules.begin(), m_iqModules.end(),
+                                    [&absolutePath](const auto &loaded) {
+                                        return loaded && loaded->path == absolutePath;
+                                    });
+    if (found == m_iqModules.end())
+        return false;
+
+    if ((*found)->module && (*found)->module->destroy)
+        (*found)->module->destroy((*found)->module->user);
+    if ((*found)->library)
+        (*found)->library->unload();
+    qCInfo(dsdrDsp) << "modulo IQ scaricato:" << absolutePath;
+    m_iqModules.erase(found);
     return true;
 }
 
@@ -288,6 +326,23 @@ QStringList DspEngine::iqModuleNames() const
             result.append(QString::fromUtf8(loaded->module->name));
     }
     return result;
+}
+
+QString DspEngine::iqModuleName(const QString &path) const
+{
+    const QFileInfo fileInfo(path);
+    const QString absolutePath = fileInfo.canonicalFilePath().isEmpty()
+        ? fileInfo.absoluteFilePath() : fileInfo.canonicalFilePath();
+    for (const auto &loaded : m_iqModules) {
+        if (loaded && loaded->path == absolutePath && loaded->module && loaded->module->name)
+            return QString::fromUtf8(loaded->module->name);
+    }
+    return {};
+}
+
+QString DspEngine::lastIqModuleError() const
+{
+    return m_lastIqModuleError;
 }
 
 void DspEngine::setFftSize(int size)
@@ -933,6 +988,10 @@ void DspEngine::processAvailable()
 
         if (IqRecorder *recorder = m_audioRecorder.load(std::memory_order_acquire))
             recorder->feed(m_mix.data(), audioSamples);
+        if (audio::NetworkAudioSink *network =
+                m_networkAudioSink.load(std::memory_order_acquire)) {
+            network->feed(m_mix.data(), audioFrames);
+        }
         if (m_audioRing->space() < audioSamples)
             m_audioRing->discard(audioSamples - m_audioRing->space());
         m_audioRing->write(m_mix.data(), audioSamples);

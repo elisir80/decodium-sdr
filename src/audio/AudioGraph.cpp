@@ -24,6 +24,7 @@ QString sinkName(AudioSink sink)
     switch (sink) {
     case AudioSink::Ear:            return QStringLiteral("orecchio");
     case AudioSink::AudioRecorder:  return QStringLiteral("registrazione audio");
+    case AudioSink::NetworkStream:  return QStringLiteral("audio di rete");
     case AudioSink::DigitalDecoder: return QStringLiteral("decodificatori");
     case AudioSink::Transmit:       return QStringLiteral("trasmissione");
     }

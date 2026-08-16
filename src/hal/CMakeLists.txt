@@ -30,11 +30,17 @@ endif()
 
 if(DSDR_BACKEND_NETTCP)
     list(APPEND DSDR_HAL_SOURCES
+        backends/nettcp/NetworkEndpoint.h
         backends/nettcp/RtlTcpProtocol.h
         backends/nettcp/EndpointProbe.h
         backends/nettcp/EndpointProbe.cpp
         backends/nettcp/RtlTcpClient.h
         backends/nettcp/RtlTcpClient.cpp
+        backends/nettcp/GenericIqClient.h
+        backends/nettcp/GenericIqClient.cpp
+        backends/nettcp/SdrppServerProtocol.h
+        backends/nettcp/SdrppServerClient.h
+        backends/nettcp/SdrppServerClient.cpp
         backends/nettcp/SpyServerProtocol.h
         backends/nettcp/SpyServerClient.h
         backends/nettcp/SpyServerClient.cpp
@@ -133,6 +139,9 @@ if(DSDR_BACKEND_AUDIORIG)
             backends/audiorig/CivDriver.cpp
             backends/audiorig/RigctldDriver.h
             backends/audiorig/RigctldDriver.cpp
+            backends/audiorig/LocalRigctldDriver.h
+            backends/audiorig/LocalRigctldDriver.cpp
+            backends/audiorig/CatDriverFactory.h
             backends/audiorig/CatController.h
             backends/audiorig/CatController.cpp
             backends/audiorig/AudiorigBackend.h
@@ -209,6 +218,15 @@ endif()
 list(APPEND DSDR_HAL_SOURCES RadioScout.h RadioScout.cpp)
 set(DSDR_HAL_NEEDS_NETWORK ON)
 
+# La matematica dell'IF e il controllo del Q ADC sono comuni al backend
+# librtlsdr e al driver SoapyRTLSDR: entrambi pilotano lo stesso RTL2832.
+if(DSDR_BACKEND_RTLSDR OR DSDR_BACKEND_SOAPY)
+    list(APPEND DSDR_HAL_SOURCES
+        backends/rtlsdr/RtlSdrCapabilities.h
+        backends/rtlsdr/RtlSdrTuningPlan.h
+    )
+endif()
+
 if(DSDR_BACKEND_RTLSDR)
     find_path(DSDR_RTLSDR_INCLUDE_DIR
         NAMES rtl-sdr.h
@@ -232,6 +250,17 @@ if(DSDR_BACKEND_RTLSDR)
         backends/rtlsdr/RtlSdrBackend.cpp
     )
     list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_RTLSDR)
+endif()
+
+# Il panadapter IF con CAT combina il percorso IQ nativo con il bridge CAT
+# universale. Esiste soltanto se entrambe le meta' sono state costruite davvero.
+if(DSDR_BACKEND_RTLSDR AND DSDR_BUILT_AUDIORIG)
+    list(APPEND DSDR_HAL_SOURCES
+        backends/rtlcat/RtlSdrTxSafety.h
+        backends/rtlcat/RtlSdrCatBackend.h
+        backends/rtlcat/RtlSdrCatBackend.cpp
+    )
+    list(APPEND DSDR_HAL_DEFINES DSDR_BACKEND_RTLCAT)
 endif()
 
 add_library(dsdr_hal STATIC ${DSDR_HAL_SOURCES})

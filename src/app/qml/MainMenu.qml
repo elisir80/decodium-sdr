@@ -26,6 +26,7 @@ MenuBar {
     /// pannelli, si limita a chiederlo.
     signal sourceRequested()
     signal aboutRequested()
+    signal operationsRequested()
     signal panelSideToggled()
 
     background: Rectangle {
@@ -175,6 +176,13 @@ MenuBar {
                   : qsTr("Registra il flusso IQ")
             enabled: Session.connected && Session.capabilities.supportsRecording
             onTriggered: Session.toggleRecording()
+        }
+
+        MenuSeparator {}
+
+        MenuItem {
+            text: qsTr("Scheduler e moduli IQ…")
+            onTriggered: root.operationsRequested()
         }
 
         MenuSeparator {}

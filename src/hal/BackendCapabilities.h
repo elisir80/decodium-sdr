@@ -83,6 +83,16 @@ struct BackendCapabilities
     /// esiste.
     bool manualDeviceEntry = false;
 
+    /// Il VFO che determina il centro dello spettro vive su una radio esterna
+    /// (CAT) e non soltanto nel client. Quando cambia dalla manopola della
+    /// radio, tutti i ricevitori logici che condividono quel VFO devono
+    /// seguirlo: lasciare il canale sul vecchio dial produrrebbe un
+    /// panadapter ben disegnato ma un demodulatore fuori frequenza.
+    ///
+    /// Non coincide con `clientDemod`: un panadapter IF ha IQ nel client ma
+    /// il suo riferimento RF è comunque il VFO della radio.
+    bool vfoFollowsRadio = false;
+
     bool canTransmit() const noexcept { return tx != TxSupport::None; }
     bool isRawIq() const noexcept { return demod == DspLocation::Client; }
 

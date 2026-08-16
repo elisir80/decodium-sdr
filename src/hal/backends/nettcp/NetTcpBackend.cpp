@@ -2,10 +2,14 @@
 #include "hal/backends/nettcp/NetTcpBackend.h"
 #include "hal/HalLog.h"
 #include "hal/backends/nettcp/EndpointProbe.h"
+#include "hal/backends/nettcp/GenericIqClient.h"
 #include "hal/backends/nettcp/RtlTcpClient.h"
+#include "hal/backends/nettcp/SdrppServerClient.h"
 #include "hal/backends/nettcp/SpyServerClient.h"
 
 #include <QThread>
+#include <QUrl>
+#include <QUrlQuery>
 
 #include <algorithm>
 
@@ -20,6 +24,64 @@ constexpr std::size_t kIqRingFloats = 1 << 23;
 /// I canali sono entità del DSP client: il limite è di buon senso sul carico,
 /// non un vincolo del protocollo.
 constexpr int kMaxRxChannels = 4;
+
+struct DeclaredEndpoint {
+    NetProtocol protocol = NetProtocol::None;
+    QString host;
+    quint16 port = 0;
+    double sampleRate = 2'048'000.0;
+    IqSampleFormat format = IqSampleFormat::Int16;
+};
+
+IqSampleFormat parseFormat(const QString &text)
+{
+    const QString normalized = text.trimmed().toLower();
+    if (normalized == QLatin1String("int8") || normalized == QLatin1String("i8"))
+        return IqSampleFormat::Int8;
+    if (normalized == QLatin1String("int32") || normalized == QLatin1String("i32"))
+        return IqSampleFormat::Int32;
+    if (normalized == QLatin1String("float32") || normalized == QLatin1String("f32")
+        || normalized == QLatin1String("float"))
+        return IqSampleFormat::Float32;
+    return IqSampleFormat::Int16;
+}
+
+bool parseDeclaredEndpoint(const QString &text, DeclaredEndpoint *result)
+{
+    if (!result || !text.contains(QStringLiteral("://")))
+        return false;
+
+    const QUrl url(text);
+    if (!url.isValid() || url.host().isEmpty() || url.port() <= 0 || url.port() > 65535)
+        return false;
+
+    const QString scheme = url.scheme().toLower();
+    if (scheme == QLatin1String("tcp"))
+        result->protocol = NetProtocol::RawTcp;
+    else if (scheme == QLatin1String("udp"))
+        result->protocol = NetProtocol::RawUdp;
+    else if (scheme == QLatin1String("sdrpp"))
+        result->protocol = NetProtocol::SdrppServer;
+    else
+        return false;
+
+    const QUrlQuery query(url);
+    const QString rateText = query.queryItemValue(QStringLiteral("rate"));
+    const double rate = rateText.isEmpty() ? 2'048'000.0 : rateText.toDouble();
+    if (!(rate >= 8'000.0 && rate <= 100'000'000.0))
+        return false;
+
+    result->host = url.host();
+    result->port = static_cast<quint16>(url.port());
+    result->sampleRate = rate;
+    QString format = query.queryItemValue(QStringLiteral("format"));
+    if (format.isEmpty())
+        format = query.queryItemValue(QStringLiteral("type"));
+    result->format = parseFormat(format);
+    if (result->protocol == NetProtocol::SdrppServer && result->format == IqSampleFormat::Int32)
+        return false;
+    return true;
+}
 
 QStringList &addedEndpoints()
 {
@@ -81,6 +143,43 @@ void NetTcpBackend::clearAddedEndpoints()
     addedEndpoints().clear();
 }
 
+void NetTcpBackend::publishManualEndpoint(const QString &endpoint)
+{
+    DeclaredEndpoint declared;
+    if (!parseDeclaredEndpoint(endpoint, &declared)) {
+        qCWarning(dsdrHal) << "nettcp: indirizzo di rete non valido:" << endpoint;
+        return;
+    }
+
+    DeviceDescriptor device;
+    device.backendId = backendId();
+    device.deviceId = endpoint;
+    device.transport = declared.protocol == NetProtocol::RawUdp ? QStringLiteral("udp")
+                                                                : QStringLiteral("tcp");
+    device.address = QStringLiteral("%1:%2").arg(declared.host).arg(declared.port);
+    device.extra.insert(QStringLiteral("host"), declared.host);
+    device.extra.insert(QStringLiteral("port"), declared.port);
+    device.extra.insert(QStringLiteral("sampleRate"), declared.sampleRate);
+    device.extra.insert(QStringLiteral("format"), static_cast<int>(declared.format));
+
+    if (declared.protocol == NetProtocol::RawTcp || declared.protocol == NetProtocol::RawUdp) {
+        const QString transport = declared.protocol == NetProtocol::RawUdp
+            ? QStringLiteral("UDP") : QStringLiteral("TCP");
+        device.model = QStringLiteral("IQ grezzo %1").arg(transport);
+        device.displayName = QStringLiteral("IQ %1 %2 — %3, %4 kS/s")
+                                 .arg(transport, device.address, iqSampleFormatName(declared.format))
+                                 .arg(declared.sampleRate / 1000.0, 0, 'f', 1);
+        device.extra.insert(QStringLiteral("protocol"),
+                            declared.protocol == NetProtocol::RawUdp
+                                ? QStringLiteral("raw_udp") : QStringLiteral("raw_tcp"));
+    } else {
+        device.model = QStringLiteral("SDR++ Server");
+        device.displayName = QStringLiteral("SDR++ Server %1").arg(device.address);
+        device.extra.insert(QStringLiteral("protocol"), QStringLiteral("sdrpp"));
+    }
+    emit deviceFound(device);
+}
+
 QList<double> NetTcpBackend::spyServerSampleRates() const
 {
     QList<double> rates;
@@ -123,6 +222,33 @@ BackendCapabilities NetTcpBackend::capabilities() const
         return caps;
     }
 
+    if (m_protocol == NetProtocol::RawTcp || m_protocol == NetProtocol::RawUdp
+        || m_protocol == NetProtocol::SdrppServer) {
+        BackendCapabilities caps;
+        caps.maxRxChannels = kMaxRxChannels;
+        caps.coherentRx = true;
+        caps.maxPanadapters = 4;
+        caps.tx = TxSupport::None;
+        caps.demod = DspLocation::Client;
+        caps.spectrum = DspLocation::Client;
+        caps.agc = DspLocation::Client;
+        if (m_sampleRate > 0.0)
+            caps.sampleRates = {m_sampleRate};
+        caps.defaultSampleRate = m_sampleRate;
+        // Un flusso IQ grezzo non conosce il tuner: non imporre limiti RF
+        // inventati e lasciare che sia il produttore della rete a definirli.
+        caps.minFrequencyHz = 0;
+        caps.maxFrequencyHz = 0;
+        caps.adcBits = m_protocol == NetProtocol::RawTcp || m_protocol == NetProtocol::RawUdp
+            ? (m_device.extra.value(QStringLiteral("format")).toInt()
+                   == static_cast<int>(IqSampleFormat::Int8) ? 8 : 16)
+            : 16;
+        caps.remoteCapable = true;
+        caps.multiClient = m_protocol == NetProtocol::RawUdp;
+        caps.supportsRecording = true;
+        return caps;
+    }
+
     BackendCapabilities caps;
     caps.maxRxChannels = kMaxRxChannels;
     // I canali derivano tutti dallo stesso flusso IQ: sono coerenti per
@@ -156,8 +282,8 @@ BackendCapabilities NetTcpBackend::capabilities() const
     caps.multiClient = false;      // rtl_tcp serve un client alla volta
     caps.supportsRecording = true;
 
-    // Guadagno, ppm e bias tee esistono solo per questo protocollo: vivono in
-    // un pannello proprio, non nell'interfaccia generale (§4.1).
+    // Guadagno, ppm e bias tee esistono solo per rtl_tcp: vivono in un
+    // pannello proprio, non nell'interfaccia generale (§4.1).
     caps.nativePanels.append(QStringLiteral("NetTcpDevicePanel"));
 
     return caps;
@@ -196,6 +322,13 @@ void NetTcpBackend::startDiscovery()
     m_pendingProbes = 0;
 
     for (const QString &endpoint : endpoints) {
+        // I protocolli IQ generici non hanno un handshake da sondare: l'URI e'
+        // la dichiarazione esplicita del contratto di filo. Li si mostra subito
+        // e la connessione vera resta il controllo di raggiungibilita'.
+        if (endpoint.contains(QStringLiteral("://"))) {
+            publishManualEndpoint(endpoint);
+            continue;
+        }
         const int colon = endpoint.lastIndexOf(QLatin1Char(':'));
         const QString host = colon > 0 ? endpoint.left(colon) : endpoint;
         const quint16 port = colon > 0
@@ -289,6 +422,25 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
     m_tunerType = device.extra.value(QStringLiteral("tunerType")).toUInt();
     m_gainStepCount = device.extra.value(QStringLiteral("gainSteps")).toUInt();
 
+    const QString protocol = device.extra.value(QStringLiteral("protocol")).toString();
+    if (protocol == QLatin1String("spyserver"))
+        m_protocol = NetProtocol::SpyServer;
+    else if (protocol == QLatin1String("raw_tcp"))
+        m_protocol = NetProtocol::RawTcp;
+    else if (protocol == QLatin1String("raw_udp"))
+        m_protocol = NetProtocol::RawUdp;
+    else if (protocol == QLatin1String("sdrpp"))
+        m_protocol = NetProtocol::SdrppServer;
+    else
+        m_protocol = NetProtocol::RtlTcp;
+    if (m_protocol == NetProtocol::RawTcp || m_protocol == NetProtocol::RawUdp
+        || m_protocol == NetProtocol::SdrppServer) {
+        const double declaredRate = device.extra.value(QStringLiteral("sampleRate"),
+                                                        m_sampleRate).toDouble();
+        if (declaredRate > 0.0)
+            m_sampleRate = declaredRate;
+    }
+
     const QString host = device.extra.value(QStringLiteral("host")).toString();
     const quint16 port = static_cast<quint16>(
         device.extra.value(QStringLiteral("port"), kDefaultPort).toUInt());
@@ -303,13 +455,6 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
     if (!caps.coversFrequency(m_centerHz))
         m_centerHz = std::clamp<qint64>(m_centerHz, caps.minFrequencyHz, caps.maxFrequencyHz);
 
-    // Il protocollo è stato riconosciuto durante il sondaggio; dietro la
-    // stessa facciata cambia solo il client.
-    m_protocol = device.extra.value(QStringLiteral("protocol")).toString()
-                     == QLatin1String("spyserver")
-        ? NetProtocol::SpyServer
-        : NetProtocol::RtlTcp;
-
     setState(BackendState::Connecting);
     m_open = true;
     m_iqRing->clear();
@@ -319,10 +464,17 @@ void NetTcpBackend::open(const DeviceDescriptor &device)
     m_thread = new QThread(this);
     m_thread->setObjectName(QStringLiteral("dsdr-nettcp-ingest"));
 
-    if (m_protocol == NetProtocol::SpyServer)
+    if (m_protocol == NetProtocol::SpyServer) {
         openSpyServer(host, port);
-    else
+    } else if (m_protocol == NetProtocol::RawTcp || m_protocol == NetProtocol::RawUdp) {
+        openGenericIq(host, port, m_protocol == NetProtocol::RawUdp,
+                      static_cast<IqSampleFormat>(device.extra.value(QStringLiteral("format")).toInt()));
+    } else if (m_protocol == NetProtocol::SdrppServer) {
+        openSdrppServer(host, port,
+                        static_cast<IqSampleFormat>(device.extra.value(QStringLiteral("format")).toInt()));
+    } else {
         openRtlTcp(host, port);
+    }
 }
 
 /// Emette il descrittore del frame nel thread del backend. Comune ai due
@@ -411,6 +563,51 @@ void NetTcpBackend::openSpyServer(const QString &host, quint16 port)
                               Q_ARG(QString, host), Q_ARG(quint16, port));
 }
 
+void NetTcpBackend::openGenericIq(const QString &host, quint16 port, bool udp,
+                                  IqSampleFormat format)
+{
+    auto *client = new GenericIqClient(m_iqRing.get());
+    client->moveToThread(m_thread);
+    connect(m_thread, &QThread::finished, client, &QObject::deleteLater);
+    connect(client, &GenericIqClient::connected, this, &NetTcpBackend::onGenericClientConnected);
+    connect(client, &GenericIqClient::failed, this, [this](const QString &message, bool fatal) {
+        reportError(BackendError::TransportError, message, fatal);
+    });
+    connect(client, &GenericIqClient::disconnected, this, [this] {
+        if (m_open && m_protocol == NetProtocol::RawTcp)
+            reportError(BackendError::TransportError,
+                        tr("La sorgente IQ TCP ha chiuso la connessione."), true);
+    });
+    DSDR_CONNECT_SAMPLES(client, GenericIqClient);
+    m_genericClient = client;
+    m_thread->start();
+    QMetaObject::invokeMethod(client, "connectToSource", Qt::QueuedConnection,
+                              Q_ARG(QString, host), Q_ARG(quint16, port), Q_ARG(bool, udp),
+                              Q_ARG(int, static_cast<int>(format)));
+}
+
+void NetTcpBackend::openSdrppServer(const QString &host, quint16 port, IqSampleFormat format)
+{
+    auto *client = new SdrppServerClient(m_iqRing.get());
+    client->moveToThread(m_thread);
+    connect(m_thread, &QThread::finished, client, &QObject::deleteLater);
+    connect(client, &SdrppServerClient::connected, this, &NetTcpBackend::onSdrppServerConnected);
+    connect(client, &SdrppServerClient::failed, this, [this](const QString &message, bool fatal) {
+        reportError(BackendError::TransportError, message, fatal);
+    });
+    connect(client, &SdrppServerClient::disconnected, this, [this] {
+        if (m_open)
+            reportError(BackendError::TransportError,
+                        tr("Il server SDR++ ha chiuso la connessione."), true);
+    });
+    DSDR_CONNECT_SAMPLES(client, SdrppServerClient);
+    m_sdrppClient = client;
+    m_thread->start();
+    QMetaObject::invokeMethod(client, "connectToServer", Qt::QueuedConnection,
+                              Q_ARG(QString, host), Q_ARG(quint16, port),
+                              Q_ARG(qint64, m_centerHz), Q_ARG(int, static_cast<int>(format)));
+}
+
 #undef DSDR_CONNECT_SAMPLES
 
 void NetTcpBackend::onClientConnected(quint32 tunerType, quint32 gainStepCount)
@@ -447,6 +644,24 @@ void NetTcpBackend::onSpyServerConnected(const spyserver::DeviceInfo &info)
     emit sampleRateChanged(m_sampleRate);
 }
 
+void NetTcpBackend::onGenericClientConnected()
+{
+    setState(BackendState::Streaming);
+    emit capabilitiesChanged();
+    emit centerFrequencyChanged(m_centerHz);
+    emit sampleRateChanged(m_sampleRate);
+}
+
+void NetTcpBackend::onSdrppServerConnected(double sampleRate)
+{
+    if (sampleRate > 0.0)
+        m_sampleRate = sampleRate;
+    setState(BackendState::Streaming);
+    emit capabilitiesChanged();
+    emit centerFrequencyChanged(m_centerHz);
+    emit sampleRateChanged(m_sampleRate);
+}
+
 void NetTcpBackend::close()
 {
     stopDiscovery();
@@ -464,6 +679,12 @@ void NetTcpBackend::close()
             if (m_spyClient)
                 QMetaObject::invokeMethod(m_spyClient, "disconnectFromServer",
                                           Qt::BlockingQueuedConnection);
+            if (m_genericClient)
+                QMetaObject::invokeMethod(m_genericClient, "disconnectFromSource",
+                                          Qt::BlockingQueuedConnection);
+            if (m_sdrppClient)
+                QMetaObject::invokeMethod(m_sdrppClient, "disconnectFromServer",
+                                          Qt::BlockingQueuedConnection);
         }
         m_thread->quit();
         m_thread->wait();
@@ -471,6 +692,8 @@ void NetTcpBackend::close()
         m_thread = nullptr;
         m_client = nullptr;
         m_spyClient = nullptr;
+        m_genericClient = nullptr;
+        m_sdrppClient = nullptr;
     }
 
     m_spyDeviceInfoValid = false;
@@ -499,11 +722,22 @@ void NetTcpBackend::setCenterFrequency(qint64 hz)
     if (m_spyClient)
         QMetaObject::invokeMethod(m_spyClient, "setFrequency", Qt::QueuedConnection,
                                   Q_ARG(qint64, hz));
+    if (m_sdrppClient)
+        QMetaObject::invokeMethod(m_sdrppClient, "setFrequency", Qt::QueuedConnection,
+                                  Q_ARG(qint64, hz));
     emit centerFrequencyChanged(hz);
 }
 
 void NetTcpBackend::setSampleRate(double rate)
 {
+    if (m_protocol == NetProtocol::RawTcp || m_protocol == NetProtocol::RawUdp
+        || m_protocol == NetProtocol::SdrppServer) {
+        if (!qFuzzyCompare(m_sampleRate, rate)) {
+            reportError(BackendError::Unsupported,
+                        tr("La frequenza di campionamento e' dichiarata dalla sorgente di rete."));
+        }
+        return;
+    }
     if (!capabilities().sampleRates.contains(rate)) {
         reportError(BackendError::Unsupported,
                     tr("Frequenza di campionamento %1 non supportata da rtl_tcp.").arg(rate));

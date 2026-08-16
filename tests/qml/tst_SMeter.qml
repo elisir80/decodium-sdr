@@ -81,6 +81,19 @@ TestCase {
                "un segnale reale non deve cadere a S1 per una tara impossibile")
     }
 
+    // S9 esattamente a fondo scala non è una tara riutilizzabile: può essere
+    // il risultato della tara automatica mentre il front-end è saturo, ma non
+    // lascia alcuna dinamica ai segnali successivi. Il pannello deve quindi
+    // ripristinare il proprio riferimento sicuro invece di conservare S0.
+    function test_full_scale_s9_reference_is_not_usable() {
+        verify(!SMeterScale.isUsableS9ReferenceDb(0))
+        verify(!SMeterScale.isUsableS9ReferenceDb(-0.84))
+        verify(!SMeterScale.isUsableS9ReferenceDb(1))
+        verify(!SMeterScale.isUsableS9ReferenceDb(-141))
+        verify(SMeterScale.isUsableS9ReferenceDb(-6))
+        verify(SMeterScale.isUsableS9ReferenceDb(-55))
+    }
+
     // E poi sta ferma. Questo è il difetto che la 1.1.6 aveva al posto del
     // precedente: la scala inseguiva il fondo di rumore, che è un inseguitore
     // di minimo dentro la banda del canale e si muove con la banda, con il

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // DECODIUM SDR — backend per sorgenti IQ di rete (RF-07).
 //
-// Classe raw-IQ. Oggi parla rtl_tcp, che è ciò che rende utilizzabile una
-// chiavetta da 30 € — anche remota, anche su un Raspberry in giardino.
-// SpyServer è previsto dalla stessa spec ma non ancora implementato: quando
-// arriverà entrerà come secondo protocollo dietro la stessa facciata, senza
-// che il core se ne accorga.
+// Classe raw-IQ. Parla rtl_tcp, SpyServer, IQ dichiarato TCP/UDP e SDR++
+// Server; tutti consegnano lo stesso ring al DSP client, senza allargare il
+// contratto IRadioBackend.
 //
 // Non esiste discovery broadcast per rtl_tcp: si sondano endpoint noti.
 // Sorgenti degli endpoint, in ordine:
@@ -16,6 +14,7 @@
 
 #include "hal/IRadioBackend.h"
 #include "hal/backends/nettcp/EndpointProbe.h"
+#include "hal/backends/nettcp/NetworkEndpoint.h"
 #include "hal/backends/nettcp/SpyServerProtocol.h"
 
 #include <QHash>
@@ -30,6 +29,8 @@ namespace dsdr::hal::nettcp {
 
 class RtlTcpClient;
 class SpyServerClient;
+class GenericIqClient;
+class SdrppServerClient;
 
 class NetTcpBackend : public IRadioBackend
 {
@@ -87,8 +88,13 @@ private:
     void reportError(BackendError::Code code, const QString &message, bool fatal = false);
     void onClientConnected(quint32 tunerType, quint32 gainStepCount);
     void onSpyServerConnected(const spyserver::DeviceInfo &info);
+    void onGenericClientConnected();
+    void onSdrppServerConnected(double sampleRate);
     void openRtlTcp(const QString &host, quint16 port);
     void openSpyServer(const QString &host, quint16 port);
+    void openGenericIq(const QString &host, quint16 port, bool udp, IqSampleFormat format);
+    void openSdrppServer(const QString &host, quint16 port, IqSampleFormat format);
+    void publishManualEndpoint(const QString &endpoint);
 
     /// Frequenze di campionamento offerte da un SpyServer: il rate non è
     /// libero, si sceglie uno stadio di decimazione fra quelli dichiarati.
@@ -120,6 +126,8 @@ private:
     // condividono il ring e il ciclo di vita, non l'interfaccia.
     QPointer<RtlTcpClient> m_client;
     QPointer<SpyServerClient> m_spyClient;
+    QPointer<GenericIqClient> m_genericClient;
+    QPointer<SdrppServerClient> m_sdrppClient;
     QList<EndpointProbe *> m_probes;
     int m_pendingProbes = 0;
     quint64 m_sequence = 0;

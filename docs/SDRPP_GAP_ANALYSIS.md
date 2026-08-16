@@ -18,7 +18,7 @@ Questo documento tiene separati i tre livelli di confronto:
 | Wide-FM | Discriminatore, stereo MPX L/R, low-pass selezionabile, de-enfasi 0/22/50/75 us, squelch, ricampionamento, RDS PI/PS/RadioText/PTY/AF, tabelle PTY Europa/RBDS, metadati RDS avanzati, AF manuale/automatico | Stereo, low-pass, de-enfasi, squelch, RDS | Implementato e testato su multiplex RDS sintetico; AF automatico richiede validazione sul campo |
 | NFM | Discriminatore con deviazione 2.5 kHz, low-pass AF selezionabile, de-enfasi 0/22/50/75 us, power squelch, CTCSS, noise blanker e IF-NR | NFM, low-pass, de-enfasi, power/CTCSS squelch | Implementato e testato |
 | DIGU / DIGL | Catena SSB con filtri dedicati | Modi laterali radio | Verificato con test DSP |
-| IQ / RAW | Monitor stereo I/Q equivalente al RAW di SDR++, registrazione IQ, API C ABI e catalogo UI dei moduli `.dylib/.so/.dll` | RAW/stream per moduli | Implementato e testato; caricamento CLI e directory standard |
+| IQ / RAW | Monitor stereo I/Q equivalente al RAW di SDR++, registrazione IQ, API C ABI e gestore persistente dei moduli `.dylib/.so/.dll` | RAW/stream per moduli | Implementato e testato; discovery non esecutiva, enable/disable individuale, CLI e directory standard |
 
 L'uscita interna del DSP è stereo interleaved. I modi mono vengono duplicati su
 L/R; Wide-FM usa invece il multiplex stereo. Se il dispositivo audio macOS non
@@ -32,6 +32,7 @@ accetta 48 kHz stereo, il router prova automaticamente 48 kHz mono.
 | Registrazione IQ / audio | IQ e WAV stereo del mix audio | Completato per IQ e audio locale |
 | Frequency manager | Band-stack persistente e memorie richiamabili dalla UI | Implementato |
 | Scanner | Scansione della banda corrente con dwell, soglia S-meter e risultati richiamabili | Implementato |
+| Scheduler | Coda persistente UTC per sintonia, scansione e registrazioni IQ/audio RX; stati, annullamento e log | Implementato; nessuna azione TX/PTT o reconnessione automatica |
 | RDS / PS / RadioText | Decoder 57 kHz con sincronismo CRC-10, PI, PS, RadioText, PTY Europa/RBDS, country/coverage/reference/callsign e AF manuale/automatico | Implementato; AF automatico richiede un segnale reale per la validazione sul campo |
 | Power squelch | Presente per USB/LSB/DIG/AM/SAM/FM/NFM, con isteresi; escluso da CW/IQ | Completato |
 | CTCSS | Rilevatore continuo, gate NFM e modalità decode-only separata dal mute | Completato |
@@ -48,8 +49,10 @@ sampling e log del flusso — sia il percorso SoapySDR universale. Il DMG macOS
 porta con sé runtime e librerie necessari, così l'utente finale non deve
 installare Homebrew. I moduli IQ esterni possono essere caricati con
 `--iq-module /percorso/modulo.dylib`; l'header installato è
-`include/decodium/IqModuleApi.h`. Restano come backlog i backend dedicati per
-HPSDR, DLINK, FlexRadio, TCI e KiwiSDR.
+`include/decodium/IqModuleApi.h`. Il gestore moduli cerca senza eseguire, tiene
+catalogo e cartelle persistenti, ricarica solo i moduli già abilitati e può
+scaricare una singola libreria senza fermare il resto del DSP. Restano come
+backlog i backend dedicati per HPSDR, DLINK, FlexRadio, TCI e KiwiSDR.
 
 Il server rigctl resta vincolato al loopback per sicurezza. Un logger o un
 programma CAT locale può collegarsi alla porta 4532 e usare i comandi Hamlib

@@ -1,16 +1,17 @@
 # Pacchetti di release (RNF-04): un binario per piattaforma.
 #
-# Si attiva su un tag `v*` e pubblica una release in bozza con AppImage, DMG e
-# ZIP portable. La bozza è voluta: le note di rilascio le scrive una persona,
-# e il pacchetto va provato prima di renderlo pubblico.
+# Si attiva sui tag storici `v*` e sui tag numerici del progetto, e pubblica
+# una release in bozza con AppImage, DMG e ZIP portable. La bozza è voluta: le
+# note di rilascio le scrive una persona, e il pacchetto va provato prima di
+# renderlo pubblico.
 name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', '[0-9]*']
   # Senza input: la versione viene dal progetto, e un campo obbligatorio che
   # nessuno step legge è solo un ostacolo fra chi vuole provare il
-  # confezionamento e il workflow. Lanciato a mano costruisce i tre pacchetti
+  # confezionamento e il workflow. Lanciato a mano costruisce i pacchetti
   # e li carica come artifact, senza creare alcuna release.
   workflow_dispatch:
 
@@ -27,17 +28,33 @@ jobs:
         include:
           - name: Linux AppImage (x86-64)
             os: ubuntu-24.04
+            platform: linux
+            arch: x86_64
             artifact: decodium-sdr-linux-x86_64.AppImage
+          - name: Linux AppImage (ARM64)
+            os: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+            artifact: decodium-sdr-linux-aarch64.AppImage
           - name: macOS DMG (Apple Silicon)
             os: macos-14
+            platform: macos
+            arch: arm64
             artifact: decodium-sdr-macos-arm64.dmg
+          - name: macOS DMG (Intel)
+            os: macos-15-intel
+            platform: macos
+            arch: x86_64
+            artifact: decodium-sdr-macos-x86_64.dmg
           - name: Windows (installer + ZIP)
             os: windows-latest
+            platform: windows
+            arch: x86_64
             artifact: decodium-sdr-windows-x86_64-setup.exe
 
     defaults:
       run:
-        shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.platform == 'windows' && 'msys2 {0}' || 'bash' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -62,20 +79,21 @@ jobs:
           echo "versione $VERSION, nome $NAME"
 
       - name: Dipendenze di sistema (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.platform == 'linux'
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build libfftw3-dev libsoapysdr-dev \
+            soapysdr-module-rtlsdr soapysdr-module-hackrf \
             libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev \
             libvulkan-dev libegl1-mesa-dev libfuse2 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
-            libxcb-xkb1 libpulse-dev
+            libxcb-xkb1 libpulse-dev hamlib-utils
 
       - name: Qt 6.8 (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.platform == 'linux'
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.*'
@@ -83,15 +101,16 @@ jobs:
           cache: true
 
       - name: Dipendenze (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.platform == 'macos'
         shell: bash
         run: |
           brew update
-          brew install qt@6 fftw ninja soapysdr soapyrtlsdr
+          brew install qt@6 fftw ninja soapysdr soapyrtlsdr soapyhackrf hamlib
           echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+          echo "$(brew --prefix qt@6)/bin" >> "$GITHUB_PATH"
 
       - name: Dipendenze (Windows/MSYS2)
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -108,6 +127,9 @@ jobs:
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw
             mingw-w64-x86_64-soapysdr
+            mingw-w64-x86_64-soapyrtlsdr
+            mingw-w64-x86_64-soapyhackrf
+            mingw-w64-x86_64-hamlib
             mingw-w64-x86_64-nsis
             zip
 
@@ -123,15 +145,17 @@ jobs:
       # costruzione si ferma. Stiamo mettendo codice di qualcun altro dentro
       # un pacchetto che firmiamo noi.
       #
-      # macOS non ha una versione della libreria: là il ColibriNANO non è
-      # supportato dal costruttore, e non c'è niente da includere.
+      # Il costruttore pubblica la libreria Linux soltanto x86-64. Non la
+      # copiamo nell'AppImage ARM64: un binario dell'architettura sbagliata
+      # farebbe comparire un backend che non può aprire la radio.
+      # macOS non ha una versione della libreria.
       - name: Libreria ColibriNANO
-        if: matrix.os != 'macos-14'
+        if: matrix.platform == 'windows' || (matrix.platform == 'linux' && matrix.arch == 'x86_64')
         shell: bash
         run: |
           BASE=https://raw.githubusercontent.com/maksimus1210/ColibriNANO_lib/master/library
           mkdir -p third_party/colibrinano
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          if [ "${{ matrix.platform }}" = "windows" ]; then
             URL="$BASE/x64/colibrinano_lib.dll"
             OUT=third_party/colibrinano/colibrinano_lib.dll
             WANT=8caa01142accc37b48dbc0fa7a1cf4c87e8c73ca2a1711d731a6d3cdc751c1dd
@@ -209,7 +233,7 @@ jobs:
       - name: Compila
         run: |
           QT_DEPLOY_ARG=""
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.platform }}" = "macos" ]; then
             # Qt 6.11/macdeployqt has a broken CMake-generated QML plugin
             # symlink path on this runner; deploy the finished app explicitly.
             QT_DEPLOY_ARG="-DDSDR_QT_CMAKE_DEPLOY=OFF"
@@ -220,7 +244,10 @@ jobs:
           # nessuna radio tradizionale — perché la riga che lo diceva era una
           # fra trecento e nessuno l'ha letta.
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-                -DDSDR_STRICT_BACKENDS=ON $QT_DEPLOY_ARG
+                -DDSDR_STRICT_BACKENDS=ON -DDSDR_BUNDLE_HAMLIB=ON \
+                -DDSDR_BUNDLE_SOAPY=ON \
+                -DDSDR_SOAPY_BUNDLE_MODULES="librtlsdrSupport;libHackRFSupport" \
+                $QT_DEPLOY_ARG
           cmake --build build
 
       - name: Test
@@ -241,19 +268,45 @@ jobs:
           fi
           cmake --install build --prefix "$PREFIX"
 
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.platform }}" = "macos" ]; then
             macdeployqt "$PREFIX/decodium-sdr.app" \
               -qmldir="$PWD/src/app/qml" -no-codesign -always-overwrite
             cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-              -P build/BundleMacOSSoapyRtlSdr.cmake
-            # macdeployqt and the custom RTL-SDR step both rewrite Mach-O
+              -P build/BundleMacOSSoapyModules.cmake
+            cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -P build/BundleMacOSHamlib.cmake
+            # macdeployqt and the custom Soapy bundle step both rewrite Mach-O
             # files. Remove any linker/ad-hoc signatures left by Homebrew or
             # Qt after those rewrites; otherwise macOS can terminate the
             # bundle with "Code Signature Invalid". A notarized release must
             # replace this with one final Developer ID signing pass.
             find "$PREFIX/decodium-sdr.app/Contents" -type f \
-              \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \) \
+              \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
+                 -o -path '*/Resources/hamlib/bin/*' \) \
               -exec codesign --remove-signature {} \; 2>/dev/null || true
+            # Anche i driver Soapy sono Mach-O caricati dopo l'avvio: ogni
+            # componente eseguibile riceve una firma ad-hoc coerente. Una
+            # release notarizzata sostituirà tutto con una firma Developer ID.
+            find "$PREFIX/decodium-sdr.app/Contents" -type f \
+              \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
+                 -o -path '*/Resources/hamlib/bin/*' \) -print0 | \
+              xargs -0 -n1 codesign --force --sign -
+            codesign --force --sign - "$PREFIX/decodium-sdr.app"
+          fi
+
+      - name: I moduli Soapy sono nel pacchetto
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            bash scripts/check-soapy-package.sh staging/decodium-sdr.app \
+              librtlsdrSupport libHackRFSupport
+            if otool -L staging/decodium-sdr.app/Contents/lib/SoapySDR/modules0.8/* | \
+                 grep -E '/(opt/homebrew|usr/local|opt/local)/'; then
+              echo "::error::il bundle macOS conserva dipendenze del prefisso di sviluppo"
+              exit 1
+            fi
+          else
+            bash scripts/check-soapy-package.sh staging librtlsdrSupport libHackRFSupport
           fi
 
       # Il pacchetto Windows è l'unico che si costruisce dove tutte le
@@ -263,12 +316,12 @@ jobs:
       # dice niente. Il controllo rifà quel percorso qui, dove costa un
       # secondo e non è ancora partito niente verso nessuno.
       - name: Il pacchetto Windows è autosufficiente
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'windows'
         run: bash scripts/check-windows-package.sh staging
 
       # ── Confezionamento ─────────────────────────────────────────────────
       - name: AppImage (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.platform == 'linux'
         shell: bash
         run: |
           # AppDir con la struttura che linuxdeploy si aspetta.
@@ -293,21 +346,32 @@ jobs:
           # linuxdeploy rifiuta — dopo aver già fatto tutto il resto del lavoro.
           cp packaging/icons/it.decodium.sdr.png AppDir/usr/share/icons/hicolor/256x256/apps/
 
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          ARCH="${{ matrix.arch }}"
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${ARCH}.AppImage"
+          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${ARCH}.AppImage"
           chmod +x linuxdeploy*.AppImage
 
           export QML_SOURCES_PATHS="$PWD/src/app/qml"
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt \
+          SOAPY_MODULE_ARGS=()
+          while IFS= read -r source_module; do
+            [ -z "$source_module" ] && continue
+            staged_module="AppDir/usr/lib/SoapySDR/modules0.8/$(basename "$source_module")"
+            test -f "$staged_module"
+            SOAPY_MODULE_ARGS+=(--executable "$staged_module")
+          done < build/dsdr-soapy-modules.txt
+          "./linuxdeploy-${ARCH}.AppImage" --appdir AppDir --plugin qt \
             --output appimage --executable AppDir/usr/bin/decodium-sdr \
+            --executable AppDir/usr/bin/rigctld \
+            "${SOAPY_MODULE_ARGS[@]}" \
             --desktop-file AppDir/usr/share/applications/it.decodium.sdr.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/it.decodium.sdr.png
 
-          mv *.AppImage ${{ matrix.artifact }} 2>/dev/null || \
-            mv DECODIUM*.AppImage ${{ matrix.artifact }}
+          OUTPUT=$(find . -maxdepth 1 -type f -name 'DECODIUM*.AppImage' -print -quit)
+          test -n "$OUTPUT"
+          mv "$OUTPUT" "${{ matrix.artifact }}"
 
       - name: DMG (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.platform == 'macos'
         shell: bash
         run: |
           # Solo `staging`: nella build tree c'è un secondo bundle, quello
@@ -319,13 +383,10 @@ jobs:
             echo "::error::bundle .app non trovato in staging/"; exit 1
           fi
 
-          RTLSDR_MODULE="$APP/Contents/PlugIns/SoapySDR/modules0.8/librtlsdrSupport.so"
-          if [ ! -f "$RTLSDR_MODULE" ]; then
-            echo "::error::modulo SoapyRTLSDR assente dal bundle macOS"; exit 1
-          fi
-          test -f "$APP/Contents/Frameworks/librtlsdr.0.dylib"
-          test -f "$APP/Contents/Frameworks/libusb-1.0.0.dylib"
-          echo "SoapyRTLSDR e runtime USB presenti nel bundle"
+          bash scripts/check-soapy-package.sh "$APP" librtlsdrSupport libHackRFSupport
+          test -x "$APP/Contents/Resources/hamlib/bin/rigctld"
+          test -f "$APP/Contents/Frameworks/libhamlib.4.dylib"
+          echo "SoapyRTLSDR, SoapyHackRF, Hamlib e runtime presenti nel bundle"
 
           mkdir -p dmgroot
           cp -R "$APP" dmgroot/
@@ -340,7 +401,7 @@ jobs:
           echo "::warning::DMG non firmato: serve un Apple Developer ID per la notarizzazione"
 
       - name: Installer e ZIP (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'windows'
         run: |
           # L'installatore lo fa CPack, dalla stessa regola di `install()` da
           # cui esce lo staging: due strade diverse per lo stesso contenuto
@@ -362,7 +423,7 @@ jobs:
       # ISCC è preinstallato sui runner Windows di GitHub. Il percorso è
       # quello di sistema e non passa dal PATH di MSYS2, che non lo conosce.
       - name: Installatore Inno Setup (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'windows'
         shell: bash
         run: |
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
@@ -380,14 +441,14 @@ jobs:
              "DECODIUM_SDR_${DSDR_TAG}_windows-x64-innosetup.exe"
 
       - uses: actions/upload-artifact@v4
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'windows'
         with:
           name: DECODIUM_SDR_${{ env.DSDR_TAG }}_windows-x64-innosetup.exe
           path: DECODIUM_SDR_${{ env.DSDR_TAG }}_windows-x64-innosetup.exe
           retention-days: 14
 
       - name: Carica anche lo ZIP portable (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: DECODIUM_SDR_${{ env.DSDR_TAG }}_windows-x64.zip
@@ -422,8 +483,8 @@ jobs:
         shell: bash
         run: |
           case "${{ matrix.artifact }}" in
-            *.AppImage) FINAL="DECODIUM_SDR_${DSDR_TAG}_linux-x86_64.AppImage" ;;
-            *.dmg)      FINAL="DECODIUM_SDR_${DSDR_TAG}_macos-arm64.dmg" ;;
+            *.AppImage) FINAL="DECODIUM_SDR_${DSDR_TAG}_linux-${{ matrix.arch }}.AppImage" ;;
+            *.dmg)      FINAL="DECODIUM_SDR_${DSDR_TAG}_macos-${{ matrix.arch }}.dmg" ;;
             *)          FINAL="DECODIUM_SDR_${DSDR_TAG}_windows-x64-setup.exe" ;;
           esac
           mv "${{ matrix.artifact }}" "$FINAL"
@@ -439,7 +500,7 @@ jobs:
     name: Pubblica la bozza di release
     needs: package
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       # Il checkout serve solo a leggere il nome della versione da
       # `CMakeLists.txt`: senza, il passo qui sotto cerca un file che in questo
@@ -469,8 +530,8 @@ jobs:
           body: |
             ## DECODIUM SDR ${{ github.ref_name }} «${{ env.DSDR_NAME }}»
 
-            Pacchetti per Linux (AppImage), macOS (DMG) e Windows — installatore
-            e ZIP portable.
+            Pacchetti per Linux x86-64/ARM64 (AppImage), macOS Apple
+            Silicon/Intel (DMG) e Windows x64 — installatore e ZIP portable.
 
             > Il DMG non è ancora firmato né notarizzato: al primo avvio macOS
             > chiederà conferma. Serve un Apple Developer ID.

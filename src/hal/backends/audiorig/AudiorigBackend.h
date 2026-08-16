@@ -40,6 +40,7 @@ class MicSource;
 namespace dsdr::hal::audiorig {
 
 class CatController;
+struct DiscoveryLifecycle;
 
 class AudiorigBackend : public IRadioBackend
 {
@@ -89,8 +90,8 @@ public:
     QVariant nativeCommand(const QString &command, const QVariantMap &args) override;
 
 private slots:
-    void onCatState(qint64 frequencyHz, int mode, bool transmitting, int sMeterRaw,
-                    double signalDbm);
+    void onCatState(qint64 frequencyHz, int mode, bool transmitting, bool pttKnown,
+                    int sMeterRaw, double signalDbm);
     void onCatLost(const QString &reason);
 
 private:
@@ -131,12 +132,11 @@ private:
     QTimer *m_publishTimer = nullptr;
 
     /// La sonda delle porte seriali vive su un thread suo e può durare
-    /// secondi. Va aspettata prima che il backend muoia: un thread che tiene
-    /// un puntatore a un oggetto distrutto non sbaglia subito — sbaglia
-    /// quando gli capita, e nella conformance suite capitava dentro il test
-    /// di un altro backend.
+    /// secondi. Il suo stato resta vivo finché il thread non si ferma, ma le
+    /// consegne verso il backend si chiudono prima della distruzione: cambiare
+    /// sorgente non deve aspettare un timeout CAT sul thread grafico.
     QPointer<QThread> m_prober;
-    std::atomic<bool> m_abortDiscovery{false};
+    std::shared_ptr<DiscoveryLifecycle> m_discoveryLifecycle;
     quint64 m_sequence = 0;
     quint64 m_publishedFrames = 0;
 };

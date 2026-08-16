@@ -30,7 +30,7 @@ CatController::~CatController()
 
 void CatController::open(const QString &portName, int baudRate, int dataBits,
                          int parity, int stopBits, int flowControl,
-                         bool dtr, bool rts)
+                         bool dtr, bool rts, int hamlibModel)
 {
     if (!m_driver)
         return;
@@ -43,6 +43,7 @@ void CatController::open(const QString &portName, int baudRate, int dataBits,
     serial.flowControl = flowControl;
     serial.dtr = dtr;
     serial.rts = rts;
+    serial.hamlibModel = hamlibModel;
 
     const QList<int> candidates = m_driver->candidateBaudRates();
 
@@ -79,15 +80,24 @@ void CatController::open(const QString &portName, int baudRate, int dataBits,
         m_timer->setInterval(kDefaultPollMs);
         connect(m_timer, &QTimer::timeout, this, &CatController::poll);
     }
+    if (!m_pttTimer) {
+        m_pttTimer = new QTimer(this);
+        // Il PTT protegge hardware reale: non lasciamo che il timer coarse
+        // allarghi un intervallo breve per risparmiare energia.
+        m_pttTimer->setTimerType(Qt::PreciseTimer);
+        connect(m_pttTimer, &QTimer::timeout, this, &CatController::pollPtt);
+    }
     m_failures = 0;
+    m_pttReported = false;
     m_timer->start();
     poll();   // la prima lettura subito: il pannello non deve aspettare
+    if (m_pttPollIntervalMs > 0)
+        m_pttTimer->start(m_pttPollIntervalMs);
 }
 
 void CatController::close()
 {
-    if (m_timer)
-        m_timer->stop();
+    stopPolling();
     if (m_driver)
         m_driver->close();
 }
@@ -98,14 +108,31 @@ void CatController::setPollInterval(int milliseconds)
         m_timer->setInterval(milliseconds);
 }
 
+void CatController::setPttPollInterval(int milliseconds)
+{
+    m_pttPollIntervalMs = qMax(0, milliseconds);
+    if (!m_pttTimer)
+        return;
+    if (m_pttPollIntervalMs == 0) {
+        m_pttTimer->stop();
+        return;
+    }
+    m_pttTimer->start(m_pttPollIntervalMs);
+    qCInfo(dsdrHal) << "CAT: protezione PTT dedicata ogni" << m_pttPollIntervalMs << "ms";
+}
+
 void CatController::poll()
 {
     if (!m_driver || !m_driver->isOpen())
         return;
 
     if (!m_driver->poll(m_state)) {
+        // Per un panadapter IF un CAT che tace non è RX: al primo timeout si
+        // ritira il consenso al flusso IQ, senza aspettare la diagnostica di
+        // «CAT perso» dopo tre tentativi.
+        reportPttUnknown();
         if (++m_failures >= kFailuresBeforeLost) {
-            m_timer->stop();
+            stopPolling();
             emit lost(tr("La radio ha smesso di rispondere al CAT."));
         }
         return;
@@ -113,7 +140,63 @@ void CatController::poll()
 
     m_failures = 0;
     emit stateRead(m_state.frequencyHz, static_cast<int>(m_state.mode),
-                   m_state.transmitting, m_state.sMeterRaw, m_state.signalDbm);
+                   m_state.transmitting, m_state.pttKnown,
+                   m_state.sMeterRaw, m_state.signalDbm);
+}
+
+void CatController::pollPtt()
+{
+    if (!m_driver || !m_driver->isOpen())
+        return;
+
+    if (!m_driver->pollPtt(m_state)) {
+        // Qui non c'è nessun compromesso fra continuità audio e sicurezza:
+        // se non possiamo provare che la radio è in RX, l'RTL-SDR deve essere
+        // spento subito. La riconnessione resta gestita dai tre fallimenti.
+        reportPttUnknown();
+        if (++m_failures >= kFailuresBeforeLost) {
+            stopPolling();
+            emit lost(tr("La radio ha smesso di rispondere al CAT."));
+        }
+        return;
+    }
+
+    m_failures = 0;
+    const bool changed = !m_pttReported || m_state.pttKnown != m_lastPttKnown
+        || (m_state.pttKnown && m_state.transmitting != m_lastTransmitting);
+    if (!changed)
+        return;
+
+    m_pttReported = true;
+    m_lastPttKnown = m_state.pttKnown;
+    m_lastTransmitting = m_state.transmitting;
+    // Frequenza zero contraddistingue il percorso di sicurezza: il consumer
+    // reagisce al PTT ma non ridisegna né ritocca il VFO per una lettura che
+    // deliberatamente non contiene lo stato completo.
+    emit stateRead(0, static_cast<int>(m_state.mode),
+                   m_state.transmitting, m_state.pttKnown,
+                   m_state.sMeterRaw, m_state.signalDbm);
+}
+
+void CatController::reportPttUnknown()
+{
+    m_state.pttKnown = false;
+    m_state.transmitting = false;
+    if (m_pttReported && !m_lastPttKnown)
+        return;
+    m_pttReported = true;
+    m_lastPttKnown = false;
+    m_lastTransmitting = false;
+    emit stateRead(0, static_cast<int>(m_state.mode), false, false,
+                   m_state.sMeterRaw, m_state.signalDbm);
+}
+
+void CatController::stopPolling()
+{
+    if (m_timer)
+        m_timer->stop();
+    if (m_pttTimer)
+        m_pttTimer->stop();
 }
 
 void CatController::setFrequency(qint64 hz)

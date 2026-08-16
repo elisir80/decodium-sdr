@@ -25,6 +25,31 @@ decodium-sdr --iq-module /percorso/modulo.dylib
 Lo stesso parametro vale per `.so` e `.dll` sulle altre piattaforme. Anche
 senza parametro, Decodium cerca moduli nel bundle macOS
 `Contents/PlugIns/DecodiumSdr` e nella cartella utente
-`QStandardPaths::AppLocalDataLocation/modules`. I moduli scoperti vengono
-registrati nel catalogo UI con nome, percorso e stato di caricamento. La suite
-di integrazione carica un modulo reale e verifica che riceva frame IQ.
+`QStandardPaths::AppLocalDataLocation/modules`.
+
+## Gestore moduli
+
+La ricerca non carica le librerie: la scansione riempie il catalogo con
+percorso, provenienza, presenza su disco, stato e ultimo errore, ma non esegue
+codice esterno. I moduli scoperti per la prima volta sono disabilitati. Quelli
+che l'operatore ha abilitato in precedenza vengono invece ricaricati all'avvio;
+`--iq-module` registra, abilita e carica esplicitamente il percorso passato.
+
+Dal menu **Strumenti → Scheduler e moduli IQ** è possibile:
+
+- aggiungere cartelle o un file di modulo al catalogo;
+- aggiornare la discovery senza riavviare;
+- abilitare/disabilitare una singola libreria, con unload reale sul thread DSP;
+- leggere gli stati `ready`, `active`, `disabled` ed `error` e il motivo del
+  rifiuto ABI/caricamento;
+- dimenticare un file aggiunto manualmente, senza cancellarlo dal disco.
+
+Il contratto ABI v1 non espone metadati prima del caricamento: fino
+all'attivazione il nome mostrato è quello del file, dopo è il `name` dichiarato
+dal modulo. Le librerie native non sono isolate in un processo separato:
+abilitare un modulo equivale a eseguire codice locale e va fatto solo con file
+attendibili. Il callback resta nel thread DSP e deve quindi rispettare il
+vincolo originario di non allocare, bloccare o fare I/O.
+
+La suite di integrazione carica un modulo reale, verifica il callback sul
+baseband e controlla l'abilitazione/disabilitazione individuale.

@@ -3,6 +3,8 @@
 
 #include "dsp/SpscRing.h"
 #include "hal/HalLog.h"
+#include "hal/backends/rtlsdr/RtlSdrCapabilities.h"
+#include "hal/backends/rtlsdr/RtlSdrIfReference.h"
 #include "hal/backends/rtlsdr/RtlSdrWorker.h"
 
 #include <rtl-sdr.h>
@@ -18,12 +20,175 @@ namespace dsdr::hal::rtlsdr {
 namespace {
 
 constexpr std::size_t kIqRingFloats = 1 << 23;
+constexpr qint64 kMinimumTuningFrequencyHz = 100'000;
+constexpr qint64 kMaximumTuningFrequencyHz = 1'766'000'000;
 QString usbString(const char *value)
 {
     return value ? QString::fromUtf8(value) : QString();
 }
 
 } // namespace
+
+QString RtlSdrBackend::deviceIdentity() const
+{
+    return QStringList{m_profile.product,
+                       m_device.model,
+                       m_device.displayName,
+                       m_device.extra.value(QStringLiteral("product")).toString()}
+        .join(QLatin1Char(' '));
+}
+
+bool RtlSdrBackend::autoIfUsesLsb() const
+{
+    return ifReferenceUsesLsb(m_channels, m_activeDemod);
+}
+
+qint64 RtlSdrBackend::ifReferenceFrequency(qint64 fallbackFrequencyHz) const
+{
+    // Un'IF fissa descrive una radio, non un'intera banda RF. Il primo RX e'
+    // quindi il suo VFO logico; gli eventuali RX aggiuntivi restano ricevitori
+    // virtuali all'interno della stessa finestra IQ.
+    auto reference = m_channels.cend();
+    for (auto it = m_channels.cbegin(); it != m_channels.cend(); ++it) {
+        if (reference == m_channels.cend() || it.key() < reference.key())
+            reference = it;
+    }
+    return reference == m_channels.cend() ? fallbackFrequencyHz : reference->frequencyHz;
+}
+
+TuningPlan RtlSdrBackend::tuningPlanFor(qint64 dialFrequencyHz) const
+{
+    TuningRequest request;
+    request.dialFrequencyHz = dialFrequencyHz;
+    request.sampleRate = m_sampleRate;
+    request.ifEnabled = m_ifEnabled;
+    request.ifFrequencyHz = m_ifFrequencyHz;
+    request.usbShiftHz = m_ifUsbShiftHz;
+    request.lsbShiftHz = m_ifLsbShiftHz;
+    request.sideband = m_ifSideband == 2
+        || (m_ifSideband == 0 && autoIfUsesLsb()) ? IfSideband::Lsb : IfSideband::Usb;
+    request.spectrumInverted = m_ifSpectrumInverted;
+    request.logicalSelectedOffsetHz = m_ifEnabled
+        ? ifReferenceFrequency(dialFrequencyHz) - dialFrequencyHz : 0;
+    return makeTuningPlan(request, kMinimumTuningFrequencyHz, kMaximumTuningFrequencyHz);
+}
+
+bool RtlSdrBackend::hardwarePlanIsSupported(const TuningPlan &plan) const
+{
+    if (!m_profile.isValid())
+        return true;
+
+    qint64 minimum = m_profile.minFrequencyHz;
+    qint64 maximum = m_profile.maxFrequencyHz;
+    if (isRtlSdrBlogV4Identity(deviceIdentity())) {
+        // Il V4 commuta autonomamente il proprio upconverter sotto la banda
+        // del tuner: librtlsdr lo gestisce, anche se alcune versioni di
+        // `get_tuner_type()` continuano a dichiarare 24 MHz come minimo.
+        minimum = kDirectSamplingMinimumFrequencyHz;
+    } else if (m_directSampling != 0) {
+        minimum = kDirectSamplingMinimumFrequencyHz;
+        maximum = kDirectSamplingMaximumFrequencyHz;
+    }
+
+    return plan.selectedInputFrequencyHz >= minimum
+        && plan.selectedInputFrequencyHz <= maximum
+        && plan.hardwareCenterFrequencyHz >= minimum
+        && plan.hardwareCenterFrequencyHz <= maximum;
+}
+
+bool RtlSdrBackend::applyTuningPlan(qint64 dialFrequencyHz, bool notifyCenter)
+{
+    const TuningPlan plan = tuningPlanFor(dialFrequencyHz);
+    if (m_directSampling != 0) {
+        const DirectSamplingBlockReason reason = directSamplingBlockReason(
+            deviceIdentity(), plan.selectedInputFrequencyHz);
+        if (reason != DirectSamplingBlockReason::None) {
+            reportError(BackendError::Unsupported,
+                        reason == DirectSamplingBlockReason::BlogV4UsesUpconverter
+                            ? tr("RTL-SDR Blog V4 usa l'upconverter HF: il direct sampling Q ADC non è disponibile.")
+                            : tr("Il direct sampling RTL-SDR è disponibile solo tra 500 kHz e 24 MHz."));
+            return false;
+        }
+    }
+    if (!hardwarePlanIsSupported(plan)) {
+        reportError(BackendError::Unsupported,
+                    tr("Il percorso RTL-SDR selezionato non copre %1 Hz.")
+                        .arg(plan.selectedInputFrequencyHz));
+        return false;
+    }
+
+    const bool hardwareFrequencyChanged = m_hardwareCenterHz != plan.hardwareCenterFrequencyHz;
+    const bool basebandTransformChanged = !qFuzzyCompare(m_appliedBasebandTranslationHz + 1.0,
+                                                          plan.basebandTranslationHz + 1.0)
+        || m_appliedSpectrumInverted != plan.spectrumInverted;
+    const bool centerChanged = m_centerHz != plan.logicalCenterFrequencyHz;
+    m_centerHz = plan.logicalCenterFrequencyHz;
+    m_hardwareCenterHz = plan.hardwareCenterFrequencyHz;
+    m_appliedBasebandTranslationHz = plan.basebandTranslationHz;
+    m_appliedSpectrumInverted = plan.spectrumInverted;
+    if (m_worker && basebandTransformChanged) {
+        // La traslazione e' solo DSP e viene applicata nel callback: non
+        // fermare USB per un movimento fine del VFO, altrimenti l'audio si
+        // interrompe durante il trascinamento.
+        m_worker->requestBasebandTransform(plan.basebandTranslationHz,
+                                           plan.spectrumInverted);
+    }
+    if (m_worker && hardwareFrequencyChanged) {
+        // I campioni nel ring appartengono al piano precedente: conservarli
+        // farebbe disegnare per un istante IF e RF sulla stessa scala.
+        m_iqRing->clear();
+        m_worker->requestFrequency(plan.hardwareCenterFrequencyHz);
+    }
+    qCInfo(dsdrHal) << "rtlsdr: piano di sintonia"
+                    << "dial" << plan.dialFrequencyHz
+                    << "input" << plan.selectedInputFrequencyHz
+                    << "hardware" << plan.hardwareCenterFrequencyHz
+                    << "shift" << plan.basebandTranslationHz
+                    << "RX offset" << plan.logicalSelectedOffsetHz
+                    << "if" << plan.ifEnabled
+                    << "inverted" << plan.spectrumInverted
+                    << "IF policy" << m_ifSideband
+                    << "auto LSB" << autoIfUsesLsb();
+    if (notifyCenter && centerChanged)
+        emit centerFrequencyChanged(m_centerHz);
+    return true;
+}
+
+QVariantMap RtlSdrBackend::directSamplingInfo() const
+{
+    const TuningPlan plan = tuningPlanFor(m_centerHz);
+    const DirectSamplingBlockReason reason = directSamplingBlockReason(
+        deviceIdentity(), plan.selectedInputFrequencyHz);
+    const bool v4 = isRtlSdrBlogV4Identity(deviceIdentity());
+    const bool rangeOk = isDirectSamplingFrequency(plan.selectedInputFrequencyHz);
+    QString message;
+    if (v4) {
+        message = tr("RTL-SDR Blog V4 usa il tuner con upconverter HF automatico: Q ADC non disponibile.");
+    } else if (!rangeOk) {
+        message = tr("Direct sampling Q ADC: sintonizzare prima fra 500 kHz e 24 MHz.");
+    } else {
+        message = tr("Q ADC: ricezione HF diretta fra 500 kHz e 24 MHz.");
+    }
+    return {{QStringLiteral("supported"), !v4},
+            {QStringLiteral("canEnableNow"), reason == DirectSamplingBlockReason::None},
+            {QStringLiteral("active"), m_directSampling != 0},
+            {QStringLiteral("minimumHz"), kDirectSamplingMinimumFrequencyHz},
+            {QStringLiteral("maximumHz"), kDirectSamplingMaximumFrequencyHz},
+            {QStringLiteral("message"), message}};
+}
+
+QVariantMap RtlSdrBackend::ifSettings() const
+{
+    return {{QStringLiteral("enabled"), m_ifEnabled},
+            {QStringLiteral("frequencyHz"), m_ifFrequencyHz},
+            {QStringLiteral("sideband"), m_ifSideband == 2 ? QStringLiteral("lsb")
+                                                             : m_ifSideband == 1 ? QStringLiteral("usb")
+                                                                                 : QStringLiteral("auto")},
+            {QStringLiteral("usbShiftHz"), m_ifUsbShiftHz},
+            {QStringLiteral("lsbShiftHz"), m_ifLsbShiftHz},
+            {QStringLiteral("spectrumInverted"), m_ifSpectrumInverted},
+            {QStringLiteral("hardwareCenterHz"), m_hardwareCenterHz}};
+}
 
 RtlSdrBackend::RtlSdrBackend(QObject *parent)
     : IRadioBackend(parent)
@@ -45,8 +210,15 @@ QString RtlSdrBackend::displayName() const
 
 BackendCapabilities RtlSdrBackend::capabilities() const
 {
-    if (m_profile.isValid())
-        return capabilitiesFrom(m_profile);
+    if (m_profile.isValid()) {
+        BackendCapabilities caps = capabilitiesFrom(m_profile);
+        // RtlSdrWorker riceve da librtlsdr il nome generico del tuner. Il nome
+        // USB conservato nel descriptor e' quello che identifica davvero una
+        // Blog V4, il cui upconverter copre HF anche in modalita' Tuner.
+        if (isRtlSdrBlogV4Identity(deviceIdentity()))
+            caps.minFrequencyHz = kDirectSamplingMinimumFrequencyHz;
+        return caps;
+    }
 
     RtlSdrDeviceProfile profile;
     profile.index = 0;
@@ -77,6 +249,17 @@ void RtlSdrBackend::reportError(BackendError::Code code, const QString &message,
     emit errorOccurred(error);
     if (fatal)
         setState(BackendState::Error);
+}
+
+void RtlSdrBackend::setIqInputBlocked(bool blocked)
+{
+    if (m_iqInputBlocked == blocked)
+        return;
+    m_iqInputBlocked = blocked;
+    if (blocked)
+        m_iqRing->clear();
+    if (m_worker)
+        m_worker->requestStreamPause(blocked);
 }
 
 void RtlSdrBackend::startDiscovery()
@@ -189,30 +372,48 @@ void RtlSdrBackend::open(const DeviceDescriptor &device)
             Qt::DirectConnection);
 
     m_worker = worker;
+    worker->requestStreamPause(m_iqInputBlocked);
+    const TuningPlan initialPlan = tuningPlanFor(m_centerHz);
+    m_hardwareCenterHz = initialPlan.hardwareCenterFrequencyHz;
+    m_appliedBasebandTranslationHz = initialPlan.basebandTranslationHz;
+    m_appliedSpectrumInverted = initialPlan.spectrumInverted;
     worker->requestGain(m_gainDb);
-    worker->requestPpm(m_ppm);
+    // Un device appena aperto parte sempre senza correzione. Evitare la
+    // scrittura esplicita di 0: alcuni V4 la rifiutano pur ricevendo
+    // perfettamente e trasformano un valore predefinito in un falso warning.
+    if (m_ppm != 0)
+        worker->requestPpm(m_ppm);
     worker->requestBiasTee(m_biasTee);
-    worker->requestDirectSampling(m_directSampling);
+    // La modalita' normale del tuner e' gia' attiva dopo rtlsdr_open().
+    // Chiedere inutilmente "direct sampling 0" fa stampare diagnostica
+    // non strutturata da librtlsdr a ogni avvio.
+    if (m_directSampling != 0)
+        worker->requestDirectSampling(m_directSampling);
+    worker->requestBasebandTransform(initialPlan.basebandTranslationHz,
+                                     initialPlan.spectrumInverted);
     if (m_offsetTuning)
         worker->requestOffsetTuning(true);
     m_thread->start();
     QMetaObject::invokeMethod(worker, "openAndRun", Qt::QueuedConnection,
                               Q_ARG(int, index),
                               Q_ARG(QString, device.serial),
-                              Q_ARG(qint64, m_centerHz),
+                              Q_ARG(qint64, initialPlan.hardwareCenterFrequencyHz),
                               Q_ARG(double, m_sampleRate));
 }
 
 void RtlSdrBackend::onDeviceOpened(const RtlSdrDeviceProfile &profile)
 {
     m_profile = profile;
+    m_profile.directSampling = m_directSampling != 0;
     m_autoGainDb = safeAutoGainTenthsDb(profile.gainTenthsDb) / 10.0;
     m_gainReductionDb = 0.0;
     const BackendCapabilities caps = capabilities();
-    if (!caps.coversFrequency(m_centerHz) && caps.maxFrequencyHz > caps.minFrequencyHz) {
+    if (!applyTuningPlan(m_centerHz, false)) {
+        // Il profilo appena letto può rivelare che la frequenza iniziale non
+        // è nella via scelta. Si torna a una frequenza dichiarata, invece di
+        // lasciare un centro grafico che l'hardware non sta ricevendo.
         m_centerHz = std::clamp(m_centerHz, caps.minFrequencyHz, caps.maxFrequencyHz);
-        if (m_worker)
-            m_worker->requestFrequency(m_centerHz);
+        applyTuningPlan(m_centerHz, false);
     }
     if (!caps.sampleRates.contains(m_sampleRate)) {
         m_sampleRate = caps.defaultSampleRate;
@@ -257,21 +458,25 @@ void RtlSdrBackend::close()
 
 void RtlSdrBackend::setCenterFrequency(qint64 hz)
 {
-    // `open()` returns before the worker has read the tuner profile. Allow a
-    // startup tune to be queued in that interval; hardware-range validation
-    // remains active once the profile is ready.
-    if (m_profile.isValid() && !capabilities().coversFrequency(hz)) {
-        reportError(BackendError::Unsupported, tr("Il device non copre %1 Hz.").arg(hz));
-        return;
-    }
     if (m_centerHz == hz)
         return;
-    m_centerHz = hz;
-    if (m_worker)
-        m_worker->requestFrequency(hz);
-    qCInfo(dsdrHal) << "rtlsdr: centro richiesto" << hz
-                    << (m_profile.isValid() ? "profilo pronto" : "profilo in caricamento");
-    emit centerFrequencyChanged(hz);
+    // Prima del profilo il worker non sa ancora che chiavetta sia: si accoda
+    // comunque la sintonia e la si normalizza appena la lettura è pronta.
+    if (!m_profile.isValid()) {
+        m_centerHz = hz;
+        const TuningPlan plan = tuningPlanFor(hz);
+        m_hardwareCenterHz = plan.hardwareCenterFrequencyHz;
+        m_appliedBasebandTranslationHz = plan.basebandTranslationHz;
+        m_appliedSpectrumInverted = plan.spectrumInverted;
+        if (m_worker) {
+            m_worker->requestBasebandTransform(plan.basebandTranslationHz,
+                                               plan.spectrumInverted);
+            m_worker->requestFrequency(plan.hardwareCenterFrequencyHz);
+        }
+        emit centerFrequencyChanged(hz);
+        return;
+    }
+    applyTuningPlan(hz);
 }
 
 void RtlSdrBackend::setSampleRate(double rate)
@@ -283,7 +488,12 @@ void RtlSdrBackend::setSampleRate(double rate)
     }
     if (qFuzzyCompare(m_sampleRate, rate))
         return;
+    const double previousRate = m_sampleRate;
     m_sampleRate = rate;
+    if (!applyTuningPlan(m_centerHz, false)) {
+        m_sampleRate = previousRate;
+        return;
+    }
     if (m_worker)
         m_worker->requestSampleRate(rate);
     emit sampleRateChanged(rate);
@@ -302,10 +512,17 @@ ChannelId RtlSdrBackend::createRxChannel(const RxChannelConfig &config)
     }
     const ChannelId id = m_nextChannelId++;
     m_channels.insert(id, config);
+    m_activeDemod = config.mode;
+    if (m_ifEnabled && m_channels.size() == 1)
+        applyTuningPlan(m_centerHz, false);
     return id;
 }
 
-void RtlSdrBackend::destroyRxChannel(ChannelId channel) { m_channels.remove(channel); }
+void RtlSdrBackend::destroyRxChannel(ChannelId channel)
+{
+    if (m_channels.remove(channel) > 0 && m_ifEnabled)
+        applyTuningPlan(m_centerHz, false);
+}
 
 QList<ChannelId> RtlSdrBackend::channels() const
 {
@@ -322,13 +539,22 @@ void RtlSdrBackend::setFrequency(ChannelId channel, qint64 hz)
         return;
     }
     it->frequencyHz = hz;
+    if (m_ifEnabled)
+        applyTuningPlan(m_centerHz, false);
 }
 
 void RtlSdrBackend::setDemod(ChannelId channel, DemodMode mode)
 {
     auto it = m_channels.find(channel);
-    if (it != m_channels.end())
+    if (it != m_channels.end()) {
+        const bool autoSidebandWasLsb = autoIfUsesLsb();
         it->mode = mode;
+        m_activeDemod = mode;
+        const bool sidebandChanged = m_ifEnabled && m_ifSideband == 0
+            && autoSidebandWasLsb != autoIfUsesLsb();
+        if (sidebandChanged)
+            applyTuningPlan(m_centerHz, false);
+    }
 }
 
 void RtlSdrBackend::setFilter(ChannelId channel, int lowHz, int highHz)
@@ -381,6 +607,10 @@ SampleRing *RtlSdrBackend::spectrumStream(PanId pan) const
 
 double RtlSdrBackend::setGainReduction(double db)
 {
+    if (m_directSampling != 0) {
+        m_gainReductionDb = 0.0;
+        return 0.0;
+    }
     const double operatorGain = m_gainDb >= 0.0 ? m_gainDb : m_autoGainDb;
     const double minimumGain = m_profile.gainTenthsDb.isEmpty()
         ? 0.0 : *std::min_element(m_profile.gainTenthsDb.cbegin(),
@@ -399,10 +629,14 @@ double RtlSdrBackend::setGainReduction(double db)
 
 QVariant RtlSdrBackend::nativeCommand(const QString &command, const QVariantMap &args)
 {
+    if (command == QLatin1String("rtlsdr.directSamplingInfo"))
+        return directSamplingInfo();
+    if (command == QLatin1String("rtlsdr.ifSettings"))
+        return ifSettings();
     if (command == QLatin1String("rtlsdr.setGain")) {
         m_gainDb = args.value(QStringLiteral("db"), -1.0).toDouble();
         m_gainReductionDb = 0.0;
-        if (m_worker)
+        if (m_worker && m_directSampling == 0)
             m_worker->requestGain(m_gainDb);
         return m_gainDb;
     }
@@ -413,7 +647,7 @@ QVariant RtlSdrBackend::nativeCommand(const QString &command, const QVariantMap 
             ? 49.6 : m_profile.gainTenthsDb.last() / 10.0;
         return QVariantMap{{QStringLiteral("min"), min},
                            {QStringLiteral("max"), max},
-                           {QStringLiteral("hasAgc"), true}};
+                           {QStringLiteral("hasAgc"), m_directSampling == 0}};
     }
     if (command == QLatin1String("rtlsdr.setPpm")) {
         m_ppm = args.value(QStringLiteral("ppm"), 0).toInt();
@@ -423,6 +657,8 @@ QVariant RtlSdrBackend::nativeCommand(const QString &command, const QVariantMap 
     }
     if (command == QLatin1String("rtlsdr.ppm"))
         return m_ppm;
+    if (command == QLatin1String("rtlsdr.ppmSupported"))
+        return true;
     if (command == QLatin1String("rtlsdr.setBiasTee")) {
         m_biasTee = args.value(QStringLiteral("enabled"), false).toBool();
         if (m_worker)
@@ -432,20 +668,98 @@ QVariant RtlSdrBackend::nativeCommand(const QString &command, const QVariantMap 
     if (command == QLatin1String("rtlsdr.biasTee"))
         return m_biasTee;
     if (command == QLatin1String("rtlsdr.setDirectSampling")) {
-        const int mode = std::clamp(args.value(QStringLiteral("mode"), 0).toInt(), 0, 2);
+        const int requested = std::clamp(args.value(QStringLiteral("mode"), 0).toInt(), 0, 2);
+        // La scelta utile e verificata è il Q ADC. Conserviamo l'accettazione
+        // del vecchio valore I per compatibilità del comando, ma non esponiamo
+        // un percorso che non corrisponde al cablaggio HF convenzionale.
+        const int mode = requested == 0 ? 0 : 2;
+        if (mode != 0) {
+            const TuningPlan plan = tuningPlanFor(m_centerHz);
+            const DirectSamplingBlockReason reason = directSamplingBlockReason(
+                deviceIdentity(), plan.selectedInputFrequencyHz);
+            if (reason != DirectSamplingBlockReason::None) {
+                reportError(BackendError::Unsupported,
+                            reason == DirectSamplingBlockReason::BlogV4UsesUpconverter
+                                ? tr("RTL-SDR Blog V4 usa l'upconverter HF: direct sampling non selezionabile.")
+                                : tr("Per il direct sampling sintonizzare prima fra 500 kHz e 24 MHz."));
+                return m_directSampling;
+            }
+        }
+        const int previous = m_directSampling;
         m_directSampling = mode;
+        m_profile.directSampling = mode != 0;
+        if (!applyTuningPlan(m_centerHz, false)) {
+            m_directSampling = previous;
+            m_profile.directSampling = previous != 0;
+            return m_directSampling;
+        }
         if (m_worker)
             m_worker->requestDirectSampling(mode);
+        if (mode != 0 && m_offsetTuning) {
+            m_offsetTuning = false;
+            if (m_worker)
+                m_worker->requestOffsetTuning(false);
+        }
         emit capabilitiesChanged();
         return m_directSampling;
     }
     if (command == QLatin1String("rtlsdr.directSampling"))
         return m_directSampling;
     if (command == QLatin1String("rtlsdr.setOffsetTuning")) {
-        m_offsetTuning = args.value(QStringLiteral("enabled"), false).toBool();
+        const bool requested = args.value(QStringLiteral("enabled"), false).toBool();
+        if (requested && m_directSampling != 0) {
+            reportError(BackendError::Unsupported,
+                        tr("L'offset tuning del tuner non esiste nel direct sampling Q ADC."));
+            return false;
+        }
+        m_offsetTuning = requested;
         if (m_worker)
             m_worker->requestOffsetTuning(m_offsetTuning);
         return m_offsetTuning;
+    }
+    if (command == QLatin1String("rtlsdr.setIfSettings")) {
+        const bool oldEnabled = m_ifEnabled;
+        const qint64 oldFrequency = m_ifFrequencyHz;
+        const qint64 oldUsbShift = m_ifUsbShiftHz;
+        const qint64 oldLsbShift = m_ifLsbShiftHz;
+        const int oldSideband = m_ifSideband;
+        const bool oldInverted = m_ifSpectrumInverted;
+
+        m_ifEnabled = args.value(QStringLiteral("enabled"), false).toBool();
+        m_ifFrequencyHz = std::clamp(args.value(QStringLiteral("frequencyHz"),
+                                                 m_ifFrequencyHz).toLongLong(),
+                                       kMinimumTuningFrequencyHz, kMaximumTuningFrequencyHz);
+        m_ifUsbShiftHz = std::clamp(args.value(QStringLiteral("usbShiftHz"),
+                                                m_ifUsbShiftHz).toLongLong(),
+                                      qint64(-500'000), qint64(500'000));
+        m_ifLsbShiftHz = std::clamp(args.value(QStringLiteral("lsbShiftHz"),
+                                                m_ifLsbShiftHz).toLongLong(),
+                                      qint64(-500'000), qint64(500'000));
+        const QString sideband = args.value(QStringLiteral("sideband"),
+                                             QStringLiteral("auto")).toString().trimmed().toLower();
+        m_ifSideband = sideband == QLatin1String("lsb") ? 2
+                     : sideband == QLatin1String("usb") ? 1 : 0;
+        m_ifSpectrumInverted = args.value(QStringLiteral("spectrumInverted"), false).toBool();
+        const TuningPlan candidate = tuningPlanFor(m_centerHz);
+        const bool stagedForDirectSampling = m_ifEnabled && m_directSampling == 0
+            && !isRtlSdrBlogV4Identity(deviceIdentity())
+            && isDirectSamplingFrequency(candidate.selectedInputFrequencyHz)
+            && !hardwarePlanIsSupported(candidate);
+        if (stagedForDirectSampling) {
+            // Un VFO può stare in VHF mentre l'IF della radio è in HF. Il
+            // profilo IF va quindi memorizzato prima di poter selezionare il
+            // Q ADC: rifiutarlo qui renderebbe impossibile quella sequenza.
+            qCInfo(dsdrHal) << "rtlsdr: IF pronta, attendo direct sampling"
+                            << candidate.selectedInputFrequencyHz;
+        } else if (!applyTuningPlan(m_centerHz, false)) {
+            m_ifEnabled = oldEnabled;
+            m_ifFrequencyHz = oldFrequency;
+            m_ifUsbShiftHz = oldUsbShift;
+            m_ifLsbShiftHz = oldLsbShift;
+            m_ifSideband = oldSideband;
+            m_ifSpectrumInverted = oldInverted;
+        }
+        return ifSettings();
     }
     if (command == QLatin1String("rtlsdr.tuner"))
         return m_profile.tuner;

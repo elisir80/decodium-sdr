@@ -107,6 +107,32 @@ Rectangle {
             readonly property bool serialDriver: driverBox.currentIndex >= 0
                                                  && drivers.length > driverBox.currentIndex
                                                  && drivers[driverBox.currentIndex].id !== "rigctld"
+            readonly property bool hamlibLocalDriver: driverBox.currentIndex >= 0
+                                                      && drivers.length > driverBox.currentIndex
+                                                      && drivers[driverBox.currentIndex].id === "hamlib-local"
+            readonly property string manualEntryAction:
+                Session.nativeCommand("device.manualEntryAction", {})
+                || qsTr("METTI NELL'ELENCO")
+            readonly property string manualEntryHint:
+                Session.nativeCommand("device.manualEntryHint", {}) || ""
+            // L'elenco arriva dal rigctld installato: non promettiamo una
+            // radio in una lista scritta a mano se Hamlib non la supporta.
+            property var hamlibModels: hamlibLocalDriver
+                                      ? (Session.nativeCommand("device.hamlibModels", {}) || [])
+                                      : []
+            property var filteredHamlibModels: {
+                const needle = hamlibModelSearch.text.trim().toLowerCase()
+                if (!needle)
+                    return hamlibModels
+                const found = []
+                for (let i = 0; i < hamlibModels.length; ++i) {
+                    const candidate = hamlibModels[i]
+                    if (String(candidate.id).indexOf(needle) >= 0
+                            || String(candidate.label).toLowerCase().indexOf(needle) >= 0)
+                        found.push(candidate)
+                }
+                return found
+            }
 
             Settings {
                 id: manualRadioSettings
@@ -121,6 +147,7 @@ Rectangle {
                 property int flowControl: -1
                 property bool dtr: false
                 property bool rts: false
+                property int hamlibModelId: 2011
             }
 
             function driverIndex(driverId) {
@@ -148,12 +175,40 @@ Rectangle {
                 return -1
             }
 
+            function hamlibModelIndex(modelId) {
+                const id = Number(modelId)
+                for (let i = 0; i < filteredHamlibModels.length; ++i) {
+                    if (Number(filteredHamlibModels[i].id) === id)
+                        return i
+                }
+                return -1
+            }
+
+            function selectedHamlibModelId() {
+                if (hamlibLocalDriver && hamlibModelBox.currentIndex >= 0
+                        && hamlibModelBox.currentIndex < filteredHamlibModels.length)
+                    return Number(filteredHamlibModels[hamlibModelBox.currentIndex].id)
+                return manualRadioSettings.hamlibModelId
+            }
+
             function currentProfile() {
                 const driversList = drivers
                 if (driverBox.currentIndex < 0 || driverBox.currentIndex >= driversList.length)
                     return null
 
                 const driver = driversList[driverBox.currentIndex].id
+                let model = driverBox.currentText
+                let hamlibModel = 0
+                if (hamlibLocalDriver) {
+                    if (hamlibModelBox.currentIndex < 0
+                            || hamlibModelBox.currentIndex >= filteredHamlibModels.length)
+                        return null
+                    const selectedModel = filteredHamlibModels[hamlibModelBox.currentIndex]
+                    model = selectedModel.label
+                    hamlibModel = Number(selectedModel.id)
+                    if (!hamlibModel)
+                        return null
+                }
                 let port = netField.text.trim()
                 let baud = 0
                 if (serialDriver) {
@@ -167,7 +222,8 @@ Rectangle {
 
                 return {
                     "driver": driver,
-                    "model": driverBox.currentText,
+                    "model": model,
+                    "hamlibModel": hamlibModel,
                     "port": port,
                     "baud": baud,
                     "dataBits": parseInt(dataBitsBox.currentText),
@@ -189,6 +245,33 @@ Rectangle {
                 manualRadioSettings.flowControl = profile.flowControl
                 manualRadioSettings.dtr = profile.dtr
                 manualRadioSettings.rts = profile.rts
+                manualRadioSettings.hamlibModelId = profile.hamlibModel
+            }
+
+            function applyDriverDefaults() {
+                if (driverBox.currentIndex < 0 || driverBox.currentIndex >= drivers.length)
+                    return
+                const driver = drivers[driverBox.currentIndex].id
+                if (driver === "hamlib-local" && !hamlibModelSearch.text.trimmed())
+                    hamlibModelSearch.text = String(manualRadioSettings.hamlibModelId || 2011)
+                const hamlibModel = selectedHamlibModelId()
+                const defaults = Session.nativeCommand("device.catDefaults",
+                                                       { "driver": driver,
+                                                         "hamlibModel": hamlibModel }) || ({})
+                if (Object.keys(defaults).length === 0)
+                    return
+                const baud = indexOf(baudBox.model, defaults.baud)
+                baudBox.currentIndex = baud >= 0 ? baud : baudBox.currentIndex
+                const dataBits = indexOf(dataBitsBox.model, defaults.dataBits)
+                dataBitsBox.currentIndex = dataBits >= 0 ? dataBits : dataBitsBox.currentIndex
+                parityBox.currentIndex = defaults.parity
+                const stopBits = indexOf([1, 15, 2], defaults.stopBits)
+                stopBitsBox.currentIndex = stopBits >= 0 ? stopBits : stopBitsBox.currentIndex
+                handshakeBox.currentIndex = defaults.flowControl + 1
+                dtrButton.checked = defaults.dtr === true
+                rtsButton.checked = defaults.rts === true
+                if (driver === "hamlib-local" && hamlibModel)
+                    manualRadioSettings.hamlibModelId = hamlibModel
             }
 
             // Ripristina anche la selezione grafica: vedere "debug-console"
@@ -214,6 +297,12 @@ Rectangle {
                     baudBox.currentIndex = baud >= 0 ? baud : 0
                 } else {
                     netField.text = manualRadioSettings.port
+                }
+
+                if (hamlibLocalDriver) {
+                    hamlibModelSearch.text = String(manualRadioSettings.hamlibModelId)
+                    const modelIndex = hamlibModelIndex(manualRadioSettings.hamlibModelId)
+                    hamlibModelBox.currentIndex = modelIndex >= 0 ? modelIndex : 0
                 }
 
                 const dataBits = indexOf(dataBitsBox.model, manualRadioSettings.dataBits)
@@ -312,6 +401,63 @@ Rectangle {
 
                 Layout.fillWidth: true
                 model: parent.drivers.map(function(d) { return d.label })
+                onActivated: manualRadioEntry.applyDriverDefaults()
+            }
+
+            // Un unico driver locale copre tutte le radio nel catalogo della
+            // versione Hamlib installata. La ricerca evita una tendina con
+            // centinaia di modelli e conserva l'ID esatto nel profilo.
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacingTight
+                visible: manualRadioEntry.hamlibLocalDriver
+
+                Text {
+                    text: qsTr("MODELLO HAMLIB")
+                    font.pixelSize: Theme.fontSmall
+                    color: Theme.textDisabled
+                }
+
+                TextField {
+                    id: hamlibModelSearch
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("cerca modello o ID — es. TS-940 o 2011")
+                    font.pixelSize: Theme.fontNormal
+                    color: Theme.textPrimary
+                    placeholderTextColor: Theme.textDisabled
+                    selectByMouse: true
+
+                    background: Rectangle {
+                        radius: Theme.radiusSmall
+                        color: Theme.surfaceSunken
+                        border.width: 1
+                        border.color: hamlibModelSearch.activeFocus ? Theme.accent : Theme.border
+                    }
+                }
+
+                DsdrComboBox {
+                    id: hamlibModelBox
+                    Layout.fillWidth: true
+                    textRole: "label"
+                    valueRole: "id"
+                    model: manualRadioEntry.filteredHamlibModels
+                    onActivated: {
+                        const selected = manualRadioEntry.selectedHamlibModelId()
+                        if (selected > 0) {
+                            manualRadioSettings.hamlibModelId = selected
+                            manualRadioEntry.applyDriverDefaults()
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: manualRadioEntry.hamlibModels.length === 0
+                    text: qsTr("Hamlib/rigctld non e' disponibile: installalo o imposta DSDR_RIGCTLD_BIN.")
+                    font.pixelSize: Theme.fontSmall
+                    color: Theme.warning
+                    wrapMode: Text.WordWrap
+                }
             }
 
             // Le porte, **comprese quelle occupate**. Una tendina senza COM5
@@ -507,7 +653,7 @@ Rectangle {
             DsdrButton {
                 Layout.fillWidth: true
                 implicitHeight: 26
-                text: qsTr("METTI NELL'ELENCO")
+                text: manualRadioEntry.manualEntryAction
                 enabled: driverBox.currentIndex >= 0
                 onClicked: {
                     const profile = manualRadioEntry.currentProfile()
@@ -521,7 +667,9 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: manualRadioEntry.serialDriver
+                text: manualRadioEntry.manualEntryHint.length > 0
+                      ? manualRadioEntry.manualEntryHint
+                      : manualRadioEntry.serialDriver
                       ? qsTr("Il profilo CAT viene salvato quando lo metti nell'elenco e ricompare al prossimo avvio senza aprire la porta. Predefiniti sicuri: 8N1 e DTR/RTS bassi. L'handshake automatico prova prima nessuno; con RTS/CTS, RTS è gestito dal protocollo. Se la porta è occupata da un altro programma, il collegamento fallirà dicendolo.")
                       : qsTr("La radio compare nell'elenco qui sopra e si apre come le altre. Se il demone di rete non risponde, il collegamento fallirà dicendolo.")
                 font.pixelSize: Theme.fontSmall
@@ -627,7 +775,7 @@ Rectangle {
                 id: endpointField
 
                 Layout.fillWidth: true
-                placeholderText: qsTr("indirizzo:porta  (es. 192.168.1.20:1234)")
+                placeholderText: qsTr("rtl_tcp host:porta, tcp://, udp:// o sdrpp://")
                 color: Theme.textPrimary
                 placeholderTextColor: Theme.textDisabled
                 font.pixelSize: Theme.fontNormal

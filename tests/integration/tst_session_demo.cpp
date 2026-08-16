@@ -29,6 +29,7 @@ private slots:
     void connectsToDemoAndProducesSpectrum();
     void audioKeepsUpWithRealTime();
     void channelLimitMatchesCapabilities();
+    void switchingBackendCancelsStaleDiscovery();
     void scannerCompletesAndPublishesState();
     void rigctlTunesAndChangesMode();
     void changingChannelModeKeepsAudioAlive();
@@ -139,6 +140,27 @@ void TestSessionDemo::channelLimitMatchesCapabilities()
     // Oltre il limite dichiarato la sessione rifiuta senza rompersi.
     QCOMPARE(session.addChannel(session.centerFrequency()), -1);
     QCOMPARE(session.channels()->rowCount(), limit);
+}
+
+void TestSessionDemo::switchingBackendCancelsStaleDiscovery()
+{
+    SessionManager session;
+    session.selectBackend(QStringLiteral("demo"));
+    session.startDiscovery();
+    QVERIFY(session.isDiscovering());
+
+    // Il backend demo completa la discovery al giro successivo dell'event
+    // loop. Cambiare sorgente prima di allora non deve lasciare la UI bloccata
+    // su «Ricerca…»: il vecchio oggetto non potrà piu' emettere la sua fine.
+    session.selectBackend(QStringLiteral("nettcp"));
+    QCOMPARE(session.backendId(), QStringLiteral("nettcp"));
+    QVERIFY(!session.isDiscovering());
+
+    session.selectBackend(QStringLiteral("demo"));
+    session.startDiscovery();
+    QVERIFY2(waitFor([&] {
+        return !session.isDiscovering() && session.devices()->rowCount() > 0;
+    }, 3000), "la discovery non riparte dopo il cambio backend");
 }
 
 void TestSessionDemo::rigctlTunesAndChangesMode()

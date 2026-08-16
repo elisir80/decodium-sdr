@@ -5,6 +5,7 @@
 #include "hal/backends/audiorig/CatSerialPort.h"
 #include "hal/backends/audiorig/CatController.h"
 
+#include <QSignalSpy>
 #include <QTest>
 
 using namespace dsdr::hal::audiorig;
@@ -36,6 +37,47 @@ public:
     CatSerialConfig receivedSerial;
 };
 
+class FastPttDriver final : public ICatDriver
+{
+public:
+    QString driverId() const override { return QStringLiteral("fast-ptt"); }
+    bool open(const QString &, const CatSerialConfig &) override
+    {
+        m_open = true;
+        return true;
+    }
+    void close() override { m_open = false; }
+    bool isOpen() const override { return m_open; }
+    QString radioModel() const override { return QStringLiteral("test rig"); }
+    bool poll(CatState &state) override
+    {
+        ++fullPolls;
+        state.frequencyHz = 14074000;
+        state.pttKnown = true;
+        state.transmitting = false;
+        return true;
+    }
+    bool pollPtt(CatState &state) override
+    {
+        ++pttPolls;
+        state.pttKnown = true;
+        state.transmitting = true;
+        return true;
+    }
+    bool setFrequency(qint64) override { return true; }
+    bool setMode(dsdr::DemodMode) override { return true; }
+    bool setPtt(bool) override { return true; }
+    QString errorString() const override { return {}; }
+    QList<int> candidateBaudRates() const override { return {}; }
+    int probe(const QString &) override { return 0; }
+
+    int fullPolls = 0;
+    int pttPolls = 0;
+
+private:
+    bool m_open = false;
+};
+
 } // namespace
 
 class TestCatSerialConfig : public QObject
@@ -47,6 +89,7 @@ private slots:
     void explicitSettingsReachQt();
     void invalidSettingsAreRefused();
     void controllerForwardsEverySerialSetting();
+    void controllerReadsPttWithoutReplayingTheVfo();
 };
 
 void TestCatSerialConfig::defaultIsSafe8N1()
@@ -119,6 +162,31 @@ void TestCatSerialConfig::controllerForwardsEverySerialSetting()
     QCOMPARE(captured->receivedSerial.flowControl, 2);
     QVERIFY(captured->receivedSerial.dtr);
     QVERIFY(captured->receivedSerial.rts);
+}
+
+void TestCatSerialConfig::controllerReadsPttWithoutReplayingTheVfo()
+{
+    auto driver = std::make_unique<FastPttDriver>();
+    FastPttDriver *captured = driver.get();
+    CatController controller(std::move(driver));
+    QSignalSpy states(&controller, &CatController::stateRead);
+
+    // Il percorso IF deve poter essere configurato prima dell'apertura: il
+    // primo campione PTT arriva quindi dopo un solo intervallo, non dopo il
+    // prossimo ciclo completo di frequenza e modo.
+    controller.setPttPollInterval(20);
+    controller.open(QStringLiteral("test"), 0, 8, 0, 1, 0, false, false);
+
+    QTRY_VERIFY_WITH_TIMEOUT(captured->pttPolls > 0, 250);
+    QVERIFY(captured->fullPolls >= 1);
+    QVERIFY(states.count() >= 2);
+
+    const QList<QVariant> pttState = states.constLast();
+    QCOMPARE(pttState.at(0).toLongLong(), 0LL);
+    QVERIFY(pttState.at(2).toBool());
+    QVERIFY(pttState.at(3).toBool());
+
+    controller.close();
 }
 
 QTEST_MAIN(TestCatSerialConfig)

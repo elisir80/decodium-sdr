@@ -37,6 +37,14 @@ if(DSDR_BACKEND_RTLSDR)
         LIBRARIES dsdr::hal)
 endif()
 
+if(DSDR_BACKEND_RTLSDR OR DSDR_BACKEND_SOAPY)
+    # IF, shift USB/LSB e inversione sono aritmetica del percorso RTL2832:
+    # la si verifica senza chiavetta e la usano sia librtlsdr sia SoapyRTLSDR.
+    dsdr_add_test(tst_rtlsdr_tuning
+        SOURCES tst_rtlsdr_tuning.cpp
+        LIBRARIES dsdr::hal)
+endif()
+
 if(DSDR_BACKEND_NETTCP)
     dsdr_add_test(tst_nettcp
         SOURCES
@@ -45,6 +53,8 @@ if(DSDR_BACKEND_NETTCP)
             RtlTcpMockServer.cpp
             SpyServerMockServer.h
             SpyServerMockServer.cpp
+            NetworkIqMockServer.h
+            NetworkIqMockServer.cpp
         LIBRARIES dsdr::hal Qt6::Network)
 endif()
 
@@ -54,6 +64,12 @@ endif()
 # fa fallire il collegamento parlando di simboli mancanti invece che del
 # modulo Qt che manca davvero.
 if(DSDR_BUILT_AUDIORIG)
+    # La sonda CAT può aspettare una risposta per centinaia di millisecondi;
+    # cambiare backend nel frattempo non deve mai aspettarla sul thread UI.
+    dsdr_add_test(tst_audiorig_discovery
+        SOURCES tst_audiorig_discovery.cpp
+        LIBRARIES dsdr::hal Qt6::Network)
+
     # Formato della porta CAT: i controlli QML devono arrivare ai valori Qt
     # esatti, e i valori corrotti non devono diventare una radio muta.
     dsdr_add_test(tst_cat_serial_config
@@ -80,6 +96,16 @@ if(DSDR_BUILT_AUDIORIG)
     dsdr_add_test(tst_rigctld
         SOURCES tst_rigctld.cpp
         LIBRARIES dsdr::hal Qt6::Network)
+
+    dsdr_add_test(tst_local_rigctld
+        SOURCES tst_local_rigctld.cpp
+        LIBRARIES dsdr::hal)
+endif()
+
+if(DSDR_BACKEND_RTLSDR AND DSDR_BUILT_AUDIORIG)
+    dsdr_add_test(tst_rtlcat_safety
+        SOURCES tst_rtlcat_safety.cpp
+        LIBRARIES dsdr::hal)
 endif()
 
 if(DSDR_BACKEND_COLIBRI)

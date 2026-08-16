@@ -32,9 +32,10 @@ struct RtlSdrDeviceProfile
 /// Traduce il profilo hardware nelle capability comuni della HAL.
 BackendCapabilities capabilitiesFrom(const RtlSdrDeviceProfile &profile);
 
-/// Guadagno iniziale prudente per l'AUTO controllato dall'applicazione.
-/// L'AGC del demodulatore RTL2832 viene lasciato spento: il DSP client e la
-/// guardia anti-saturazione hanno già il controllo del livello.
+/// Guadagno iniziale per l'AUTO RTL-SDR, scelto sul passo hardware più vicino
+/// al profilo 22 dB usato da SDR++. L'AGC digitale RTL2832 resta disponibile
+/// in AUTO; la guardia anti-saturazione può comunque imporre un passo manuale
+/// più basso quando rileva clipping.
 int safeAutoGainTenthsDb(const QList<int> &gainSteps);
 
 inline constexpr int kMaxLogicalRxChannels = 4;

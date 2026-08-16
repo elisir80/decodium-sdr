@@ -44,7 +44,7 @@ namespace {
 ///              motivo per cui questo driver deve parlare due dialetti.
 ///   Muto     — qualcosa ascolta su quella porta, ma non è un CAT: `RPRT -4`
 ///              a tutto, frequenza compresa.
-enum class Flavour { Full, Minimal, Mute };
+enum class Flavour { Full, Minimal, NoPtt, Mute };
 
 class FakeRigctld : public QObject
 {
@@ -108,6 +108,10 @@ private:
             return;
         }
         if (command == "\\get_ptt") {
+            if (m_flavour == Flavour::NoPtt) {
+                socket->write("RPRT -11\n");
+                return;
+            }
             socket->write(extended ? "PTT: 0\nRPRT 0\n" : "0\n");
             return;
         }
@@ -196,7 +200,9 @@ private slots:
     void theDataModesLandOnThePacketOnes();
     void theStrengthLandsOnTheRightSignalLevel();
     void aFakeDaemonAnswersTheWholePoll();
+    void aFastPttPollDoesNotNeedTheSlowRadioState();
     void theMinimalDialectWorksToo();
+    void aRadioWithoutPttRemainsConnectedButDoesNotClaimRx();
     void whatIsNotARigctldIsNotARadio();
 };
 
@@ -358,6 +364,7 @@ void TestRigctld::aFakeDaemonAnswersTheWholePoll()
     QCOMPARE(state.frequencyHz, 14074000LL);
     QCOMPARE(state.mode, DemodMode::DigU);
     QCOMPARE(state.transmitting, false);
+    QVERIFY(state.pttKnown);
     QCOMPARE(state.signalDbm, RigctldDriver::dbmFromStrengthDb(12));
 
     QVERIFY(driver.setFrequency(7074000));
@@ -366,6 +373,33 @@ void TestRigctld::aFakeDaemonAnswersTheWholePoll()
 
     driver.close();
     QVERIFY(!driver.isOpen());
+    daemon.stop();
+}
+
+void TestRigctld::aFastPttPollDoesNotNeedTheSlowRadioState()
+{
+    DaemonThread daemon(Flavour::Full);
+    QVERIFY(daemon.start());
+
+    RigctldDriver driver;
+    const int result = driver.probe(daemon.endpoint());
+    if (result != 0) {
+        driver.close();
+        daemon.stop();
+        QCOMPARE(result, 0);
+    }
+
+    CatState state;
+    state.frequencyHz = 12345678;
+    state.mode = DemodMode::Cw;
+    QVERIFY(driver.pollPtt(state));
+    QVERIFY(state.pttKnown);
+    QVERIFY(!state.transmitting);
+    // Il campione rapido non deve far passare il VFO dal percorso lento.
+    QCOMPARE(state.frequencyHz, 12345678LL);
+    QCOMPARE(state.mode, DemodMode::Cw);
+
+    driver.close();
     daemon.stop();
 }
 
@@ -401,6 +435,7 @@ void TestRigctld::theMinimalDialectWorksToo()
     // ogni risposta è quella della domanda precedente.
     QCOMPARE(state.mode, DemodMode::DigU);
     QCOMPARE(state.transmitting, false);
+    QVERIFY(state.pttKnown);
 
     // Questo server l'S-meter non ce l'ha: si smette di chiederlo, e il
     // livello resta quello misurato sull'audio.
@@ -408,6 +443,28 @@ void TestRigctld::theMinimalDialectWorksToo()
 
     QVERIFY(driver.setFrequency(7074000));
     QVERIFY(driver.setPtt(false));
+
+    driver.close();
+    daemon.stop();
+}
+
+void TestRigctld::aRadioWithoutPttRemainsConnectedButDoesNotClaimRx()
+{
+    DaemonThread daemon(Flavour::NoPtt);
+    QVERIFY(daemon.start());
+
+    RigctldDriver driver;
+    const int result = driver.probe(daemon.endpoint());
+    if (result != 0) {
+        daemon.stop();
+        QCOMPARE(result, 0);
+    }
+
+    CatState state;
+    QVERIFY(driver.poll(state));
+    QCOMPARE(state.frequencyHz, 14074000LL);
+    QVERIFY(!state.pttKnown);
+    QVERIFY(!state.transmitting);
 
     driver.close();
     daemon.stop();

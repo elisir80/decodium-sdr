@@ -41,6 +41,7 @@ enum class AudioTag {
 enum class AudioSink {
     Ear,              ///< gli altoparlanti dell'operatore
     AudioRecorder,    ///< registrazione audio su file
+    NetworkStream,    ///< PCM lineare verso un ricevitore di rete
     DigitalDecoder,   ///< DECODIUM 4 e chiunque decodifichi
     Transmit,         ///< il percorso di trasmissione
 };

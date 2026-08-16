@@ -10,6 +10,7 @@
 #pragma once
 
 #include "core/IqRecorder.h"
+#include "audio/NetworkAudioSink.h"
 #include "core/IqModuleApi.h"
 #include "core/SpectrumFeed.h"
 #include "dsp/ChannelProcessor.h"
@@ -162,11 +163,22 @@ public:
     /// prima del sink globale. Usa lo stesso contratto lock-free del recorder IQ.
     void setAudioRecorder(IqRecorder *recorder);
 
+    /// Copia il mix lineare verso un trasporto PCM di rete. È un tap distinto
+    /// dall'uscita locale: un client lento non può sottrarre campioni a chi
+    /// ascolta sugli altoparlanti.
+    void setNetworkAudioSink(audio::NetworkAudioSink *sink);
+
     /// Carica un modulo IQ C ABI. La chiamata va eseguita nel thread DSP;
     /// SessionManager la invoca con una BlockingQueuedConnection dal thread UI.
     Q_INVOKABLE bool loadIqModule(const QString &path);
+    /// Scarica un solo modulo al confine fra due blocchi DSP. Non può correre
+    /// in parallelo al suo callback perché entrambe le azioni vivono su questo
+    /// stesso thread.
+    Q_INVOKABLE bool unloadIqModule(const QString &path);
     Q_INVOKABLE void unloadIqModules();
     Q_INVOKABLE QStringList iqModuleNames() const;
+    Q_INVOKABLE QString iqModuleName(const QString &path) const;
+    Q_INVOKABLE QString lastIqModuleError() const;
 
 
 public slots:
@@ -278,6 +290,7 @@ private:
     std::atomic<bool> m_needsReconfigure{true};
     std::atomic<IqRecorder *> m_recorder{nullptr};
     std::atomic<IqRecorder *> m_audioRecorder{nullptr};
+    std::atomic<audio::NetworkAudioSink *> m_networkAudioSink{nullptr};
 
     // Macchina del tempo. Il buffer appartiene al thread DSP; queste tre
     // atomiche sono la sola superficie che la UI tocca.
@@ -330,6 +343,7 @@ private:
     std::vector<float> m_mix;           ///< audio mixato
     std::vector<float> m_moduleIq;      ///< conversione Complex -> I/Q C ABI
     std::vector<std::unique_ptr<LoadedIqModule>> m_iqModules;
+    QString m_lastIqModuleError;
     QElapsedTimer m_uptime;             ///< base dei tempi per il throttling
     quint64 m_totalDropped = 0;
     qint64 m_lastOverrunReportNs = 0;

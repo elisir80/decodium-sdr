@@ -4,6 +4,7 @@
 
 #include <QElapsedTimer>
 #include <QTcpSocket>
+#include <QThread>
 
 #include <algorithm>
 #include <limits>
@@ -191,6 +192,11 @@ bool RigctldDriver::open(const QString &portName, const CatSerialConfig &serial)
         m_socket.reset();
         return false;
     }
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        m_error = QStringLiteral("connessione rigctl annullata");
+        close();
+        return false;
+    }
 
     // Niente algoritmo di Nagle: i comandi sono pacchetti di dieci byte a cui
     // segue subito un'attesa di risposta, e mezzo decimo di secondo di attesa
@@ -220,6 +226,7 @@ bool RigctldDriver::open(const QString &portName, const CatSerialConfig &serial)
 
     m_endpoint = host + QLatin1Char(':') + QString::number(port);
     m_strengthAvailable = true;
+    m_pttAvailable = true;
     m_error.clear();
     qCInfo(dsdrHal) << "rigctl: connesso a" << m_endpoint << "—" << m_model
                     << (m_dialect == Dialect::Extended ? "(protocollo esteso)"
@@ -268,9 +275,16 @@ RigctldDriver::Reply RigctldDriver::ask(const QByteArray &command, int expectedV
     clock.start();
 
     while (clock.elapsed() < timeoutMs) {
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            m_error = QStringLiteral("richiesta rigctl annullata");
+            return reply;
+        }
         if (!m_socket->waitForReadyRead(
-                std::max(1, timeoutMs - static_cast<int>(clock.elapsed())))) {
-            break;
+                std::min(50, std::max(1, timeoutMs - static_cast<int>(clock.elapsed()))))) {
+            // Il sotto-timeout breve non e' un fallimento della richiesta: ci
+            // serve soltanto a poter osservare l'interruzione del thread.
+            // Una radio lenta puo' rispondere dopo qualche centinaio di ms.
+            continue;
         }
         pending += m_socket->readAll();
 
@@ -372,10 +386,19 @@ bool RigctldDriver::poll(CatState &state)
     if (!isOpen())
         return false;
 
+    // Il PTT viene prima di tutto: per un panadapter IF non è un dettaglio
+    // cosmetico ma il consenso che tiene aperto il flusso dell'RTL-SDR. Così
+    // una risposta TX blocca l'IQ prima delle letture più lente di VFO e modo.
+    if (!pollPtt(state))
+        return false;
+
     // Un valore: la frequenza.
     const Reply freq = ask("\\get_freq", 1);
     if (!freq.answered)
-        return false;
+        // Il PTT e' stato letto: restituiamo comunque lo stato perche' il
+        // chiamante possa chiudere l'IF in TX. Al prossimo giro si ritenta il
+        // VFO invece di ritardare una protezione reale.
+        return true;
     if (!freq.values.isEmpty()) {
         bool valid = false;
         const qint64 hz = freq.values.first().toLongLong(&valid);
@@ -389,16 +412,9 @@ bool RigctldDriver::poll(CatState &state)
     // domanda dopo.
     const Reply mode = ask("\\get_mode", 2);
     if (!mode.answered)
-        return false;
+        return true;
     if (!mode.values.isEmpty())
         state.mode = modeFromName(mode.values.first());
-
-    // Uno: il PTT.
-    const Reply ptt = ask("\\get_ptt", 1);
-    if (!ptt.answered)
-        return false;
-    if (!ptt.values.isEmpty())
-        state.transmitting = ptt.values.first().toInt() != 0;
 
     // L'S-meter è l'unica lettura facoltativa: parecchi server non ce l'hanno
     // — quello di DECODIUM 4 risponde `RPRT -11`, «non implementato» — e
@@ -417,6 +433,34 @@ bool RigctldDriver::poll(CatState &state)
         }
     }
 
+    return true;
+}
+
+bool RigctldDriver::pollPtt(CatState &state)
+{
+    if (!isOpen())
+        return false;
+
+    state.pttKnown = false;
+    state.transmitting = false;
+    if (m_pttAvailable) {
+        const Reply ptt = ask("\\get_ptt", 1);
+        if (!ptt.answered)
+            return false;
+        if (ptt.ok() && !ptt.values.isEmpty()) {
+            bool valid = false;
+            const int value = ptt.values.first().toInt(&valid);
+            if (valid) {
+                state.transmitting = value != 0;
+                state.pttKnown = true;
+            }
+        }
+        if (!state.pttKnown) {
+            m_pttAvailable = false;
+            qCWarning(dsdrHal) << "rigctl: la radio non espone il PTT; "
+                                   "un panadapter IF deve mantenere l'IQ bloccato";
+        }
+    }
     return true;
 }
 

@@ -10,11 +10,14 @@
 // metatype per ciascun puntatore e una forward declaration non basta.
 #include "audio/AudioGraph.h"
 #include "audio/AudioRouter.h"
+#include "audio/NetworkAudioSink.h"
 #include "core/CapabilitiesInfo.h"
 #include "core/ChannelModel.h"
 #include "core/DeviceListModel.h"
 #include "core/IqRecorder.h"
+#include "core/IqModuleManager.h"
 #include "core/LanguageManager.h"
+#include "core/OperationScheduler.h"
 #include "core/SpectrumFeed.h"
 #include "dsp/ChannelProcessor.h"
 #include "hal/Frames.h"
@@ -57,6 +60,9 @@ class SessionManager : public QObject
     Q_OBJECT
     Q_PROPERTY(QStringList iqModuleNames READ iqModuleNames NOTIFY iqModuleNamesChanged)
     Q_PROPERTY(QVariantList iqModuleCatalog READ iqModuleCatalog NOTIFY iqModuleCatalogChanged)
+    Q_PROPERTY(QStringList iqModuleDirectories READ iqModuleDirectories
+               NOTIFY iqModuleCatalogChanged)
+    Q_PROPERTY(QVariantList scheduledJobs READ scheduledJobs NOTIFY scheduledJobsChanged)
 
     Q_PROPERTY(QVariantList availableBackends READ availableBackends CONSTANT)
     Q_PROPERTY(QString backendId READ backendId NOTIFY backendChanged)
@@ -187,6 +193,8 @@ class SessionManager : public QObject
     Q_PROPERTY(dsdr::audio::AudioRouter *audio READ audio CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *recorder READ recorder CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *audioRecorder READ audioRecorder CONSTANT)
+    Q_PROPERTY(bool networkAudioActive READ networkAudioActive NOTIFY networkAudioChanged)
+    Q_PROPERTY(QVariantMap networkAudioStatus READ networkAudioStatus NOTIFY networkAudioChanged)
     Q_PROPERTY(dsdr::core::LanguageManager *language READ language CONSTANT)
 
     Q_PROPERTY(bool connected READ isConnected NOTIFY connectionChanged)
@@ -512,6 +520,8 @@ public:
     audio::AudioRouter *audio() const { return m_audio; }
     IqRecorder *recorder() { return &m_recorder; }
     IqRecorder *audioRecorder() { return &m_audioRecorder; }
+    bool networkAudioActive() const { return m_networkAudio.isActive(); }
+    QVariantMap networkAudioStatus() const { return m_networkAudio.status(); }
     LanguageManager *language() { return &m_language; }
 
     bool isConnected() const { return m_connected; }
@@ -756,11 +766,32 @@ public:
     Q_INVOKABLE bool startAudioRecording(const QString &path = QString());
     Q_INVOKABLE void stopAudioRecording();
     Q_INVOKABLE bool toggleAudioRecording();
+    /// Esporta il mix RX lineare come PCM16 LE/48 kHz: UDP verso un endpoint,
+    /// oppure listener TCP a cui un client si collega. Compatibile SDR++.
+    Q_INVOKABLE bool startNetworkAudio(const QString &protocol, const QString &host,
+                                       int port, bool stereo = false);
+    Q_INVOKABLE void stopNetworkAudio();
+    /// Pianifica soltanto operazioni RX: sintonia, scansione e registrazioni.
+    /// Non esistono comandi TX/PTT in questa superficie.
+    Q_INVOKABLE QString scheduleAction(const QString &action, const QString &whenUtc,
+                                       const QVariantMap &arguments = {});
+    Q_INVOKABLE bool cancelScheduledAction(const QString &id);
+    Q_INVOKABLE bool setScheduledActionEnabled(const QString &id, bool enabled);
+    Q_INVOKABLE bool removeScheduledAction(const QString &id);
+    Q_INVOKABLE void clearScheduledHistory();
+    QVariantList scheduledJobs() const { return m_scheduler.jobs(); }
     Q_INVOKABLE bool loadIqModule(const QString &path);
     Q_INVOKABLE void unloadIqModules();
     Q_INVOKABLE void loadIqModulesFromStandardPaths();
+    Q_INVOKABLE void refreshIqModules();
+    Q_INVOKABLE bool addIqModuleDirectory(const QString &path);
+    Q_INVOKABLE bool removeIqModuleDirectory(const QString &path);
+    Q_INVOKABLE bool addIqModuleFile(const QString &path);
+    Q_INVOKABLE bool forgetIqModule(const QString &path);
+    Q_INVOKABLE bool setIqModuleEnabled(const QString &path, bool enabled);
     QStringList iqModuleNames() const { return m_iqModuleNames; }
     QVariantList iqModuleCatalog() const { return m_iqModuleCatalog; }
+    QStringList iqModuleDirectories() const { return m_iqModules.directories(); }
 
     /// Nomi dei modi, per popolare i selettori senza duplicare la tabella in QML.
     Q_INVOKABLE QStringList modeNames() const;
@@ -772,6 +803,7 @@ public:
 signals:
     void iqModuleNamesChanged();
     void iqModuleCatalogChanged();
+    void scheduledJobsChanged();
     void backendChanged();
     void connectionChanged();
     void discoveringChanged();
@@ -785,6 +817,7 @@ signals:
     /// La trasmissione è stata rifiutata, e per quale motivo.
     void txRefused(const QString &reason);
     void statusMessageChanged();
+    void networkAudioChanged();
     void centerFrequencyChanged();
     void sampleRateChanged();
     void replayChanged();
@@ -835,6 +868,11 @@ private:
     bool startMicrophone();
     void refreshChannelOffsets();
     void advanceScan();
+    void executeScheduledAction(const QString &id, const QString &action,
+                                const QVariantMap &arguments);
+    bool activateIqModule(const QString &path);
+    bool deactivateIqModule(const QString &path);
+    void syncIqModuleCatalog();
     void handleAutomaticRdsAf(ChannelId id, bool synced, const QString &pi);
     void probeNextRdsAf();
     void finishRdsAfProbe(bool keepCandidate);
@@ -849,6 +887,7 @@ private:
     CapabilitiesInfo m_capabilities;
     IqRecorder m_recorder;
     IqRecorder m_audioRecorder;
+    audio::NetworkAudioSink m_networkAudio;
     LanguageManager m_language;
 
     DspEngine *m_engine = nullptr;
@@ -920,9 +959,14 @@ private:
     double m_txDrive = kDefaultTxDrive;
     QString m_micDeviceId;   ///< vuoto = ingresso predefinito del sistema
     bool m_tuning = false;
+    /// Mentre applichiamo uno stato ricevuto dal CAT aggiorniamo UI e DSP, ma
+    /// non lo rimandiamo alla radio: il prossimo poll sarebbe altrimenti un
+    /// ping-pong infinito fra VFO e programma.
+    bool m_applyingReceiverState = false;
     QTimer m_tuneTimer;
     QTimer m_scanTimer;
     QTimer m_rdsAfProbeTimer;
+    OperationScheduler m_scheduler;
     std::vector<qint64> m_rdsAfCandidates;
     std::size_t m_rdsAfCandidateIndex = 0;
     int m_rdsAfProbeRow = -1;
@@ -937,6 +981,7 @@ private:
     bool m_rdsAfProbeActive = false;
     QStringList m_iqModuleNames;
     QVariantList m_iqModuleCatalog;
+    IqModuleManager m_iqModules;
     bool m_scanning = false;
     int m_scanRow = -1;
     qint64 m_scanFrequency = 0;

@@ -64,6 +64,13 @@ Item {
         tuneRequested(Math.max(minimumHz, Math.min(maximumHz, target)))
     }
 
+    // Un touchpad può consegnare un evento di scroll con soltanto un delta
+    // orizzontale: in quel caso angleDelta.y è zero. Zero non è «giù»;
+    // trattarlo come -1 faceva scendere il VFO a ogni frame del gesto.
+    function wheelDirection(angleDeltaY) {
+        return angleDeltaY > 0 ? 1 : (angleDeltaY < 0 ? -1 : 0)
+    }
+
     Row {
         id: row
         spacing: 0
@@ -130,7 +137,10 @@ Item {
                     enabled: root.editable
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     onWheel: (event) => {
-                        root.nudge(digitCell.index, event.angleDelta.y > 0 ? 1 : -1)
+                        const direction = root.wheelDirection(event.angleDelta.y)
+                        if (direction === 0)
+                            return
+                        root.nudge(digitCell.index, direction)
                     }
                 }
 

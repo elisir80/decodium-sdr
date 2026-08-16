@@ -30,6 +30,11 @@ struct CatState
     qint64 frequencyHz = 0;
     DemodMode mode = DemodMode::Usb;
     bool transmitting = false;
+    /// Vero solo quando la radio ha dichiarato esplicitamente il proprio
+    /// stato TX/RX. Un CAT funzionante non implica questa capacità: per
+    /// esempio il TS-940S espone VFO e modo ma non il PTT attraverso Hamlib.
+    /// Un panadapter IF deve restare fail-closed finché questo consenso manca.
+    bool pttKnown = false;
     /// Lettura grezza dell'S-meter, 0…255. La conversione in punti S dipende
     /// dal modello e sta nel profilo, non qui (SPEC-004 §8.2).
     int sMeterRaw = -1;
@@ -62,6 +67,10 @@ struct CatSerialConfig
     int flowControl = -1; ///< automatico; vedi sopra
     bool dtr = false;
     bool rts = false;
+
+    /// Modello passato al bridge Hamlib locale. Zero significa che il driver
+    /// non lo richiede; gli altri driver ignorano il campo.
+    int hamlibModel = 0;
 };
 
 class ICatDriver
@@ -86,6 +95,13 @@ public:
     /// il chiamante lo tratta come perdita del CAT, che è una cosa seria —
     /// senza CAT il panadattatore non sa più dove sta.
     virtual bool poll(CatState &state) = 0;
+
+    /// Lettura rapida del solo PTT, per proteggere un ricevitore collegato
+    /// all'uscita IF. L'implementazione di base conserva la compatibilità con
+    /// i driver che sanno fare solo una lettura completa; un driver che parla
+    /// con Hamlib può invece evitare le letture più lente di VFO, modo e
+    /// S-meter. Deve aggiornare soltanto `transmitting` e `pttKnown`.
+    virtual bool pollPtt(CatState &state) { return poll(state); }
 
     virtual bool setFrequency(qint64 hz) = 0;
     virtual bool setMode(DemodMode mode) = 0;

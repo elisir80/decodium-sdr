@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hal/backends/soapy/SoapyBackend.h"
 #include "hal/HalLog.h"
+#include "hal/backends/rtlsdr/RtlSdrCapabilities.h"
 #include "hal/backends/soapy/SoapyWorker.h"
 
 #include <SoapySDR/Device.hpp>
@@ -17,6 +18,8 @@ namespace {
 /// ~1,7 s di IQ a 2,4 MS/s. I device USB consegnano a raffiche: un ring
 /// generoso evita che una pausa dello scheduler diventi un buco udibile.
 constexpr std::size_t kIqRingFloats = 1 << 23;
+constexpr qint64 kMinimumTuningFrequencyHz = 100'000;
+constexpr qint64 kMaximumTuningFrequencyHz = 1'766'000'000;
 
 /// Compone gli argomenti con cui riaprire esattamente questo device.
 QString argsFromKwargs(const SoapySDR::Kwargs &kwargs)
@@ -36,6 +39,175 @@ QString kwargValue(const SoapySDR::Kwargs &kwargs, const char *key)
 }
 
 } // namespace
+
+bool SoapyBackend::isRtlSdr() const
+{
+    const QString driver = m_profile.isValid() ? m_profile.driver
+                                                : m_device.extra.value(QStringLiteral("driver")).toString();
+    return driver.compare(QStringLiteral("rtlsdr"), Qt::CaseInsensitive) == 0;
+}
+
+QString SoapyBackend::deviceIdentity() const
+{
+    return QStringList{m_profile.driver,
+                       m_profile.hardware,
+                       m_profile.label,
+                       m_device.model,
+                       m_device.displayName,
+                       m_device.extra.value(QStringLiteral("product")).toString(),
+                       m_device.extra.value(QStringLiteral("manufacturer")).toString()}
+        .join(QLatin1Char(' '));
+}
+
+bool SoapyBackend::autoIfUsesLsb() const
+{
+    return m_activeDemod == DemodMode::Lsb || m_activeDemod == DemodMode::DigL;
+}
+
+qint64 SoapyBackend::ifReferenceFrequency(qint64 fallbackFrequencyHz) const
+{
+    auto reference = m_channels.cend();
+    for (auto it = m_channels.cbegin(); it != m_channels.cend(); ++it) {
+        if (reference == m_channels.cend() || it.key() < reference.key())
+            reference = it;
+    }
+    return reference == m_channels.cend() ? fallbackFrequencyHz : reference->frequencyHz;
+}
+
+rtlsdr::TuningPlan SoapyBackend::tuningPlanFor(qint64 dialFrequencyHz) const
+{
+    // SoapySDR serve anche Airspy, HackRF, Lime, USRP… L'IF e il Q ADC sono
+    // specifici del RTL2832: per ogni altro device la sintonia resta quella
+    // nativa, senza una traduzione IQ che nessuno gli ha chiesto.
+    if (!isRtlSdr()) {
+        rtlsdr::TuningPlan direct;
+        direct.dialFrequencyHz = dialFrequencyHz;
+        direct.selectedInputFrequencyHz = dialFrequencyHz;
+        direct.hardwareCenterFrequencyHz = dialFrequencyHz;
+        direct.logicalCenterFrequencyHz = dialFrequencyHz;
+        return direct;
+    }
+
+    rtlsdr::TuningRequest request;
+    request.dialFrequencyHz = dialFrequencyHz;
+    request.sampleRate = m_sampleRate;
+    request.ifEnabled = m_ifEnabled;
+    request.ifFrequencyHz = m_ifFrequencyHz;
+    request.usbShiftHz = m_ifUsbShiftHz;
+    request.lsbShiftHz = m_ifLsbShiftHz;
+    request.sideband = m_ifSideband == 2
+        || (m_ifSideband == 0 && autoIfUsesLsb()) ? rtlsdr::IfSideband::Lsb
+                                                    : rtlsdr::IfSideband::Usb;
+    request.spectrumInverted = m_ifSpectrumInverted;
+    request.logicalSelectedOffsetHz = m_ifEnabled
+        ? ifReferenceFrequency(dialFrequencyHz) - dialFrequencyHz : 0;
+    return rtlsdr::makeTuningPlan(request, kMinimumTuningFrequencyHz,
+                                  kMaximumTuningFrequencyHz);
+}
+
+bool SoapyBackend::hardwarePlanIsSupported(const rtlsdr::TuningPlan &plan) const
+{
+    if (!m_profile.isValid())
+        return true;
+
+    qint64 minimum = m_profile.minFrequencyHz;
+    qint64 maximum = m_profile.maxFrequencyHz;
+    if (rtlsdr::isRtlSdrBlogV4Identity(deviceIdentity())) {
+        minimum = rtlsdr::kDirectSamplingMinimumFrequencyHz;
+    } else if (m_directSampling != 0) {
+        minimum = rtlsdr::kDirectSamplingMinimumFrequencyHz;
+        maximum = rtlsdr::kDirectSamplingMaximumFrequencyHz;
+    }
+    return plan.selectedInputFrequencyHz >= minimum
+        && plan.selectedInputFrequencyHz <= maximum
+        && plan.hardwareCenterFrequencyHz >= minimum
+        && plan.hardwareCenterFrequencyHz <= maximum;
+}
+
+bool SoapyBackend::applyTuningPlan(qint64 dialFrequencyHz, bool notifyCenter)
+{
+    const rtlsdr::TuningPlan plan = tuningPlanFor(dialFrequencyHz);
+    if (m_directSampling != 0) {
+        const auto reason = rtlsdr::directSamplingBlockReason(deviceIdentity(),
+                                                               plan.selectedInputFrequencyHz);
+        if (reason != rtlsdr::DirectSamplingBlockReason::None) {
+            reportError(BackendError::Unsupported,
+                        reason == rtlsdr::DirectSamplingBlockReason::BlogV4UsesUpconverter
+                            ? tr("RTL-SDR Blog V4 usa l'upconverter HF: il direct sampling Q ADC non è disponibile.")
+                            : tr("Il direct sampling RTL-SDR è disponibile solo tra 500 kHz e 24 MHz."));
+            return false;
+        }
+    }
+    if (!hardwarePlanIsSupported(plan)) {
+        reportError(BackendError::Unsupported,
+                    tr("Il percorso RTL-SDR selezionato non copre %1 Hz.")
+                        .arg(plan.selectedInputFrequencyHz));
+        return false;
+    }
+
+    const bool physicalChange = m_hardwareCenterHz != plan.hardwareCenterFrequencyHz
+        || !qFuzzyCompare(m_appliedBasebandTranslationHz + 1.0,
+                          plan.basebandTranslationHz + 1.0)
+        || m_appliedSpectrumInverted != plan.spectrumInverted;
+    const bool centerChanged = m_centerHz != plan.logicalCenterFrequencyHz;
+    m_centerHz = plan.logicalCenterFrequencyHz;
+    m_hardwareCenterHz = plan.hardwareCenterFrequencyHz;
+    m_appliedBasebandTranslationHz = plan.basebandTranslationHz;
+    m_appliedSpectrumInverted = plan.spectrumInverted;
+    if (m_worker && physicalChange) {
+        m_iqRing->clear();
+        m_worker->requestBasebandTransform(plan.basebandTranslationHz,
+                                           plan.spectrumInverted);
+        m_worker->requestFrequency(plan.hardwareCenterFrequencyHz);
+    }
+    qCInfo(dsdrHal) << "soapy: piano RTL-SDR"
+                    << "dial" << plan.dialFrequencyHz
+                    << "input" << plan.selectedInputFrequencyHz
+                    << "hardware" << plan.hardwareCenterFrequencyHz
+                    << "shift" << plan.basebandTranslationHz
+                    << "RX offset" << plan.logicalSelectedOffsetHz
+                    << "if" << plan.ifEnabled
+                    << "inverted" << plan.spectrumInverted;
+    if (notifyCenter && centerChanged)
+        emit centerFrequencyChanged(m_centerHz);
+    return true;
+}
+
+QVariantMap SoapyBackend::directSamplingInfo() const
+{
+    const rtlsdr::TuningPlan plan = tuningPlanFor(m_centerHz);
+    const bool v4 = rtlsdr::isRtlSdrBlogV4Identity(deviceIdentity());
+    const bool rangeOk = rtlsdr::isDirectSamplingFrequency(plan.selectedInputFrequencyHz);
+    QString message;
+    if (!isRtlSdr()) {
+        message = tr("Il dispositivo Soapy attivo non è un RTL-SDR.");
+    } else if (v4) {
+        message = tr("RTL-SDR Blog V4 usa il tuner con upconverter HF automatico: Q ADC non disponibile.");
+    } else if (!rangeOk) {
+        message = tr("Direct sampling Q ADC: sintonizzare prima fra 500 kHz e 24 MHz.");
+    } else {
+        message = tr("Q ADC: ricezione HF diretta fra 500 kHz e 24 MHz.");
+    }
+    return {{QStringLiteral("supported"), isRtlSdr() && !v4},
+            {QStringLiteral("canEnableNow"), isRtlSdr() && !v4 && rangeOk},
+            {QStringLiteral("active"), m_directSampling != 0},
+            {QStringLiteral("minimumHz"), rtlsdr::kDirectSamplingMinimumFrequencyHz},
+            {QStringLiteral("maximumHz"), rtlsdr::kDirectSamplingMaximumFrequencyHz},
+            {QStringLiteral("message"), message}};
+}
+
+QVariantMap SoapyBackend::ifSettings() const
+{
+    return {{QStringLiteral("enabled"), m_ifEnabled},
+            {QStringLiteral("frequencyHz"), m_ifFrequencyHz},
+            {QStringLiteral("sideband"), m_ifSideband == 2 ? QStringLiteral("lsb")
+                                                             : m_ifSideband == 1 ? QStringLiteral("usb")
+                                                                                 : QStringLiteral("auto")},
+            {QStringLiteral("usbShiftHz"), m_ifUsbShiftHz},
+            {QStringLiteral("lsbShiftHz"), m_ifLsbShiftHz},
+            {QStringLiteral("spectrumInverted"), m_ifSpectrumInverted},
+            {QStringLiteral("hardwareCenterHz"), m_hardwareCenterHz}};
+}
 
 SoapyBackend::SoapyBackend(QObject *parent)
     : IRadioBackend(parent)
@@ -57,8 +229,22 @@ QString SoapyBackend::displayName() const
 
 BackendCapabilities SoapyBackend::capabilities() const
 {
-    if (m_profile.isValid())
-        return capabilitiesFrom(m_profile);
+    if (m_profile.isValid()) {
+        BackendCapabilities caps = capabilitiesFrom(m_profile);
+        if (isRtlSdr()) {
+            caps.nativePanels.removeAll(QStringLiteral("SoapyDevicePanel"));
+            caps.nativePanels.append(QStringLiteral("RtlSdrDevicePanel"));
+            if (rtlsdr::isRtlSdrBlogV4Identity(deviceIdentity())) {
+                caps.minFrequencyHz = rtlsdr::kDirectSamplingMinimumFrequencyHz;
+            } else if (m_directSampling != 0) {
+                caps.minFrequencyHz = rtlsdr::kDirectSamplingMinimumFrequencyHz;
+                caps.maxFrequencyHz = rtlsdr::kDirectSamplingMaximumFrequencyHz;
+                caps.hasPreamp = false;
+                caps.maxGainReductionDb = 0.0;
+            }
+        }
+        return caps;
+    }
 
     // Prima di aprire un device non si sa nulla di preciso: si dichiara il
     // minimo indispensabile, senza promettere bande o rate che potrebbero non
@@ -229,11 +415,17 @@ void SoapyBackend::open(const DeviceDescriptor &device)
             Qt::DirectConnection);
 
     m_worker = worker;
+    const rtlsdr::TuningPlan initialPlan = tuningPlanFor(m_centerHz);
+    m_hardwareCenterHz = initialPlan.hardwareCenterFrequencyHz;
+    m_appliedBasebandTranslationHz = initialPlan.basebandTranslationHz;
+    m_appliedSpectrumInverted = initialPlan.spectrumInverted;
+    worker->requestBasebandTransform(initialPlan.basebandTranslationHz,
+                                     initialPlan.spectrumInverted);
     m_thread->start();
 
     QMetaObject::invokeMethod(worker, "openAndRun", Qt::QueuedConnection,
                               Q_ARG(QString, args),
-                              Q_ARG(qint64, m_centerHz),
+                              Q_ARG(qint64, initialPlan.hardwareCenterFrequencyHz),
                               Q_ARG(double, m_sampleRate));
 }
 
@@ -243,13 +435,12 @@ void SoapyBackend::onDeviceOpened(const SoapyDeviceProfile &profile)
     m_autoGainDb = safeAutoGainDb(profile);
     m_gainReductionDb = 0.0;
 
-    // Ora si sa davvero che device è: la frequenza va riportata dentro la sua
-    // copertura, altrimenti si ascolterebbe rumore credendo a un guasto.
+    // Ora si sa davvero che device è: si valida il piano logico/IF contro la
+    // sua copertura, non soltanto il numero che il VFO mostra.
     const BackendCapabilities caps = capabilities();
-    if (!caps.coversFrequency(m_centerHz) && caps.maxFrequencyHz > caps.minFrequencyHz) {
+    if (!applyTuningPlan(m_centerHz, false)) {
         m_centerHz = std::clamp(m_centerHz, caps.minFrequencyHz, caps.maxFrequencyHz);
-        if (m_worker)
-            m_worker->requestFrequency(m_centerHz);
+        applyTuningPlan(m_centerHz, false);
     }
 
     if (!caps.sampleRates.contains(m_sampleRate) && caps.defaultSampleRate > 0.0) {
@@ -302,25 +493,23 @@ void SoapyBackend::close()
 
 void SoapyBackend::setCenterFrequency(qint64 hz)
 {
-    const BackendCapabilities caps = capabilities();
-    // `open()` marks the backend open before the worker has finished reading
-    // the device profile. During that short window capabilities() is only
-    // the generic pre-open fallback, which has no frequency range. A startup
-    // tune must still be queued; the worker applies it once the profile is
-    // known.
-    if (m_profile.isValid() && !caps.coversFrequency(hz)) {
-        reportError(BackendError::Unsupported, tr("Il device non copre %1 Hz.").arg(hz));
-        return;
-    }
     if (m_centerHz == hz)
         return;
-
-    m_centerHz = hz;
-    if (m_worker)
-        m_worker->requestFrequency(hz);
-    qCInfo(dsdrHal) << "soapy: centro richiesto" << hz
-                    << (m_profile.isValid() ? "profilo pronto" : "profilo in caricamento");
-    emit centerFrequencyChanged(hz);
+    if (!m_profile.isValid()) {
+        m_centerHz = hz;
+        const rtlsdr::TuningPlan plan = tuningPlanFor(hz);
+        m_hardwareCenterHz = plan.hardwareCenterFrequencyHz;
+        m_appliedBasebandTranslationHz = plan.basebandTranslationHz;
+        m_appliedSpectrumInverted = plan.spectrumInverted;
+        if (m_worker) {
+            m_worker->requestBasebandTransform(plan.basebandTranslationHz,
+                                               plan.spectrumInverted);
+            m_worker->requestFrequency(plan.hardwareCenterFrequencyHz);
+        }
+        emit centerFrequencyChanged(hz);
+        return;
+    }
+    applyTuningPlan(hz);
 }
 
 void SoapyBackend::setSampleRate(double rate)
@@ -333,7 +522,12 @@ void SoapyBackend::setSampleRate(double rate)
     if (qFuzzyCompare(m_sampleRate, rate))
         return;
 
+    const double previousRate = m_sampleRate;
     m_sampleRate = rate;
+    if (!applyTuningPlan(m_centerHz, false)) {
+        m_sampleRate = previousRate;
+        return;
+    }
     if (m_worker)
         m_worker->requestSampleRate(rate);
     emit sampleRateChanged(rate);
@@ -354,12 +548,16 @@ ChannelId SoapyBackend::createRxChannel(const RxChannelConfig &config)
 
     const ChannelId id = m_nextChannelId++;
     m_channels.insert(id, config);
+    m_activeDemod = config.mode;
+    if (m_ifEnabled && m_channels.size() == 1)
+        applyTuningPlan(m_centerHz, false);
     return id;
 }
 
 void SoapyBackend::destroyRxChannel(ChannelId channel)
 {
-    m_channels.remove(channel);
+    if (m_channels.remove(channel) > 0 && m_ifEnabled)
+        applyTuningPlan(m_centerHz, false);
 }
 
 QList<ChannelId> SoapyBackend::channels() const
@@ -377,13 +575,23 @@ void SoapyBackend::setFrequency(ChannelId channel, qint64 hz)
         return;
     }
     it->frequencyHz = hz;
+    if (m_ifEnabled)
+        applyTuningPlan(m_centerHz, false);
 }
 
 void SoapyBackend::setDemod(ChannelId channel, DemodMode mode)
 {
     auto it = m_channels.find(channel);
-    if (it != m_channels.end())
+    if (it != m_channels.end()) {
         it->mode = mode;
+        if (m_activeDemod != mode) {
+            const bool sidebandChanged = m_ifEnabled && m_ifSideband == 0
+                && (autoIfUsesLsb() != (mode == DemodMode::Lsb || mode == DemodMode::DigL));
+            m_activeDemod = mode;
+            if (sidebandChanged)
+                applyTuningPlan(m_centerHz, false);
+        }
+    }
 }
 
 void SoapyBackend::setFilter(ChannelId channel, int lowHz, int highHz)
@@ -451,6 +659,10 @@ SampleRing *SoapyBackend::spectrumStream(PanId pan) const
 
 double SoapyBackend::setGainReduction(double db)
 {
+    if (m_directSampling != 0) {
+        m_gainReductionDb = 0.0;
+        return 0.0;
+    }
     const double operatorGain = m_gainDb >= 0.0 ? m_gainDb : m_autoGainDb;
     const double minimumGain = m_profile.minGainDb;
     const double room = std::max(0.0, operatorGain - minimumGain);
@@ -468,6 +680,132 @@ double SoapyBackend::setGainReduction(double db)
 
 QVariant SoapyBackend::nativeCommand(const QString &command, const QVariantMap &args)
 {
+    if (command.startsWith(QLatin1String("rtlsdr.")) && !isRtlSdr()) {
+        reportError(BackendError::Unsupported,
+                    tr("I controlli RTL-SDR sono disponibili solo con un driver SoapyRTLSDR."));
+        return QVariant();
+    }
+    if (command == QLatin1String("rtlsdr.directSamplingInfo"))
+        return directSamplingInfo();
+    if (command == QLatin1String("rtlsdr.ifSettings"))
+        return ifSettings();
+    if (command == QLatin1String("rtlsdr.setGain")) {
+        m_gainDb = args.value(QStringLiteral("db"), -1.0).toDouble();
+        m_gainReductionDb = 0.0;
+        if (m_worker && m_directSampling == 0)
+            m_worker->requestGain(m_gainDb);
+        return m_gainDb;
+    }
+    if (command == QLatin1String("rtlsdr.gainRange")) {
+        return QVariantMap{{QStringLiteral("min"), m_profile.minGainDb},
+                           {QStringLiteral("max"), m_profile.maxGainDb},
+                           {QStringLiteral("hasAgc"), m_profile.hasAgc && m_directSampling == 0}};
+    }
+    if (command == QLatin1String("rtlsdr.ppmSupported"))
+        return false;
+    if (command == QLatin1String("rtlsdr.ppm"))
+        return 0;
+    if (command == QLatin1String("rtlsdr.setPpm"))
+        return 0;
+    if (command == QLatin1String("rtlsdr.setBiasTee")) {
+        const bool enabled = args.value(QStringLiteral("enabled"), false).toBool();
+        if (m_worker)
+            m_worker->requestDeviceSetting(QStringLiteral("biastee"),
+                                           enabled ? QStringLiteral("true") : QStringLiteral("false"));
+        return enabled;
+    }
+    if (command == QLatin1String("rtlsdr.setDirectSampling")) {
+        const int requested = std::clamp(args.value(QStringLiteral("mode"), 0).toInt(), 0, 2);
+        const int mode = requested == 0 ? 0 : 2;
+        if (mode != 0) {
+            const auto plan = tuningPlanFor(m_centerHz);
+            const auto reason = rtlsdr::directSamplingBlockReason(deviceIdentity(),
+                                                                    plan.selectedInputFrequencyHz);
+            if (reason != rtlsdr::DirectSamplingBlockReason::None) {
+                reportError(BackendError::Unsupported,
+                            reason == rtlsdr::DirectSamplingBlockReason::BlogV4UsesUpconverter
+                                ? tr("RTL-SDR Blog V4 usa l'upconverter HF: direct sampling non selezionabile.")
+                                : tr("Per il direct sampling sintonizzare prima fra 500 kHz e 24 MHz."));
+                return m_directSampling;
+            }
+        }
+        const int previous = m_directSampling;
+        m_directSampling = mode;
+        if (!applyTuningPlan(m_centerHz, false)) {
+            m_directSampling = previous;
+            return m_directSampling;
+        }
+        if (m_worker)
+            m_worker->requestDeviceSetting(QStringLiteral("direct_samp"), QString::number(mode));
+        if (mode != 0 && m_offsetTuning) {
+            m_offsetTuning = false;
+            if (m_worker)
+                m_worker->requestDeviceSetting(QStringLiteral("offset_tune"),
+                                               QStringLiteral("false"));
+        }
+        emit capabilitiesChanged();
+        return m_directSampling;
+    }
+    if (command == QLatin1String("rtlsdr.directSampling"))
+        return m_directSampling;
+    if (command == QLatin1String("rtlsdr.setOffsetTuning")) {
+        const bool enabled = args.value(QStringLiteral("enabled"), false).toBool();
+        if (enabled && m_directSampling != 0) {
+            reportError(BackendError::Unsupported,
+                        tr("L'offset tuning del tuner non esiste nel direct sampling Q ADC."));
+            return false;
+        }
+        m_offsetTuning = enabled;
+        if (m_worker)
+            m_worker->requestDeviceSetting(QStringLiteral("offset_tune"),
+                                           enabled ? QStringLiteral("true") : QStringLiteral("false"));
+        return m_offsetTuning;
+    }
+    if (command == QLatin1String("rtlsdr.setIfSettings")) {
+        const bool oldEnabled = m_ifEnabled;
+        const qint64 oldFrequency = m_ifFrequencyHz;
+        const qint64 oldUsbShift = m_ifUsbShiftHz;
+        const qint64 oldLsbShift = m_ifLsbShiftHz;
+        const int oldSideband = m_ifSideband;
+        const bool oldInverted = m_ifSpectrumInverted;
+
+        m_ifEnabled = args.value(QStringLiteral("enabled"), false).toBool();
+        m_ifFrequencyHz = std::clamp(args.value(QStringLiteral("frequencyHz"),
+                                                 m_ifFrequencyHz).toLongLong(),
+                                       kMinimumTuningFrequencyHz, kMaximumTuningFrequencyHz);
+        m_ifUsbShiftHz = std::clamp(args.value(QStringLiteral("usbShiftHz"),
+                                                m_ifUsbShiftHz).toLongLong(),
+                                      qint64(-500'000), qint64(500'000));
+        m_ifLsbShiftHz = std::clamp(args.value(QStringLiteral("lsbShiftHz"),
+                                                m_ifLsbShiftHz).toLongLong(),
+                                      qint64(-500'000), qint64(500'000));
+        const QString sideband = args.value(QStringLiteral("sideband"),
+                                             QStringLiteral("auto")).toString().trimmed().toLower();
+        m_ifSideband = sideband == QLatin1String("lsb") ? 2
+                     : sideband == QLatin1String("usb") ? 1 : 0;
+        m_ifSpectrumInverted = args.value(QStringLiteral("spectrumInverted"), false).toBool();
+        const auto candidate = tuningPlanFor(m_centerHz);
+        const bool stagedForDirectSampling = m_ifEnabled && m_directSampling == 0
+            && !rtlsdr::isRtlSdrBlogV4Identity(deviceIdentity())
+            && rtlsdr::isDirectSamplingFrequency(candidate.selectedInputFrequencyHz)
+            && !hardwarePlanIsSupported(candidate);
+        if (stagedForDirectSampling) {
+            qCInfo(dsdrHal) << "soapy: IF pronta, attendo direct sampling"
+                            << candidate.selectedInputFrequencyHz;
+        } else if (!applyTuningPlan(m_centerHz, false)) {
+            m_ifEnabled = oldEnabled;
+            m_ifFrequencyHz = oldFrequency;
+            m_ifUsbShiftHz = oldUsbShift;
+            m_ifLsbShiftHz = oldLsbShift;
+            m_ifSideband = oldSideband;
+            m_ifSpectrumInverted = oldInverted;
+        }
+        return ifSettings();
+    }
+    if (command == QLatin1String("rtlsdr.tuner"))
+        return m_profile.hardware;
+    if (command == QLatin1String("rtlsdr.driver"))
+        return QStringLiteral("SoapyRTLSDR");
     if (command == QLatin1String("soapy.setGain")) {
         const double db = args.value(QStringLiteral("db"), -1.0).toDouble();
         m_gainDb = db;

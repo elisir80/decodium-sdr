@@ -29,11 +29,33 @@ option(DSDR_BACKEND_TCI     "Backend TCI / SunSDR (RF-05)"                      
 option(DSDR_BACKEND_KIWI    "Backend KiwiSDR (RF-06)"                           OFF)
 option(DSDR_BACKEND_HAMLIB  "Bridge CAT Hamlib (RF-08)"                         OFF)
 
-# Il DMG macOS deve portarsi dietro il modulo SoapyRTLSDR: senza di esso
-# SoapySDR è presente ma una RTL-SDR V4 non può comparire né funzionare su una
-# macchina che non ha Homebrew. È attivo di default su macOS e può essere
-# disattivato per una build tecnica con `-DDSDR_BUNDLE_RTLSDR=OFF`.
-option(DSDR_BUNDLE_RTLSDR   "Includi SoapyRTLSDR e runtime nel bundle macOS"   ${APPLE})
+# Compatibilità con le configurazioni fino alla 1.2.4: la vecchia opzione
+# macOS accende il nuovo bundle Soapy generale, il cui valore resta esplicito
+# e configurabile per le release multipiattaforma.
+option(DSDR_BUNDLE_RTLSDR
+       "Compatibilità: abilita il bundle Soapy con RTL-SDR su macOS" ${APPLE})
+if(APPLE AND DSDR_BUNDLE_RTLSDR)
+    set(dsdr_bundle_soapy_default ON)
+else()
+    set(dsdr_bundle_soapy_default OFF)
+endif()
+option(DSDR_BUNDLE_SOAPY
+       "Includi moduli SoapySDR e le loro dipendenze nel pacchetto" ${dsdr_bundle_soapy_default})
+unset(dsdr_bundle_soapy_default)
+
+# I nomi sono quelli dei file modulo senza estensione: il suffix cambia fra
+# macOS/Linux (`.so`) e Windows (`.dll`). Una release ufficiale imposta RTL-SDR
+# e HackRF; chi produce un pacchetto per un altro ricevitore aggiunge qui il
+# suo modulo senza modificare la logica di installazione.
+set(DSDR_SOAPY_BUNDLE_MODULES "librtlsdrSupport" CACHE STRING
+    "Moduli SoapySDR da includere, senza estensione (lista CMake separata da ;) ")
+set(DSDR_SOAPY_MODULE_PATHS "" CACHE STRING
+    "Directory aggiuntive da cui cercare moduli SoapySDR da includere")
+# `rigctld` e' il bridge che rende disponibile a ogni installazione il
+# catalogo Hamlib: non e' linkato all'app, quindi nessun deploy Qt lo vede da
+# solo. Su macOS e' acceso di default; le build di release Linux/Windows lo
+# attivano esplicitamente nel workflow.
+option(DSDR_BUNDLE_HAMLIB   "Includi rigctld/Hamlib nel pacchetto distribuibile" ${APPLE})
 option(DSDR_QT_CMAKE_DEPLOY "Usa il deploy Qt generato da CMake in install"  ON)
 
 # §6.1: il path CPU dello spettro è una decisione di build, non un fallback runtime.
@@ -203,7 +225,11 @@ function(dsdr_print_configuration)
     message(STATUS "  Qt              : ${Qt6_VERSION}")
     message(STATUS "  Build type      : ${CMAKE_BUILD_TYPE}")
     message(STATUS "  Spettro GPU     : ${DSDR_GPU_SPECTRUM}")
-    message(STATUS "  Bundle RTL-SDR  : ${DSDR_BUNDLE_RTLSDR}")
+    message(STATUS "  Bundle Soapy    : ${DSDR_BUNDLE_SOAPY}")
+    if(DSDR_BUNDLE_SOAPY)
+        message(STATUS "      moduli      : ${DSDR_SOAPY_BUNDLE_MODULES}")
+    endif()
+    message(STATUS "  Bundle Hamlib   : ${DSDR_BUNDLE_HAMLIB}")
     # L'elenco è quello delle opzioni, non una lista scritta a mano: una lista
     # scritta a mano si dimentica di aggiornare, e `audiorig` e `hermes` sono
     # rimasti fuori per mesi. Chi guarda questa riga la guarda proprio per

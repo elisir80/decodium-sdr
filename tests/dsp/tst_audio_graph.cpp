@@ -42,11 +42,13 @@ void TestAudioGraph::theRuleIsPureAndCheckable()
     QVERIFY(mayRoute(AudioTag::EarOnly, AudioSink::Ear));
     QVERIFY(!mayRoute(AudioTag::EarOnly, AudioSink::DigitalDecoder));
     QVERIFY(!mayRoute(AudioTag::EarOnly, AudioSink::AudioRecorder));
+    QVERIFY(!mayRoute(AudioTag::EarOnly, AudioSink::NetworkStream));
     QVERIFY(!mayRoute(AudioTag::EarOnly, AudioSink::Transmit));
 
     QVERIFY(mayRoute(AudioTag::Clean, AudioSink::Ear));
     QVERIFY(mayRoute(AudioTag::Clean, AudioSink::DigitalDecoder));
     QVERIFY(mayRoute(AudioTag::Clean, AudioSink::AudioRecorder));
+    QVERIFY(mayRoute(AudioTag::Clean, AudioSink::NetworkStream));
     QVERIFY(mayRoute(AudioTag::Clean, AudioSink::Transmit));
 }
 
@@ -68,6 +70,7 @@ void TestAudioGraph::theNeuralOutputIsRefusedEverywhereElse()
                            AudioTag::EarOnly, &ring};
 
     for (AudioSink sink : {AudioSink::DigitalDecoder, AudioSink::AudioRecorder,
+                           AudioSink::NetworkStream,
                            AudioSink::Transmit}) {
         AudioGraph graph;
         QVERIFY2(!graph.connect(neural, sink),
@@ -101,8 +104,9 @@ void TestAudioGraph::cleanAudioGoesAnywhere()
     const AudioNode clean{QStringLiteral("mix del DSP"), AudioTag::Clean, &ring};
     QVERIFY(graph.connect(clean, AudioSink::Ear));
     QVERIFY(graph.connect(clean, AudioSink::AudioRecorder));
+    QVERIFY(graph.connect(clean, AudioSink::NetworkStream));
     QVERIFY(graph.connect(clean, AudioSink::DigitalDecoder));
-    QCOMPARE(graph.routes().size(), 3);
+    QCOMPARE(graph.routes().size(), 4);
 }
 
 void TestAudioGraph::aRefusedRouteDoesNotEnterTheGraph()

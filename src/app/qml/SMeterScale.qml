@@ -37,10 +37,11 @@ QtObject {
     /// Decibel oltre S9 coperti dal quadrante.
     readonly property real plusRangeDb: 60
 
-    /// Nessun livello digitale può valere più di 0 dBFS. Una taratura S9
-    /// sopra questo limite nasce necessariamente da una misura presa mentre
-    /// il canale era occupato e comprimerebbe ogni segnale reale verso S0.
-    readonly property real maxS9ReferenceDb: 0
+    /// S9 deve lasciare almeno un punto S di margine prima di 0 dBFS. Una
+    /// tara a −0,8 dBFS non è sostanzialmente diversa da una tara a 0: un
+    /// segnale reale resta schiacciato su S0/S1. Sei decibel lasciano invece
+    /// un gradino leggibile e riparano le preferenze salvate in saturazione.
+    readonly property real maxS9ReferenceDb: -6
 
     /// Quanto sta S1 sopra il fondo di rumore. Un segnale che si distingue
     /// appena dal rumore è un S1: sotto, non lo si sente.
@@ -54,6 +55,14 @@ QtObject {
             return -80
         return Math.min(maxS9ReferenceDb,
                         noiseFloorDb + s1AboveFloorDb + 8 * dbPerUnit)
+    }
+
+    /// Una tara sopra −6 dBFS non è utilizzabile: non resta nemmeno un punto
+    /// S di margine. Può nascere quando la catena è compressa; il pannello la
+    /// sostituisce con il proprio riferimento sicuro invece di conservarla e
+    /// mostrare S0 su una banda rumorosa.
+    function isUsableS9ReferenceDb(s9Db) {
+        return isFinite(s9Db) && s9Db <= maxS9ReferenceDb && s9Db >= -140
     }
 
     /// Punti S continui: 9 vale S9, 19 vale S9+60 dB.

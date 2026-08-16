@@ -11,11 +11,14 @@
 #include "hal/backends/soapy/SoapyProfile.h"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QStringList>
 
 #include <atomic>
+#include <limits>
+#include <mutex>
 #include <vector>
 
 namespace SoapySDR {
@@ -46,6 +49,10 @@ public:
     /// Si passa un indice e non un nome perché una stringa non può essere
     /// scambiata fra thread con una semplice atomica.
     void requestAntenna(int index);
+    /// Impostazioni specifiche del driver, applicate dal solo thread Soapy.
+    void requestDeviceSetting(const QString &key, const QString &value);
+    /// Raddrizza uno spettro IF invertito e trasla il canale scelto a zero.
+    void requestBasebandTransform(double translationHz, bool spectrumInverted);
     void requestStop();
 
 public slots:
@@ -75,8 +82,21 @@ private:
     std::atomic<bool> m_gainAuto{true};
     std::atomic<bool> m_gainCommandPending{true};
     std::atomic<int> m_pendingAntenna{-1};
+    std::atomic<double> m_pendingTranslationHz{std::numeric_limits<double>::quiet_NaN()};
+    std::atomic<int> m_pendingSpectrumInverted{-1};
+    std::mutex m_settingsMutex;
+    QHash<QString, QString> m_pendingDeviceSettings;
     QStringList m_antennas;   ///< letto dal profilo, usato solo dal ciclo
     double m_safeAutoGainDb = 0.0;
+    bool m_directSamplingActive = false;
+    bool m_spectrumInverted = false;
+    double m_activeSampleRate = 0.0;
+    double m_basebandTranslationHz = 0.0;
+    double m_oscillatorI = 1.0;
+    double m_oscillatorQ = 0.0;
+    double m_oscillatorStepI = 1.0;
+    double m_oscillatorStepQ = 0.0;
+    quint32 m_oscillatorNormaliseCounter = 0;
 };
 
 } // namespace dsdr::hal::soapy

@@ -11,6 +11,7 @@ qt_add_library(dsdr_qml STATIC)
 set(DSDR_QML_FILES
     qml/Main.qml
     qml/MainMenu.qml
+    qml/OperationsDialog.qml
     qml/CommandRail.qml
     qml/Theme.qml
     qml/Tuning.qml
@@ -35,6 +36,7 @@ set(DSDR_QML_FILES
     qml/SpectrumCursor.qml
     qml/NetworkQuality.qml
     qml/AudioStudioPanel.qml
+    qml/NetworkAudioPanel.qml
     qml/AudioScope.qml
     qml/EqCurve.qml
     qml/VoiceCompare.qml
@@ -73,6 +75,7 @@ set(DSDR_QML_FILES
     qml/BackendPanelHost.qml
     qml/SoapyDevicePanel.qml
     qml/RtlSdrDevicePanel.qml
+    qml/RtlCatPanel.qml
     qml/NetTcpDevicePanel.qml
     qml/ColibriDevicePanel.qml
     qml/AudiorigPanel.qml
@@ -309,87 +312,91 @@ if(DSDR_QT_CMAKE_DEPLOY)
     install(SCRIPT ${DSDR_DEPLOY_SCRIPT})
 endif()
 
-# SoapySDR discovers hardware drivers through shared modules at runtime. Qt's
-# deploy tool can copy libSoapySDR because the application links it, but it
-# cannot know which Soapy modules the user wants. The macOS release explicitly
-# bundles the RTL-SDR module and its USB runtime so a downloaded DMG works
-# without Homebrew.
-if(APPLE AND (DSDR_BACKEND_SOAPY OR DSDR_BACKEND_RTLSDR) AND DSDR_BUNDLE_RTLSDR)
-    find_program(DSDR_BREW_EXECUTABLE brew)
-    if(DSDR_BREW_EXECUTABLE)
-        execute_process(
-            COMMAND ${DSDR_BREW_EXECUTABLE} --prefix
-            OUTPUT_VARIABLE DSDR_BREW_PREFIX
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET)
+# SoapySDR scopre l'hardware attraverso plugin caricati dopo l'avvio: nessun
+# deploy Qt li può dedurre dalla libreria linkata all'app. Il meccanismo è
+# comune a RTL-SDR, HackRF e agli altri moduli dichiarati dal confezionatore;
+# non esistono più percorsi speciali per un solo ricevitore.
+include(DsdrSoapyBundle)
+dsdr_prepare_soapy_bundle()
+
+if(DSDR_BUNDLE_SOAPY)
+    if(APPLE)
+        configure_file(
+            "${CMAKE_SOURCE_DIR}/cmake/BundleMacOSSoapyModules.cmake.in"
+            "${CMAKE_BINARY_DIR}/BundleMacOSSoapyModules.cmake"
+            @ONLY)
+        # Con il deploy CMake il bundle è già completo qui. Il workflow macOS
+        # che usa macdeployqt esegue lo stesso script subito dopo quel deploy.
+        if(DSDR_QT_CMAKE_DEPLOY)
+            install(SCRIPT "${CMAKE_BINARY_DIR}/BundleMacOSSoapyModules.cmake")
+        endif()
+    else()
+        # Su Linux e Windows il loader Soapy legge questo albero dall'app:
+        # `main.cpp` lo rende prioritario rispetto a un'installazione di
+        # sviluppo. Le DLL dipendenti saranno raccolte dal passo runtime di
+        # Windows; linuxdeploy riceve il manifest dal workflow AppImage.
+        install(FILES ${DSDR_SOAPY_BUNDLED_MODULE_FILES}
+                DESTINATION "lib/SoapySDR/modules0.8")
     endif()
-    if(NOT DSDR_BREW_PREFIX)
-        set(DSDR_BREW_PREFIX "/opt/homebrew")
-    endif()
+endif()
 
-    set(DSDR_MACOS_ROOTS "${DSDR_BREW_PREFIX}" "/opt/homebrew" "/usr/local")
-    list(REMOVE_DUPLICATES DSDR_MACOS_ROOTS)
+# Il bridge locale Hamlib e' un processo separato (`rigctld`), non una
+# libreria linkata da DECODIUM SDR. Senza questa regola un DMG o AppImage può
+# mostrare centinaia di radio nel selettore, ma nessuna funziona sulla macchina
+# di chi scarica perché manca l'eseguibile che possiede davvero la porta CAT.
+if(DSDR_BUNDLE_HAMLIB)
+    find_program(DSDR_RIGCTLD_EXECUTABLE
+        NAMES rigctld rigctld.exe
+        PATHS /opt/homebrew/bin /usr/local/bin)
 
-    set(DSDR_SOAPY_MODULE_PATHS)
-    set(DSDR_RTLSDR_LIBRARY_PATHS)
-    set(DSDR_LIBUSB_LIBRARY_PATHS)
-    foreach(dsdr_root IN LISTS DSDR_MACOS_ROOTS)
-        list(APPEND DSDR_SOAPY_MODULE_PATHS
-            "${dsdr_root}/lib/SoapySDR/modules0.8"
-            "${dsdr_root}/opt/soapyrtlsdr/lib/SoapySDR/modules0.8")
-        list(APPEND DSDR_RTLSDR_LIBRARY_PATHS
-            "${dsdr_root}/opt/librtlsdr/lib"
-            "${dsdr_root}/lib")
-        list(APPEND DSDR_LIBUSB_LIBRARY_PATHS
-            "${dsdr_root}/opt/libusb/lib"
-            "${dsdr_root}/lib")
-    endforeach()
-
-    if(DSDR_BACKEND_SOAPY)
-        find_file(DSDR_SOAPY_RTLSDR_MODULE
-            NAMES librtlsdrSupport.so
-            PATHS ${DSDR_SOAPY_MODULE_PATHS}
+    if(NOT DSDR_RIGCTLD_EXECUTABLE)
+        set(dsdr_hamlib_message
+            "DSDR_BUNDLE_HAMLIB=ON ma rigctld non è disponibile.\n"
+            "  macOS : brew install hamlib\n"
+            "  Debian: apt install hamlib-utils\n"
+            "  MSYS2 : pacman -S mingw-w64-x86_64-hamlib")
+        if(DSDR_STRICT_BACKENDS)
+            message(FATAL_ERROR ${dsdr_hamlib_message})
+        endif()
+        message(WARNING ${dsdr_hamlib_message}
+            "\nLa build tecnica resta utilizzabile con un rigctld esterno, "
+            "ma non produrrà un pacchetto CAT autosufficiente.")
+    elseif(APPLE)
+        find_file(DSDR_HAMLIB_LIBRARY
+            NAMES libhamlib.4.dylib libhamlib.dylib
+            PATHS /opt/homebrew/opt/hamlib/lib /usr/local/opt/hamlib/lib
+                  /opt/homebrew/lib /usr/local/lib
             NO_DEFAULT_PATH)
-    endif()
-    find_file(DSDR_LIBRTLSDR_LIBRARY
-        NAMES librtlsdr.0.dylib
-        PATHS ${DSDR_RTLSDR_LIBRARY_PATHS}
-        NO_DEFAULT_PATH)
-    find_file(DSDR_LIBUSB_LIBRARY
-        NAMES libusb-1.0.0.dylib
-        PATHS ${DSDR_LIBUSB_LIBRARY_PATHS}
-        NO_DEFAULT_PATH)
+        find_file(DSDR_HAMLIB_LIBUSB_LIBRARY
+            NAMES libusb-1.0.0.dylib
+            PATHS /opt/homebrew/opt/libusb/lib /usr/local/opt/libusb/lib
+                  /opt/homebrew/lib /usr/local/lib
+            NO_DEFAULT_PATH)
+        if(NOT DSDR_HAMLIB_LIBRARY OR NOT DSDR_HAMLIB_LIBUSB_LIBRARY)
+            message(FATAL_ERROR
+                "rigctld trovato ma il runtime Hamlib macOS non è completo.\n"
+                "  rigctld: ${DSDR_RIGCTLD_EXECUTABLE}\n"
+                "  libhamlib: ${DSDR_HAMLIB_LIBRARY}\n"
+                "  libusb: ${DSDR_HAMLIB_LIBUSB_LIBRARY}")
+        endif()
 
-    if((DSDR_BACKEND_SOAPY AND NOT DSDR_SOAPY_RTLSDR_MODULE)
-       OR NOT DSDR_LIBRTLSDR_LIBRARY OR NOT DSDR_LIBUSB_LIBRARY)
-        message(FATAL_ERROR
-            "DSDR_BUNDLE_RTLSDR=ON ma il runtime RTL-SDR non è completo.\n"
-            "  macOS: brew install soapysdr soapyrtlsdr\n"
-            "  modulo: ${DSDR_SOAPY_RTLSDR_MODULE}\n"
-            "  librtlsdr: ${DSDR_LIBRTLSDR_LIBRARY}\n"
-            "  libusb: ${DSDR_LIBUSB_LIBRARY}")
-    endif()
-
-    get_filename_component(DSDR_RTLSDR_BASENAME "${DSDR_LIBRTLSDR_LIBRARY}" NAME)
-    get_filename_component(DSDR_LIBUSB_BASENAME "${DSDR_LIBUSB_LIBRARY}" NAME)
-    set(DSDR_RTLSDR_SOURCE_NAME
-        "${DSDR_BREW_PREFIX}/opt/librtlsdr/lib/${DSDR_RTLSDR_BASENAME}")
-    if(DSDR_BACKEND_SOAPY)
-        set(DSDR_SOAPY_SOURCE_NAME
-            "${DSDR_BREW_PREFIX}/opt/soapysdr/lib/libSoapySDR.0.8.dylib")
-    endif()
-    set(DSDR_LIBUSB_SOURCE_NAME
-        "${DSDR_BREW_PREFIX}/opt/libusb/lib/${DSDR_LIBUSB_BASENAME}")
-    set(DSDR_LOADER_PATH "@loader_path")
-    configure_file(
-        "${CMAKE_SOURCE_DIR}/cmake/BundleMacOSSoapyRtlSdr.cmake.in"
-        "${CMAKE_BINARY_DIR}/BundleMacOSSoapyRtlSdr.cmake"
-        @ONLY)
-    # When Qt deployment is disabled, the release workflow runs this script
-    # after macdeployqt. macdeployqt must see a bundle without Soapy modules;
-    # otherwise it tries to scan the third-party plugin as if it were QML.
-    if(DSDR_QT_CMAKE_DEPLOY)
-        install(SCRIPT "${CMAKE_BINARY_DIR}/BundleMacOSSoapyRtlSdr.cmake")
+        get_filename_component(DSDR_HAMLIB_BASENAME "${DSDR_HAMLIB_LIBRARY}" NAME)
+        get_filename_component(DSDR_HAMLIB_LIBUSB_BASENAME
+                               "${DSDR_HAMLIB_LIBUSB_LIBRARY}" NAME)
+        set(DSDR_HAMLIB_LOADER_PATH "@loader_path")
+        configure_file(
+            "${CMAKE_SOURCE_DIR}/cmake/BundleMacOSHamlib.cmake.in"
+            "${CMAKE_BINARY_DIR}/BundleMacOSHamlib.cmake"
+            @ONLY)
+        # Il workflow con macdeployqt esegue lo stesso script subito dopo
+        # quello RTL-SDR, quando il bundle è completo.
+        if(DSDR_QT_CMAKE_DEPLOY)
+            install(SCRIPT "${CMAKE_BINARY_DIR}/BundleMacOSHamlib.cmake")
+        endif()
+    else()
+        # Linux AppImage e Windows installano il bridge accanto all'app:
+        # `applicationDirPath()` lo trova prima del PATH di sistema.
+        install(PROGRAMS "${DSDR_RIGCTLD_EXECUTABLE}" DESTINATION bin)
     endif()
 endif()
 
@@ -413,6 +420,13 @@ if(WIN32)
         list(APPEND DSDR_DEP_DIRS "${DSDR_SOAPY_ROOT}/bin")
     endif()
     list(APPEND DSDR_DEP_DIRS "${DSDR_COMPILER_DIR}")
+    set(DSDR_WINDOWS_HAMLIB_RUNTIME)
+    if(DSDR_BUNDLE_HAMLIB AND DSDR_RIGCTLD_EXECUTABLE)
+        # Nel codice di installazione il prefisso e' quello scelto da CPack,
+        # non quello della configurazione: il dollaro resta quindi protetto.
+        set(DSDR_WINDOWS_HAMLIB_RUNTIME
+            " \"\${CMAKE_INSTALL_PREFIX}/bin/rigctld.exe\"")
+    endif()
 
     install(CODE "
         set(dsdr_exe \"\${CMAKE_INSTALL_PREFIX}/bin/decodium-sdr.exe\")
@@ -426,6 +440,7 @@ if(WIN32)
         # che e' dichiarato prima: quando arriviamo qui i plugin ci sono gia'.
         file(GLOB_RECURSE dsdr_installed_libs
              \"\${CMAKE_INSTALL_PREFIX}/bin/*.dll\"
+             \"\${CMAKE_INSTALL_PREFIX}/lib/SoapySDR/modules0.8/*.dll\"
              \"\${CMAKE_INSTALL_PREFIX}/share/qt6/plugins/*.dll\"
              \"\${CMAKE_INSTALL_PREFIX}/share/qt6/qml/*.dll\")
         list(LENGTH dsdr_installed_libs dsdr_lib_count)
@@ -439,7 +454,7 @@ if(WIN32)
         # «multiple conflicting paths» e interrompe l'installazione a metà —
         # con un pacchetto che sembra costruito e non lo è.
         file(GET_RUNTIME_DEPENDENCIES
-            EXECUTABLES \"\${dsdr_exe}\"
+            EXECUTABLES \"\${dsdr_exe}\"${DSDR_WINDOWS_HAMLIB_RUNTIME}
             MODULES \${dsdr_installed_libs}
             RESOLVED_DEPENDENCIES_VAR dsdr_resolved
             UNRESOLVED_DEPENDENCIES_VAR dsdr_unresolved

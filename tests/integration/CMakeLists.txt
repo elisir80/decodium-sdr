@@ -26,6 +26,18 @@ dsdr_add_test(tst_iq_recorder
     SOURCES tst_iq_recorder.cpp
     LIBRARIES dsdr::core)
 
+# Il pianificatore deve rimanere deterministico: le scadenze sono valutate
+# contro un orologio iniettato dal test, senza attese reali.
+dsdr_add_test(tst_operation_scheduler
+    SOURCES tst_operation_scheduler.cpp
+    LIBRARIES dsdr::core)
+
+# Il timer non basta da solo: questa prova percorre il boundary scheduler →
+# sessione → backend demo e verifica una sintonia realmente applicata.
+dsdr_add_test(tst_session_scheduler
+    SOURCES tst_session_scheduler.cpp
+    LIBRARIES dsdr::core)
+
 add_library(dsdr_test_iq_module SHARED test_iq_module.cpp)
 target_include_directories(dsdr_test_iq_module PRIVATE
     "${CMAKE_SOURCE_DIR}/src")

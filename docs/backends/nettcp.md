@@ -1,6 +1,7 @@
 # Backend `nettcp`
 
-Sorgenti IQ raggiungibili via TCP (RF-07). Parla **rtl_tcp** e **SpyServer**:
+Sorgenti IQ raggiungibili via rete (RF-07). Parla **rtl_tcp**, **SpyServer**,
+IQ grezzo dichiarato su TCP/UDP e **SDR++ Server**:
 il primo rende utilizzabile una chiavetta RTL-SDR anche montata su un Raspberry
 in giardino, il secondo apre agli Airspy condivisi in rete.
 
@@ -10,6 +11,43 @@ l'utente non deve dichiarare che cosa ci sia dall'altra parte.
 
 Classe **raw-IQ**: il server consegna solo campioni, tutto il resto lo fa il
 DSP client.
+
+## Endpoint dichiarati
+
+I protocolli senza handshake non sono indovinabili in modo sicuro: l'URI è il
+contratto esplicito. Si aggiunge dal campo «Sorgente» o in
+`DSDR_NETTCP_HOSTS`; appare subito nell'elenco e la connessione verifica che
+il peer sia davvero raggiungibile.
+
+| URI | Direzione | Formato IQ | Esempio |
+| --- | --- | --- | --- |
+| `tcp://host:porta?rate=…&format=…` | Decodium è client | IQ interlacciato LE continuo | `tcp://192.168.1.20:7356?rate=2048000&format=int16` |
+| `udp://host:porta?rate=…&format=…` | Decodium ascolta sulla porta locale | un datagramma o più datagrammi IQ interlacciati LE | `udp://0.0.0.0:7356?rate=48000&format=float32` |
+| `sdrpp://host:porta?format=…` | Decodium è client | protocollo SDR++ Server | `sdrpp://192.168.1.20:5259?format=int16` |
+
+`format` (o `type`) accetta `int8`, `int16`, `int32` e `float32`; SDR++
+Server accetta `int8`, `int16` e `float32`. Il valore predefinito è `int16`.
+Il sample rate di un flusso raw è `rate` (default 2,048 MS/s); per SDR++ Server
+vale sempre il rate annunciato dal server all'apertura.
+
+Il client SDR++ imposta esplicitamente il tipo PCM, disattiva la compressione,
+invia frequenza e `Start`, poi riceve i frame Baseband non compressi. Un server
+che ignori quella richiesta e invii IQ compresso viene rifiutato con un errore
+esplicito: questa build non include Zstd e non deve presentare campioni
+compressi come se fossero IQ.
+
+## Audio di rete
+
+Il pannello **Audio di rete** esporta il mix RX lineare (prima della riduzione
+neurale) come PCM signed 16-bit little-endian, 48 kHz, senza intestazione:
+
+- **UDP** invia al destinatario scelto (default `127.0.0.1:7355`);
+- **TCP server** ascolta su un indirizzo locale (`0.0.0.0` per tutte le
+  interfacce) e serve un client alla volta.
+
+È il formato del Network Sink di SDR++. Si sceglie mono o stereo; il tap ha un
+ring proprio, quindi un client remoto lento non può bloccare né gli
+altoparlanti né il DSP.
 
 ## Il protocollo, in breve
 
@@ -35,7 +73,8 @@ backend sonda un elenco di endpoint noti.
 
 Da dove vengono gli endpoint, in ordine:
 
-1. la variabile d'ambiente `DSDR_NETTCP_HOSTS` (`"host:porta,host:porta"`);
+1. la variabile d'ambiente `DSDR_NETTCP_HOSTS` (`"host:porta,host:porta"` o
+   URI dichiarati separati da virgola);
 2. gli indirizzi aggiunti a runtime — dalla UI, che mostra il campo perché il
    backend dichiara `remoteCapable`, oppure via
    `nativeCommand("net.addEndpoint")`;
@@ -120,3 +159,8 @@ I test usano un server rtl_tcp finto (`tests/hal/RtlTcpMockServer`) che
 riproduce saluto, comandi e flusso di campioni generando un tono a offset
 noto: è ciò che permette al backend di passare l'intera conformance suite in
 CI, senza hardware.
+
+`tests/hal/NetworkIqMockServer` verifica inoltre IQ raw TCP, IQ raw UDP e il
+negoziato SDR++ Server (sample rate, formato, frequenza, `Start` e campioni).
+`tests/dsp/tst_network_audio` riceve un vero datagramma UDP localhost e
+verifica il PCM16/48 kHz senza header.

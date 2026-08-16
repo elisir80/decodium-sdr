@@ -8,14 +8,19 @@
 
 #include "RtlTcpMockServer.h"
 #include "SpyServerMockServer.h"
+#include "NetworkIqMockServer.h"
 #include "hal/BackendRegistry.h"
 #include "hal/IRadioBackend.h"
 
 #include <QElapsedTimer>
+#include <QHostAddress>
 #include <QSignalSpy>
 #include <QTest>
+#include <QUdpSocket>
+#include <QtEndian>
 
 #include <cmath>
+#include <cstring>
 #include <memory>
 
 using namespace dsdr;
@@ -45,9 +50,16 @@ private slots:
     void spyServerCapabilitiesComeFromTheDevice();
     void spyServerSamplesAreScaled();
 
+    // ── IQ generico e SDR++ Server ───────────────────────────────────────
+    void rawTcpIqUriStreamsDeclaredFormat();
+    void rawUdpIqUriStreamsDeclaredFormat();
+    void sdrppServerNegotiatesAndStreams();
+
 private:
     std::unique_ptr<dsdr::test::RtlTcpMockServer> m_server;
     std::unique_ptr<dsdr::test::SpyServerMockServer> m_spyServer;
+    std::unique_ptr<dsdr::test::RawIqTcpMockServer> m_rawIqServer;
+    std::unique_ptr<dsdr::test::SdrppServerMockServer> m_sdrppServer;
     std::unique_ptr<IRadioBackend> m_backend;
 
     /// Quanto si è disposti ad aspettare.
@@ -89,6 +101,33 @@ private:
         return m_backend != nullptr;
     }
 
+    /// Un URI con schema è già una dichiarazione sufficiente: non deve
+    /// attendere la sonda rtl_tcp/SpyServer per comparire nell'elenco.
+    bool useDeclaredEndpoint(const QString &endpoint)
+    {
+        m_server.reset();
+        m_spyServer.reset();
+        m_backend.reset();
+        qputenv("DSDR_NETTCP_HOSTS", endpoint.toUtf8());
+        m_backend.reset(BackendRegistry::instance().create(QStringLiteral("nettcp")));
+        return m_backend != nullptr;
+    }
+
+    bool openDeclaredEndpoint(DeviceDescriptor *declared = nullptr)
+    {
+        QSignalSpy found(m_backend.get(), &IRadioBackend::deviceFound);
+        m_backend->startDiscovery();
+        if (found.isEmpty() && !found.wait(kPatience))
+            return false;
+        if (found.isEmpty())
+            return false;
+        const auto device = found.first().first().value<DeviceDescriptor>();
+        if (declared)
+            *declared = device;
+        m_backend->open(device);
+        return waitFor([this] { return m_backend->state() == BackendState::Streaming; });
+    }
+
     /// Avvia il mock, fa discovery e apre il device trovato.
     bool connectToMock()
     {
@@ -128,6 +167,8 @@ void TestNetTcp::cleanup()
     }
     m_server.reset();
     m_spyServer.reset();
+    m_rawIqServer.reset();
+    m_sdrppServer.reset();
     qunsetenv("DSDR_NETTCP_HOSTS");
 }
 
@@ -360,6 +401,114 @@ void TestNetTcp::spyServerSamplesAreScaled()
     }
     QVERIFY2(peak > 0.2 && peak <= 1.0,
              qPrintable(QStringLiteral("ampiezza fuori scala: %1").arg(peak)));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IQ generico e SDR++ Server
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TestNetTcp::rawTcpIqUriStreamsDeclaredFormat()
+{
+    m_rawIqServer = std::make_unique<dsdr::test::RawIqTcpMockServer>();
+    QVERIFY(m_rawIqServer->listen());
+    QVERIFY(useDeclaredEndpoint(m_rawIqServer->endpoint()));
+
+    DeviceDescriptor device;
+    QVERIFY(openDeclaredEndpoint(&device));
+    QCOMPARE(device.extra.value(QStringLiteral("protocol")).toString(),
+             QStringLiteral("raw_tcp"));
+    QCOMPARE(m_backend->sampleRate(), 96'000.0);
+
+    SampleRing *ring = m_backend->iqStream();
+    QVERIFY(ring);
+    QVERIFY2(waitFor([ring] { return ring->available() >= 8; }),
+             "nessun IQ raw TCP ricevuto");
+
+    std::vector<float> samples(8);
+    QCOMPARE(ring->read(samples.data(), samples.size()), samples.size());
+    QCOMPARE(samples[0], 32767.0f / 32768.0f);
+    QCOMPARE(samples[1], 0.0f);
+    QCOMPARE(samples[2], 0.0f);
+    QCOMPARE(samples[3], -0.5f);
+    QCOMPARE(samples[4], -1.0f);
+    QCOMPARE(samples[5], 0.5f);
+    QCOMPARE(samples[6], 0.25f);
+    QCOMPARE(samples[7], -0.25f);
+}
+
+void TestNetTcp::rawUdpIqUriStreamsDeclaredFormat()
+{
+    QUdpSocket probe;
+    QVERIFY(probe.bind(QHostAddress::LocalHost, 0));
+    const quint16 port = probe.localPort();
+    probe.close();
+
+    const QString endpoint = QStringLiteral("udp://127.0.0.1:%1?rate=48000&format=float32")
+                                 .arg(port);
+    QVERIFY(useDeclaredEndpoint(endpoint));
+    QVERIFY(openDeclaredEndpoint());
+    QCOMPARE(m_backend->sampleRate(), 48'000.0);
+
+    auto appendFloat = [](QByteArray &bytes, float value) {
+        quint32 bits = 0;
+        static_assert(sizeof(bits) == sizeof(value));
+        std::memcpy(&bits, &value, sizeof(bits));
+        const int offset = bytes.size();
+        bytes.resize(offset + static_cast<int>(sizeof(bits)));
+        qToLittleEndian(bits, bytes.data() + offset);
+    };
+
+    QByteArray datagram;
+    appendFloat(datagram, 0.25f);
+    appendFloat(datagram, -0.5f);
+    appendFloat(datagram, 1.0f);
+    appendFloat(datagram, -1.0f);
+    QUdpSocket sender;
+    QCOMPARE(sender.writeDatagram(datagram, QHostAddress::LocalHost, port),
+             static_cast<qint64>(datagram.size()));
+
+    SampleRing *ring = m_backend->iqStream();
+    QVERIFY(ring);
+    QVERIFY2(waitFor([ring] { return ring->available() >= 4; }),
+             "nessun IQ raw UDP ricevuto");
+    std::vector<float> samples(4);
+    QCOMPARE(ring->read(samples.data(), samples.size()), samples.size());
+    QCOMPARE(samples[0], 0.25f);
+    QCOMPARE(samples[1], -0.5f);
+    QCOMPARE(samples[2], 1.0f);
+    QCOMPARE(samples[3], -1.0f);
+}
+
+void TestNetTcp::sdrppServerNegotiatesAndStreams()
+{
+    m_sdrppServer = std::make_unique<dsdr::test::SdrppServerMockServer>();
+    QVERIFY(m_sdrppServer->listen());
+    QVERIFY(useDeclaredEndpoint(m_sdrppServer->endpoint()));
+
+    DeviceDescriptor device;
+    QVERIFY(openDeclaredEndpoint(&device));
+    QCOMPARE(device.extra.value(QStringLiteral("protocol")).toString(),
+             QStringLiteral("sdrpp"));
+    QCOMPARE(m_backend->sampleRate(), 1'024'000.0);
+    QVERIFY2(waitFor([this] { return m_sdrppServer->receivedStart(); }),
+             "il server SDR++ non ha ricevuto Start");
+    QVERIFY2(waitFor([this] { return m_sdrppServer->requestedFrequencyHz() > 0; }),
+             "il server SDR++ non ha ricevuto la frequenza iniziale");
+
+    SampleRing *ring = m_backend->iqStream();
+    QVERIFY(ring);
+    QVERIFY2(waitFor([ring] { return ring->available() >= 8; }),
+             "il server SDR++ non ha inviato IQ");
+    std::vector<float> samples(8);
+    QCOMPARE(ring->read(samples.data(), samples.size()), samples.size());
+    QCOMPARE(samples[0], 0.5f);
+    QCOMPARE(samples[1], -0.5f);
+    QCOMPARE(samples[2], -0.25f);
+    QCOMPARE(samples[3], 0.25f);
+    QCOMPARE(samples[4], 0.0f);
+    QCOMPARE(samples[5], 32767.0f / 32768.0f);
+    QCOMPARE(samples[6], -1.0f);
+    QCOMPARE(samples[7], 0.0f);
 }
 
 QTEST_MAIN(TestNetTcp)

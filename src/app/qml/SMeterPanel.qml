@@ -78,15 +78,24 @@ PanelFrame {
             instrument = 0
     }
 
-    // Una vecchia prima taratura poteva salvare S9 sopra 0 dBFS se l'app si
-    // apriva su una broadcast FM: non è una calibrazione valida e rende S1
-    // qualunque segnale. Ripararla qui aggiorna anche le preferenze esistenti.
+    // Una tara automatica eseguita mentre l'ingresso è compresso poteva
+    // salvare S9 = 0 dBFS. È formalmente dentro il fondo scala, ma non è una
+    // tara utilizzabile: ogni livello reale resta sotto S9 e il quadrante
+    // legge S0/S1 anche su una banda che la radio indica S6–S7. Ripararla qui
+    // aggiorna anche le preferenze esistenti, senza rieseguire la tara dal
+    // rumore alla successiva apertura.
     function normalizeCalibration() {
-        if (!isFinite(s9ReferenceDb) || s9ReferenceDb > SMeterScale.maxS9ReferenceDb
-                || s9ReferenceDb < -140) {
+        if (!SMeterScale.isUsableS9ReferenceDb(s9ReferenceDb)) {
             s9ReferenceDb = defaultS9ReferenceDb
-            calibrated = false
+            calibrated = true
         }
+    }
+
+    // Un ripristino deve essere deterministico: tornare al riferimento noto
+    // non può far partire subito la tara automatica sul segnale che c'è ora.
+    function resetCalibration() {
+        s9ReferenceDb = defaultS9ReferenceDb
+        calibrated = true
     }
 
     Component.onCompleted: {
@@ -297,6 +306,7 @@ PanelFrame {
                         // dov'è anche cambiando canale o lettura.
                         s9ReferenceDb: root.s9ReferenceDb
                         onS9ReferenceDbChanged: root.s9ReferenceDb = s9ReferenceDb
+                        onResetCalibrationRequested: root.resetCalibration()
 
                         sourceLabel: Session.backendName
                         channelLabel: qsTr("RX %1").arg(entry.index + 1)

@@ -156,6 +156,12 @@ signals:
     void centerFrequencyChanged(qint64 hz);
     void sampleRateChanged(double rate);
     void pttChanged(bool transmit);
+
+    /// Stato del VFO letto dal device. Serve ai ricevitori con CAT: la radio
+    /// può cambiare frequenza e modo dalla sua manopola, quindi il client deve
+    /// aggiornare la propria catena senza rispedire lo stesso comando e
+    /// costruire un anello CAT.
+    void receiverStateChanged(qint64 frequencyHz, dsdr::DemodMode mode);
 };
 
 } // namespace dsdr::hal

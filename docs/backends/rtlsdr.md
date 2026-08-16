@@ -21,6 +21,12 @@ catena corta e diagnostica simile al modulo nativo di SDR++.
 
 Il backend è RX-only: non mostra né simula un PTT.
 
+Con l'uscita IF fissa del ricevitore attiva, il tuner resta esattamente su
+`IF + offset USB/LSB` invece di applicare il normale offset anti-spur DC. In
+questo modo il piano di sintonia coincide con SDR++ in modalità panadapter e
+la portante resta allineata al VFO della radio. L'offset anti-DC resta attivo
+per la normale ricezione RF.
+
 ## Comandi nativi UI
 
 Il pannello `RtlSdrDevicePanel` usa esclusivamente il seam controllato
@@ -46,3 +52,10 @@ cmake --build build
 
 Per una build senza dipendenza nativa si può usare
 `-DDSDR_BACKEND_RTLSDR=OFF`; il backend Soapy resta indipendente.
+
+## Uscita IF di un ricevitore
+
+Con IF fissa, il tuner resta esattamente su `IF + shift USB/LSB`, come SDR++
+in modalità panadapter. Il DSP può coniugare I/Q se lo spettro è invertito,
+ma non applica un secondo shift: la banda laterale è già centrata dal tuner.
+I VFO aggiuntivi sono invece posizionati dal DDC del rispettivo canale.

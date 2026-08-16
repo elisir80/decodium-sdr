@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hal/backends/rtlsdr/RtlSdrProfile.h"
+#include "hal/backends/rtlsdr/RtlSdrCapabilities.h"
 
 #include <algorithm>
 
@@ -31,13 +32,25 @@ BackendCapabilities capabilitiesFrom(const RtlSdrDeviceProfile &profile)
         }
     }
 
-    caps.minFrequencyHz = profile.directSampling ? 0 : profile.minFrequencyHz;
-    caps.maxFrequencyHz = profile.maxFrequencyHz;
+    // Il Blog V4 riceve in HF tramite il proprio upconverter, pur restando
+    // in modalità tuner; una chiavetta convenzionale raggiunge invece l'HF
+    // solo con il Q ADC. Non pubblicare questi limiti corretti significherebbe
+    // accettare una sintonia che il backend dovrà poi rifiutare.
+    if (isRtlSdrBlogV4Identity(profile.product)) {
+        caps.minFrequencyHz = kDirectSamplingMinimumFrequencyHz;
+        caps.maxFrequencyHz = profile.maxFrequencyHz;
+    } else if (profile.directSampling) {
+        caps.minFrequencyHz = kDirectSamplingMinimumFrequencyHz;
+        caps.maxFrequencyHz = kDirectSamplingMaximumFrequencyHz;
+    } else {
+        caps.minFrequencyHz = profile.minFrequencyHz;
+        caps.maxFrequencyHz = profile.maxFrequencyHz;
+    }
     caps.hasHardwareFilters = false;
-    caps.hasPreamp = !profile.gainTenthsDb.isEmpty();
+    caps.hasPreamp = !profile.directSampling && !profile.gainTenthsDb.isEmpty();
     caps.hasAttenuator = false;
     caps.adcBits = 8;
-    if (profile.gainTenthsDb.size() >= 2) {
+    if (!profile.directSampling && profile.gainTenthsDb.size() >= 2) {
         QList<int> gains = profile.gainTenthsDb;
         std::sort(gains.begin(), gains.end());
         caps.maxGainReductionDb =
@@ -52,19 +65,17 @@ BackendCapabilities capabilitiesFrom(const RtlSdrDeviceProfile &profile)
 
 int safeAutoGainTenthsDb(const QList<int> &gainSteps)
 {
-    constexpr int kPreferredTenthsDb = 198; // 19.8 dB: moderate VHF starting point
+    // SDR++ stores 22 dB for this RTL-SDR.  The exact value depends on the
+    // tuner gain table, therefore choose the nearest real hardware step.
+    constexpr int kPreferredTenthsDb = 220;
     if (gainSteps.isEmpty())
         return kPreferredTenthsDb;
 
-    QList<int> sorted = gainSteps;
-    std::sort(sorted.begin(), sorted.end());
-    int selected = sorted.first();
-    for (const int step : sorted) {
-        if (step > kPreferredTenthsDb)
-            break;
-        selected = step;
-    }
-    return selected;
+    return *std::min_element(gainSteps.cbegin(), gainSteps.cend(),
+                             [](int left, int right) {
+                                 return std::abs(left - kPreferredTenthsDb)
+                                     < std::abs(right - kPreferredTenthsDb);
+                             });
 }
 
 } // namespace dsdr::hal::rtlsdr

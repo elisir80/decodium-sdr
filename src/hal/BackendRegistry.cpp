@@ -19,6 +19,10 @@
 #include "hal/backends/rtlsdr/RtlSdrBackend.h"
 #endif
 
+#ifdef DSDR_BACKEND_RTLCAT
+#include "hal/backends/rtlcat/RtlSdrCatBackend.h"
+#endif
+
 #ifdef DSDR_BACKEND_COLIBRI
 #include "hal/backends/colibri/ColibriBackend.h"
 #endif
@@ -156,6 +160,16 @@ void registerBuiltinBackends()
                                    "PPM, bias-tee e direct sampling. SoapySDR resta disponibile "
                                    "come fallback per altri hardware.")},
         [](QObject *parent) -> IRadioBackend * { return new RtlSdrBackend(parent); });
+#endif
+
+#ifdef DSDR_BACKEND_RTLCAT
+    BackendRegistry::instance().registerBackend(
+        BackendInfo{QStringLiteral("rtlcat"),
+                    QStringLiteral("RTL-SDR + CAT (panadapter IF)"),
+                    QStringLiteral("L'RTL-SDR riceve l'uscita IF della radio; Hamlib/rigctld "
+                                   "mantiene radio, VFO e panadapter sincronizzati. In TX il "
+                                   "flusso IQ viene bloccato in fail-safe.")},
+        [](QObject *parent) -> IRadioBackend * { return new RtlSdrCatBackend(parent); });
 #endif
 
 #ifdef DSDR_BACKEND_COLIBRI

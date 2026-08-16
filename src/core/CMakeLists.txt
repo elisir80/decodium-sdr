@@ -14,6 +14,10 @@ add_library(dsdr_core STATIC
     BandConditions.h
     BandConditions.cpp
     IqModuleApi.h
+    IqModuleManager.h
+    IqModuleManager.cpp
+    OperationScheduler.h
+    OperationScheduler.cpp
     ChannelModel.h
     ChannelModel.cpp
     DeviceListModel.h

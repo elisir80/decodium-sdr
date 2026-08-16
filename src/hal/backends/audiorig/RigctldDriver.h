@@ -67,6 +67,7 @@ public:
     QString radioModel() const override { return m_model; }
 
     bool poll(CatState &state) override;
+    bool pollPtt(CatState &state) override;
     bool setFrequency(qint64 hz) override;
     bool setMode(DemodMode mode) override;
     bool setPtt(bool transmit) override;
@@ -165,6 +166,10 @@ private:
     /// implementano, e chiederglielo cinque volte al secondo per tutta la
     /// sessione è tempo speso a farsi dire di no.
     bool m_strengthAvailable = true;
+    /// Alcuni backend Hamlib (fra cui il TS-940S) conoscono VFO e modo ma non
+    /// espongono `get_ptt`. La connessione CAT resta utile, ma un chiamante
+    /// che protegge un ingresso IF deve sapere che RX non è verificabile.
+    bool m_pttAvailable = true;
 };
 
 } // namespace dsdr::hal::audiorig

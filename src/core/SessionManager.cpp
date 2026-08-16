@@ -2,6 +2,7 @@
 #include "core/SessionManager.h"
 
 #include "audio/AudioRouter.h"
+#include "audio/NetworkAudioSink.h"
 #include "core/DspEngine.h"
 #include "core/TxEngine.h"
 #include "core/BandConditions.h"
@@ -144,6 +145,8 @@ SessionManager::SessionManager(QObject *parent)
     : QObject(parent)
     , m_audio(new audio::AudioRouter(this))
     , m_scanTimer(this)
+    , m_scheduler(this)
+    , m_iqModules(this)
     , m_rigctlServer(this)
 {
     hal::registerBuiltinBackends();
@@ -301,6 +304,13 @@ SessionManager::SessionManager(QObject *parent)
             });
 
     connect(&m_scanTimer, &QTimer::timeout, this, &SessionManager::advanceScan);
+    connect(&m_scheduler, &OperationScheduler::jobsChanged,
+            this, &SessionManager::scheduledJobsChanged);
+    connect(&m_scheduler, &OperationScheduler::jobDue,
+            this, &SessionManager::executeScheduledAction);
+    connect(&m_iqModules, &IqModuleManager::catalogChanged,
+            this, &SessionManager::syncIqModuleCatalog);
+    syncIqModuleCatalog();
 
     m_rdsAfProbeTimer.setSingleShot(true);
     connect(&m_rdsAfProbeTimer, &QTimer::timeout, this, [this] {
@@ -448,6 +458,14 @@ SessionManager::SessionManager(QObject *parent)
         setStatus(message);
         emit errorReported(message, false);
     });
+
+    connect(&m_networkAudio, &audio::NetworkAudioSink::stateChanged, this,
+            [this] { emit networkAudioChanged(); });
+    connect(&m_networkAudio, &audio::NetworkAudioSink::failed, this,
+            [this](const QString &message) {
+                setStatus(message);
+                emit errorReported(message, false);
+            });
 
     // Il rilevamento in rete vive con la sessione: dura pochi secondi e poi
     // tace, ma l'oggetto resta perché la UI ci si lega.
@@ -1249,6 +1267,14 @@ void SessionManager::selectBackend(const QString &backendId)
     if (m_backendId == backendId && m_backend)
         return;
 
+    // La discovery può essere asincrona. Se si cambia sorgente mentre quella
+    // precedente è ancora in corso, il vecchio backend viene distrutto e non
+    // potrà più emettere discoveryFinished(). Senza questo reset la UI resta
+    // per sempre su «Ricerca…» e non avvia mai la scansione del nuovo backend.
+    if (m_backend && m_discovering)
+        m_backend->stopDiscovery();
+    setDiscovering(false);
+
     disconnectDevice();
     teardownBackend();
     m_devices.clear();
@@ -1305,7 +1331,7 @@ void SessionManager::selectBackend(const QString &backendId)
         if (m_engine)
             m_engine->setCenterFrequency(hz);
 
-        if (!m_capabilities.clientDemod()) {
+        if (!m_capabilities.clientDemod() || m_capabilities.raw().vfoFollowsRadio) {
             // Con una radio tradizionale il canale **è** il VFO: la passata si
             // sposta insieme a lui, e un canale che restasse alla vecchia
             // frequenza finirebbe fuori da ciò che la radio consegna — cioè
@@ -1322,6 +1348,51 @@ void SessionManager::selectBackend(const QString &backendId)
         refreshChannelOffsets();
         emit centerFrequencyChanged();
     });
+
+    // Un SDR++ Server annuncia la sua frequenza di campionamento dopo la
+    // connessione. Il DSP deve seguire il rate effettivo, non restare su
+    // quello provvisorio della schermata di discovery.
+    connect(m_backend, &hal::IRadioBackend::sampleRateChanged, this, [this](double rate) {
+        if (!(rate > 0.0) || qFuzzyCompare(m_sampleRate, rate))
+            return;
+        m_sampleRate = rate;
+        if (m_engine) {
+            if (m_capabilities.clientDemod()) {
+                m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+            } else {
+                m_engine->setAudioSource(m_backend->audioStream(kInvalidChannel),
+                                         m_sampleRate, m_centerFrequency);
+            }
+        }
+        qCInfo(dsdrCore) << "sample rate aggiornato dal backend:" << rate;
+        emit sampleRateChanged();
+    });
+
+    connect(m_backend, &hal::IRadioBackend::receiverStateChanged, this,
+            [this](qint64 frequencyHz, DemodMode mode) {
+                // Il centro viene notificato anche separatamente. Qui si
+                // allinea il modo, che e' parte della posizione operativa
+                // del VFO e determina sia la catena DSP sia il lato IF.
+                if (!m_capabilities.raw().vfoFollowsRadio)
+                    return;
+
+                const bool previous = m_applyingReceiverState;
+                m_applyingReceiverState = true;
+                for (int row = 0; row < m_channels.rowCount(); ++row) {
+                    if (frequencyHz > 0) {
+                        if (ChannelEntry *entry = m_channels.mutableAt(row)) {
+                            if (entry->frequencyHz != frequencyHz) {
+                                entry->frequencyHz = frequencyHz;
+                                m_channels.entryChanged(row,
+                                                        {ChannelModel::FrequencyRole});
+                            }
+                        }
+                    }
+                    setChannelMode(row, static_cast<int>(mode));
+                }
+                m_applyingReceiverState = previous;
+                refreshChannelOffsets();
+            });
 
     // Le misure di trasmissione. Il seam le porta da sempre; fin qui non le
     // raccoglieva nessuno, e i campi di `MeterFrame` finivano nel vuoto.
@@ -1524,6 +1595,10 @@ void SessionManager::connectToDevice(int deviceRow)
                                   audio::AudioTag::Clean,
                                   m_engine->audioRing()};
     m_audioGraph.connect(dspMix, audio::AudioSink::AudioRecorder);
+    if (m_networkAudio.isActive()) {
+        m_audioGraph.connect(dspMix, audio::AudioSink::NetworkStream);
+        m_engine->setNetworkAudioSink(&m_networkAudio);
+    }
 
     const bool audioStarted = m_audio->start(m_neural->outputRing());
     qCInfo(dsdrCore) << "device pronto:" << m_deviceName
@@ -1564,6 +1639,7 @@ void SessionManager::disconnectDevice()
     // senza dimensioni valide nell'intestazione.
     stopRecording();
     stopAudioRecording();
+    stopNetworkAudio();
 
     // Le misure di potenza appartengono alla radio che se ne va. Lasciarle
     // ferme sull'ultimo valore letto darebbe uno strumento che indica watt
@@ -2105,56 +2181,9 @@ void SessionManager::setChannelFrequency(int row, qint64 hz)
 
 bool SessionManager::loadIqModule(const QString &path)
 {
-    if (!m_engine || path.isEmpty())
+    if (!m_iqModules.addModule(path))
         return false;
-
-    bool loaded = false;
-    if (QThread::currentThread() == m_engine->thread()) {
-        loaded = m_engine->loadIqModule(path);
-    } else {
-        QMetaObject::invokeMethod(m_engine, "loadIqModule",
-                                  Qt::BlockingQueuedConnection,
-                                  Q_RETURN_ARG(bool, loaded),
-                                  Q_ARG(QString, path));
-    }
-    if (loaded) {
-        qCInfo(dsdrCore) << "modulo IQ attivo:" << path;
-        QStringList names;
-        if (QThread::currentThread() == m_engine->thread()) {
-            names = m_engine->iqModuleNames();
-        } else {
-            QMetaObject::invokeMethod(m_engine, "iqModuleNames",
-                                      Qt::BlockingQueuedConnection,
-                                      Q_RETURN_ARG(QStringList, names));
-        }
-        if (names != m_iqModuleNames) {
-            m_iqModuleNames = names;
-            emit iqModuleNamesChanged();
-        }
-
-        const QString absolutePath = QFileInfo(path).absoluteFilePath();
-        bool catalogUpdated = false;
-        for (QVariant &item : m_iqModuleCatalog) {
-            QVariantMap module = item.toMap();
-            if (module.value(QStringLiteral("path")).toString() != absolutePath)
-                continue;
-            module.insert(QStringLiteral("loaded"), true);
-            item = module;
-            catalogUpdated = true;
-            break;
-        }
-        if (!catalogUpdated) {
-            QVariantMap module;
-            module.insert(QStringLiteral("name"),
-                          names.isEmpty() ? QFileInfo(path).completeBaseName()
-                                          : names.back());
-            module.insert(QStringLiteral("path"), absolutePath);
-            module.insert(QStringLiteral("loaded"), true);
-            m_iqModuleCatalog.append(module);
-        }
-        emit iqModuleCatalogChanged();
-    }
-    return loaded;
+    return setIqModuleEnabled(path, true);
 }
 
 void SessionManager::unloadIqModules()
@@ -2166,41 +2195,125 @@ void SessionManager::unloadIqModules()
     } else {
         QMetaObject::invokeMethod(m_engine, "unloadIqModules", Qt::BlockingQueuedConnection);
     }
-    if (!m_iqModuleNames.isEmpty()) {
-        m_iqModuleNames.clear();
-        emit iqModuleNamesChanged();
-    }
-    if (!m_iqModuleCatalog.isEmpty()) {
-        m_iqModuleCatalog.clear();
-        emit iqModuleCatalogChanged();
-    }
+    m_iqModules.markAllUnloaded();
+    syncIqModuleCatalog();
 }
 
 void SessionManager::loadIqModulesFromStandardPaths()
 {
-    QStringList directories;
-    const QDir appDir(QCoreApplication::applicationDirPath());
-    directories.append(appDir.absoluteFilePath(QStringLiteral("../PlugIns/DecodiumSdr")));
-    directories.append(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-                       + QStringLiteral("/modules"));
+    // La discovery non esegue codice. Si attivano solo i moduli che
+    // l'operatore aveva già abilitato, oppure quelli passati esplicitamente
+    // con --iq-module (che usa loadIqModule e quindi li abilita).
+    m_iqModules.rescan();
+    for (const QString &path : m_iqModules.enabledPaths())
+        activateIqModule(path);
+    syncIqModuleCatalog();
+}
 
-    QStringList filters;
-#if defined(Q_OS_MACOS)
-    filters << QStringLiteral("*.dylib") << QStringLiteral("*.so");
-#elif defined(Q_OS_WIN)
-    filters << QStringLiteral("*.dll");
-#else
-    filters << QStringLiteral("*.so");
-#endif
+void SessionManager::refreshIqModules()
+{
+    m_iqModules.rescan();
+    syncIqModuleCatalog();
+}
 
-    for (const QString &directoryPath : directories) {
-        const QDir directory(directoryPath);
-        if (!directory.exists())
-            continue;
-        const QFileInfoList modules = directory.entryInfoList(
-            filters, QDir::Files | QDir::Readable, QDir::Name);
-        for (const QFileInfo &module : modules)
-            loadIqModule(module.absoluteFilePath());
+bool SessionManager::addIqModuleDirectory(const QString &path)
+{
+    if (!m_iqModules.addDirectory(path))
+        return false;
+    loadIqModulesFromStandardPaths();
+    return true;
+}
+
+bool SessionManager::removeIqModuleDirectory(const QString &path)
+{
+    return m_iqModules.removeDirectory(path);
+}
+
+bool SessionManager::addIqModuleFile(const QString &path)
+{
+    return m_iqModules.addModule(path);
+}
+
+bool SessionManager::forgetIqModule(const QString &path)
+{
+    deactivateIqModule(path);
+    return m_iqModules.forgetModule(path);
+}
+
+bool SessionManager::setIqModuleEnabled(const QString &path, bool enabled)
+{
+    if (!m_iqModules.setEnabled(path, enabled))
+        return false;
+    if (enabled)
+        return activateIqModule(path);
+    deactivateIqModule(path);
+    return true;
+}
+
+bool SessionManager::activateIqModule(const QString &path)
+{
+    if (!m_engine || path.trimmed().isEmpty())
+        return false;
+
+    bool loaded = false;
+    QString error;
+    QString name;
+    if (QThread::currentThread() == m_engine->thread()) {
+        loaded = m_engine->loadIqModule(path);
+        error = m_engine->lastIqModuleError();
+        name = m_engine->iqModuleName(path);
+    } else {
+        QMetaObject::invokeMethod(m_engine, "loadIqModule",
+                                  Qt::BlockingQueuedConnection,
+                                  Q_RETURN_ARG(bool, loaded),
+                                  Q_ARG(QString, path));
+        QMetaObject::invokeMethod(m_engine, "lastIqModuleError",
+                                  Qt::BlockingQueuedConnection,
+                                  Q_RETURN_ARG(QString, error));
+        QMetaObject::invokeMethod(m_engine, "iqModuleName",
+                                  Qt::BlockingQueuedConnection,
+                                  Q_RETURN_ARG(QString, name),
+                                  Q_ARG(QString, path));
+    }
+    if (loaded) {
+        qCInfo(dsdrCore) << "modulo IQ attivo:" << name << path;
+    } else {
+        qCWarning(dsdrCore) << "modulo IQ non attivato:" << path << error;
+    }
+    m_iqModules.markLoadResult(path, loaded, name, error);
+    syncIqModuleCatalog();
+    return loaded;
+}
+
+bool SessionManager::deactivateIqModule(const QString &path)
+{
+    if (!m_engine || path.trimmed().isEmpty())
+        return false;
+    bool unloaded = false;
+    if (QThread::currentThread() == m_engine->thread()) {
+        unloaded = m_engine->unloadIqModule(path);
+    } else {
+        QMetaObject::invokeMethod(m_engine, "unloadIqModule",
+                                  Qt::BlockingQueuedConnection,
+                                  Q_RETURN_ARG(bool, unloaded),
+                                  Q_ARG(QString, path));
+    }
+    m_iqModules.markUnloaded(path);
+    syncIqModuleCatalog();
+    return unloaded;
+}
+
+void SessionManager::syncIqModuleCatalog()
+{
+    const QVariantList catalog = m_iqModules.catalog();
+    if (catalog != m_iqModuleCatalog) {
+        m_iqModuleCatalog = catalog;
+        emit iqModuleCatalogChanged();
+    }
+    const QStringList names = m_iqModules.activeNames();
+    if (names != m_iqModuleNames) {
+        m_iqModuleNames = names;
+        emit iqModuleNamesChanged();
     }
 }
 
@@ -2263,7 +2376,7 @@ void SessionManager::setChannelMode(int row, int mode)
     qCInfo(dsdrCore) << "canale" << entry->id << "modo:" << demodModeName(demod)
                      << "filtro predefinito:" << filter.low << filter.high;
 
-    if (m_backend) {
+    if (m_backend && !m_applyingReceiverState) {
         m_backend->setDemod(entry->id, demod);
         m_backend->setFilter(entry->id, filter.low, filter.high);
     }
@@ -3451,6 +3564,153 @@ bool SessionManager::toggleAudioRecording()
         return false;
     }
     return startAudioRecording();
+}
+
+bool SessionManager::startNetworkAudio(const QString &protocol, const QString &host,
+                                       int port, bool stereo)
+{
+    if (!m_connected || !m_engine) {
+        setStatus(tr("Connetti prima una sorgente radio."));
+        return false;
+    }
+    if (port <= 0 || port > 65'535) {
+        setStatus(tr("La porta audio di rete deve essere tra 1 e 65535."));
+        return false;
+    }
+
+    audio::NetworkAudioSink::Config config;
+    const QString normalized = protocol.trimmed().toLower();
+    config.protocol = normalized == QStringLiteral("tcp")
+        ? audio::NetworkAudioSink::Protocol::TcpServer
+        : audio::NetworkAudioSink::Protocol::Udp;
+    config.host = host.trimmed();
+    config.port = static_cast<quint16>(port);
+    config.stereo = stereo;
+    if (!m_networkAudio.start(config)) {
+        setStatus(m_networkAudio.errorString());
+        return false;
+    }
+
+    const audio::AudioNode dspMix{QStringLiteral("mix del DSP"),
+                                  audio::AudioTag::Clean,
+                                  m_engine->audioRing()};
+    QString refusal;
+    if (!m_audioGraph.connect(dspMix, audio::AudioSink::NetworkStream, &refusal)) {
+        m_networkAudio.stop();
+        setStatus(refusal);
+        return false;
+    }
+    m_engine->setNetworkAudioSink(&m_networkAudio);
+    setStatus(tr("Avvio audio di rete %1:%2…").arg(config.host).arg(config.port));
+    emit networkAudioChanged();
+    return true;
+}
+
+void SessionManager::stopNetworkAudio()
+{
+    if (m_engine)
+        m_engine->setNetworkAudioSink(nullptr);
+    if (!m_networkAudio.isActive() && m_networkAudio.status().value(QStringLiteral("detail")).toString().isEmpty())
+        return;
+    m_networkAudio.stop();
+    emit networkAudioChanged();
+}
+
+QString SessionManager::scheduleAction(const QString &action, const QString &whenUtc,
+                                       const QVariantMap &arguments)
+{
+    return m_scheduler.schedule(action, whenUtc, arguments);
+}
+
+bool SessionManager::cancelScheduledAction(const QString &id)
+{
+    return m_scheduler.cancel(id);
+}
+
+bool SessionManager::setScheduledActionEnabled(const QString &id, bool enabled)
+{
+    return m_scheduler.setEnabled(id, enabled);
+}
+
+bool SessionManager::removeScheduledAction(const QString &id)
+{
+    return m_scheduler.remove(id);
+}
+
+void SessionManager::clearScheduledHistory()
+{
+    m_scheduler.clearHistory();
+}
+
+void SessionManager::executeScheduledAction(const QString &id, const QString &action,
+                                            const QVariantMap &arguments)
+{
+    bool succeeded = false;
+    QString message;
+
+    // Il pianificatore non prova mai a recuperare una radio disconnessa: una
+    // riconnessione automatica può parlare alla porta seriale sbagliata. Chi
+    // ha programmato il lavoro vede l'esito e decide consapevolmente.
+    if ((action == QLatin1String("tune") || action == QLatin1String("scan")
+         || action.endsWith(QLatin1String("-start"))) && !m_connected) {
+        message = tr("Sorgente non connessa al momento della scadenza.");
+    } else if ((action == QLatin1String("tune") || action == QLatin1String("scan")
+                || action.endsWith(QLatin1String("-start"))) && m_transmitting) {
+        // Non c'è una scorciatoia nel verso opposto: nessun evento
+        // pianificato può cambiare sintonia o aprire un registratore mentre
+        // la stazione è in TX. Non è un PTT implicito e non aggira le sicure.
+        message = tr("Azione RX bloccata mentre la stazione trasmette.");
+    } else if (action == QLatin1String("tune")) {
+        const qint64 frequency = arguments.value(QStringLiteral("frequencyHz")).toLongLong();
+        if (frequency <= 0) {
+            message = tr("Frequenza pianificata non valida.");
+        } else {
+            tuneTo(frequency);
+            const int mode = arguments.value(QStringLiteral("mode"), -1).toInt();
+            if (mode >= 0 && m_channels.currentIndex() >= 0)
+                setChannelMode(m_channels.currentIndex(), mode);
+            succeeded = true;
+            message = tr("Sintonizzata a %1 MHz.").arg(frequency / 1e6, 0, 'f', 6);
+        }
+    } else if (action == QLatin1String("scan")) {
+        const qint64 start = arguments.value(QStringLiteral("startHz")).toLongLong();
+        const qint64 end = arguments.value(QStringLiteral("endHz")).toLongLong();
+        const qint64 step = arguments.value(QStringLiteral("stepHz")).toLongLong();
+        const int dwell = arguments.value(QStringLiteral("dwellMs"), 350).toInt();
+        succeeded = startScan(start, end, step, dwell);
+        message = succeeded ? tr("Scansione avviata.")
+                            : tr("Parametri della scansione non validi.");
+    } else if (action == QLatin1String("record-iq-start")) {
+        succeeded = m_recorder.isRecording()
+                 || startRecording(arguments.value(QStringLiteral("path")).toString());
+        message = succeeded ? tr("Registrazione IQ avviata.")
+                            : tr("Registrazione IQ non disponibile.");
+    } else if (action == QLatin1String("record-iq-stop")) {
+        const bool wasRecording = m_recorder.isRecording();
+        stopRecording();
+        succeeded = true;
+        message = wasRecording ? tr("Registrazione IQ arrestata.")
+                               : tr("Registrazione IQ già ferma.");
+    } else if (action == QLatin1String("record-audio-start")) {
+        succeeded = m_audioRecorder.isRecording()
+                 || startAudioRecording(arguments.value(QStringLiteral("path")).toString());
+        message = succeeded ? tr("Registrazione audio avviata.")
+                            : tr("Registrazione audio non disponibile.");
+    } else if (action == QLatin1String("record-audio-stop")) {
+        const bool wasRecording = m_audioRecorder.isRecording();
+        stopAudioRecording();
+        succeeded = true;
+        message = wasRecording ? tr("Registrazione audio arrestata.")
+                               : tr("Registrazione audio già ferma.");
+    } else {
+        // Dovrebbe essere irraggiungibile: OperationScheduler filtra le
+        // azioni prima di emettere jobDue. Tenerlo qui rende il boundary
+        // difensivo anche contro chiamate C++ future.
+        message = tr("Azione pianificata non consentita.");
+    }
+
+    m_scheduler.complete(id, succeeded, message);
+    setStatus(message);
 }
 
 bool SessionManager::addRemoteEndpoint(const QString &endpoint)

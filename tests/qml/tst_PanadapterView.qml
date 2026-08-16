@@ -49,6 +49,16 @@ TestCase {
         return pane.deliveredBandView(bandSpanHz, clientDemod)
     }
 
+    function test_wheel_direction_ignores_zero_vertical_delta() {
+        const pane = createTemporaryObject(paneComponent, testCase)
+        verify(pane !== null, "panadattatore non istanziato")
+
+        compare(pane.wheelDirection(120), 1)
+        compare(pane.wheelDirection(-120), -1)
+        compare(pane.wheelDirection(0), 0,
+                "un evento senza componente verticale non deve muovere il VFO")
+    }
+
     // Audio CAT: 48 kHz arrivano dal codec, ma la vista operativa è larga
     // 7 kHz e deve avere il VFO esattamente al centro dopo ogni aggiornamento
     // dalla radio. Un viewStart conservato dal VFO precedente sposta invece

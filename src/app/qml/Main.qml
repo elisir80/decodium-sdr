@@ -52,6 +52,7 @@ ApplicationWindow {
             discoveryPopup.open()
         }
         onAboutRequested: aboutPopup.open()
+        onOperationsRequested: operationsPopup.open()
         onPanelSideToggled: window.panelsOnLeft = !window.panelsOnLeft
     }
 
@@ -356,6 +357,10 @@ ApplicationWindow {
     }
 
     // ── Selezione sorgente ───────────────────────────────────────────────
+    OperationsDialog {
+        id: operationsPopup
+    }
+
     Popup {
         id: discoveryPopup
 

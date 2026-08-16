@@ -68,6 +68,13 @@ Item {
         }
     }
 
+    // I touchpad emettono anche eventi che non hanno componente verticale.
+    // Non sono una rotellina verso il basso: ignorarli impedisce di muovere il
+    // VFO o di fare zoom mentre il puntatore resta semplicemente sul piano.
+    function wheelDirection(angleDeltaY) {
+        return angleDeltaY > 0 ? 1 : (angleDeltaY < 0 ? -1 : 0)
+    }
+
     function fitToDeliveredBand() {
         const view = deliveredBandView(spanHz, Session.capabilities.clientDemod)
         viewSpan = view.span
@@ -195,8 +202,11 @@ Item {
         // Niente binding su `floorDb`/`ceilingDb`: con la scala automatica è
         // il C++ a scriverli, e un binding qui li riporterebbe indietro.
         Component.onCompleted: {
-            floorDb = -125
-            ceilingDb = -25
+            // Profilo visuale SDR++: 55 dB utili attorno al rumore HF.
+            // Non è guadagno RF: impedisce che un rumore a -70 dBFS appaia
+            // giallo/arancione solo perché la scala è eccessivamente larga.
+            floorDb = -87
+            ceilingDb = -32
         }
         spectrumRatio: root.spectrumRatio
         viewStart: root.viewStart
@@ -501,11 +511,15 @@ Item {
             if (!Session.connected)
                 return
 
+            const direction = root.wheelDirection(wheel.angleDelta.y)
+            if (direction === 0)
+                return
+
             // Ctrl+rotellina = zoom, come in ogni programma che mostri una
             // scala continua. Senza Ctrl la rotellina sintonizza, che è il
             // gesto che si usa più spesso.
             if (wheel.modifiers & Qt.ControlModifier) {
-                root.zoomAt(wheel.x, wheel.angleDelta.y > 0 ? 0.8 : 1.25)
+                root.zoomAt(wheel.x, direction > 0 ? 0.8 : 1.25)
                 return
             }
 
@@ -516,7 +530,6 @@ Item {
             const step = wheel.modifiers & Qt.ShiftModifier
                        ? Math.max(1, Tuning.stepHz / 10)
                        : Tuning.stepHz
-            const direction = wheel.angleDelta.y > 0 ? 1 : -1
             if (Session.channels.currentIndex >= 0)
                 Session.nudgeChannel(Session.channels.currentIndex, direction * step)
         }

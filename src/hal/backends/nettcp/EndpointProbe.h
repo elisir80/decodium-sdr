@@ -16,6 +16,8 @@
 // cambiandogli frequenza durante una semplice ricerca.
 #pragma once
 
+#include "hal/backends/nettcp/NetworkEndpoint.h"
+
 #include <QByteArray>
 #include <QObject>
 #include <QString>
@@ -24,13 +26,6 @@ class QTcpSocket;
 class QTimer;
 
 namespace dsdr::hal::nettcp {
-
-/// Protocollo riconosciuto su un endpoint.
-enum class NetProtocol {
-    None,
-    RtlTcp,
-    SpyServer,
-};
 
 class EndpointProbe : public QObject
 {

@@ -27,6 +27,13 @@ RtlSdrDeviceProfile rtlBlogV4Profile()
     return profile;
 }
 
+RtlSdrDeviceProfile rtlBlogV3Profile()
+{
+    RtlSdrDeviceProfile profile = rtlBlogV4Profile();
+    profile.product = QStringLiteral("Blog V3");
+    return profile;
+}
+
 } // namespace
 
 class TestRtlSdrProfile : public QObject
@@ -37,7 +44,8 @@ private slots:
     void backendIsRegistered();
     void receiveOnlyAndNativePanel();
     void ratesAreSortedAndDefaultIsSafe();
-    void directSamplingExtendsCoverage();
+    void directSamplingRestrictsCoverageToHf();
+    void blogV4UsesItsTunerUpconverterForHf();
     void autoGainStartsAtASafeStep();
 };
 
@@ -70,20 +78,31 @@ void TestRtlSdrProfile::ratesAreSortedAndDefaultIsSafe()
     QVERIFY(caps.defaultSampleRate <= 2'400'000.0);
 }
 
-void TestRtlSdrProfile::directSamplingExtendsCoverage()
+void TestRtlSdrProfile::directSamplingRestrictsCoverageToHf()
 {
-    RtlSdrDeviceProfile profile = rtlBlogV4Profile();
+    RtlSdrDeviceProfile profile = rtlBlogV3Profile();
     profile.directSampling = true;
     const BackendCapabilities caps = capabilitiesFrom(profile);
-    QCOMPARE(caps.minFrequencyHz, qint64(0));
+    QCOMPARE(caps.minFrequencyHz, qint64(500'000));
+    QCOMPARE(caps.maxFrequencyHz, qint64(24'000'000));
+    QVERIFY(caps.coversFrequency(3'500'000));
+    QVERIFY(!caps.coversFrequency(100'000'000));
+    QVERIFY(!caps.hasPreamp);
+}
+
+void TestRtlSdrProfile::blogV4UsesItsTunerUpconverterForHf()
+{
+    const BackendCapabilities caps = capabilitiesFrom(rtlBlogV4Profile());
+    QCOMPARE(caps.minFrequencyHz, qint64(500'000));
     QVERIFY(caps.coversFrequency(3'500'000));
     QVERIFY(caps.coversFrequency(100'000'000));
 }
 
 void TestRtlSdrProfile::autoGainStartsAtASafeStep()
 {
-    QCOMPARE(safeAutoGainTenthsDb({0, 99, 198, 280, 370, 496}), 198);
-    QCOMPARE(safeAutoGainTenthsDb({0, 280, 496}), 0);
+    QCOMPARE(safeAutoGainTenthsDb({0, 99, 198, 229, 280, 370, 496}), 229);
+    QCOMPARE(safeAutoGainTenthsDb({0, 198, 280, 496}), 198);
+    QCOMPARE(safeAutoGainTenthsDb({0, 280, 496}), 280);
 
     const BackendCapabilities caps = capabilitiesFrom(rtlBlogV4Profile());
     QCOMPARE(caps.maxGainReductionDb, 49.6);

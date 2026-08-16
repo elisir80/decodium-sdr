@@ -35,8 +35,8 @@ signals:
     /// thread e non vale la pena registrare un metatype per un enum.
     /// `signalDbm` è NaN quando la radio non sa dire un livello tarato: allora
     /// vale `sMeterRaw`, che è la lettura grezza del suo strumento.
-    void stateRead(qint64 frequencyHz, int mode, bool transmitting, int sMeterRaw,
-                   double signalDbm);
+    void stateRead(qint64 frequencyHz, int mode, bool transmitting, bool pttKnown,
+                   int sMeterRaw, double signalDbm);
 
     /// La radio ha smesso di rispondere. È una cosa seria: senza CAT il
     /// panadattatore non sa più dove sta, e continuare a disegnarlo sulla
@@ -49,7 +49,7 @@ public slots:
     /// Apre la porta indicata. Con `baudRate` a zero prova le velocità note
     /// mantenendo invariati formato, handshake e linee di controllo.
     void open(const QString &portName, int baudRate, int dataBits, int parity,
-              int stopBits, int flowControl, bool dtr, bool rts);
+              int stopBits, int flowControl, bool dtr, bool rts, int hamlibModel = 0);
     void close();
 
     void setFrequency(qint64 hz);
@@ -60,14 +60,29 @@ public slots:
     /// frequenza e modo: 200 ms.
     void setPollInterval(int milliseconds);
 
+    /// Cadenza opzionale della lettura PTT. È separata dallo stato completo:
+    /// un panadapter IF può quindi chiudere l'ingresso subito, senza
+    /// trasformare anche frequenza, modo e S-meter in un polling aggressivo.
+    /// Zero (il valore predefinito) la disabilita.
+    void setPttPollInterval(int milliseconds);
+
 private slots:
     void poll();
+    void pollPtt();
 
 private:
+    void reportPttUnknown();
+    void stopPolling();
+
     std::unique_ptr<ICatDriver> m_driver;
     QTimer *m_timer = nullptr;
+    QTimer *m_pttTimer = nullptr;
     CatState m_state;
     int m_failures = 0;
+    int m_pttPollIntervalMs = 0;
+    bool m_pttReported = false;
+    bool m_lastPttKnown = false;
+    bool m_lastTransmitting = false;
 };
 
 } // namespace dsdr::hal::audiorig

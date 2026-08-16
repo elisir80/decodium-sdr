@@ -14,9 +14,12 @@
 #include <QLoggingCategory>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
+#include <QSet>
 #include <QSettings>
 #include <QTimer>
 
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 #if defined(Q_OS_WIN)
@@ -25,6 +28,44 @@
 #endif
 
 namespace {
+
+QtMessageHandler g_previousMessageHandler = nullptr;
+
+bool isKnownDarwinSocketNotifierWarning(QtMsgType type, const QString &message)
+{
+#if defined(Q_OS_MACOS)
+    // Qt crea internamente un notifier di eccezione per le porte seriali
+    // Darwin, ma quel tipo non esiste sulla piattaforma. La porta continua a
+    // funzionare (CAT usa soltanto lettura e scrittura); il warning e' quindi
+    // rumore ripetuto, non una condizione d'errore dell'applicazione.
+    return type == QtWarningMsg
+        && message == QLatin1String("QSocketNotifier::Exception is not supported on iOS")
+        && !qEnvironmentVariableIsSet("DSDR_SHOW_QT_DARWIN_SERIAL_WARNING");
+#else
+    Q_UNUSED(type)
+    Q_UNUSED(message)
+    return false;
+#endif
+}
+
+void applicationMessageHandler(QtMsgType type, const QMessageLogContext &context,
+                               const QString &message)
+{
+    if (isKnownDarwinSocketNotifierWarning(type, message))
+        return;
+
+    if (g_previousMessageHandler) {
+        g_previousMessageHandler(type, context, message);
+        return;
+    }
+
+    const QByteArray formatted = qFormatLogMessage(type, context, message).toLocal8Bit();
+    std::fputs(formatted.constData(), stderr);
+    std::fputc('\n', stderr);
+    std::fflush(stderr);
+    if (type == QtFatalMsg)
+        std::abort();
+}
 
 /// Riaggancia i flussi standard alla console che ci ha lanciati, se c'è.
 ///
@@ -70,18 +111,73 @@ void attachToParentConsole()
 
 void configureBundledSoapyModules()
 {
-#if defined(Q_OS_MACOS)
-    // SoapySDR otherwise searches the Homebrew/system prefix compiled into
-    // its library. A distributed .app has its plugins next to the bundle,
-    // so point the loader there before SessionManager can enumerate devices.
-    const QString modulePath =
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(
-            QStringLiteral("../PlugIns/SoapySDR/modules0.8"));
-    if (qEnvironmentVariableIsEmpty("SOAPY_SDR_PLUGIN_PATH")
-        && QFileInfo(modulePath).isDir()) {
-        qputenv("SOAPY_SDR_PLUGIN_PATH", modulePath.toUtf8());
+    // I moduli Soapy non sono librerie linkate: il loader conosce soltanto il
+    // prefisso del sistema che ha compilato SoapySDR. Un pacchetto portabile
+    // deve invece usare il proprio albero, prima che SessionManager inizi
+    // l'enumerazione. `SOAPY_SDR_ROOT` sostituisce il prefisso con cui
+    // libSoapySDR è stato compilato: soltanto anteporre `PLUGIN_PATH` lascerebbe
+    // attivo anche quel prefisso (per esempio Homebrew) e caricherebbe due
+    // copie dello stesso driver nello stesso processo.
+    const QDir executableDir(QCoreApplication::applicationDirPath());
+    const QString bundledRoot =
+        QDir(executableDir.absoluteFilePath(QStringLiteral(".."))).absolutePath();
+    const QStringList bundledPaths{QDir(bundledRoot).absoluteFilePath(
+        QStringLiteral("lib/SoapySDR/modules0.8"))};
+
+    QStringList availablePaths;
+    for (const QString &path : bundledPaths) {
+        if (QFileInfo(path).isDir())
+            availablePaths.append(QDir::cleanPath(path));
     }
-#endif
+    availablePaths.removeDuplicates();
+    if (availablePaths.isEmpty())
+        return;
+
+    qputenv("SOAPY_SDR_ROOT", QDir::cleanPath(bundledRoot).toUtf8());
+
+    // I moduli esterni restano consentiti, ma una directory che contiene lo
+    // stesso file di un modulo incluso è esclusa. Il relativo `dlopen()` può
+    // caricare due librerie vendor diverse e basta un driver duplicato per
+    // rendere instabile discovery e chiusura dell'app.
+    QSet<QString> bundledModuleNames;
+    for (const QString &path : availablePaths) {
+        const QDir moduleDir(path);
+        for (const QString &name : moduleDir.entryList(QDir::Files))
+            bundledModuleNames.insert(name);
+    }
+
+    const QByteArray inheritedPath = qgetenv("SOAPY_SDR_PLUGIN_PATH");
+    QStringList externalPaths;
+    for (const QString &path : QString::fromUtf8(inheritedPath).split(
+             QDir::listSeparator(), Qt::SkipEmptyParts)) {
+        const QFileInfo external(path);
+        bool duplicatesBundledModule = bundledModuleNames.contains(external.fileName());
+        if (external.isDir()) {
+            const QDir externalDir(external.absoluteFilePath());
+            for (const QString &name : bundledModuleNames) {
+                if (externalDir.exists(name)) {
+                    duplicatesBundledModule = true;
+                    break;
+                }
+            }
+        }
+        if (duplicatesBundledModule) {
+            qInfo().noquote() << QStringLiteral(
+                "SoapySDR: percorso esterno ignorato perché duplica un modulo incluso: %1")
+                                     .arg(path);
+            continue;
+        }
+        externalPaths.append(path);
+    }
+
+    if (externalPaths.isEmpty())
+        qunsetenv("SOAPY_SDR_PLUGIN_PATH");
+    else
+        qputenv("SOAPY_SDR_PLUGIN_PATH", externalPaths.join(QDir::listSeparator()).toUtf8());
+
+    qInfo().noquote() << QStringLiteral("SoapySDR: root incluso %1; moduli %2")
+                             .arg(QDir::cleanPath(bundledRoot),
+                                  availablePaths.join(QDir::listSeparator()));
 }
 
 void repairInvalidSMeterCalibration()
@@ -111,6 +207,7 @@ void repairInvalidSMeterCalibration()
 int main(int argc, char *argv[])
 {
     attachToParentConsole();
+    g_previousMessageHandler = qInstallMessageHandler(applicationMessageHandler);
 
     QGuiApplication app(argc, argv);
 

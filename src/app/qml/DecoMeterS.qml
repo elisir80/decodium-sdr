@@ -87,6 +87,10 @@ Item {
     /// resta ferma finché non la si rifà.
     property real s9ReferenceDb: -55
 
+    /// Il pannello possiede la preferenza persistente; il quadrante chiede
+    /// soltanto di ripristinarla quando l'operatore preme RESET.
+    signal resetCalibrationRequested()
+
     /// Porta S9 dove sta adesso il fondo di rumore più quarantotto decibel:
     /// il rumore diventa S1, che è la lettura giusta per un canale vuoto.
     ///
@@ -627,6 +631,13 @@ Item {
                 Layout.fillWidth: true
                 text: qsTr("TARA")
                 onPressed: root.calibrateFromFloor()
+            }
+
+            DecoMeterChip {
+                objectName: "reset-calibration"
+                Layout.fillWidth: true
+                text: qsTr("RESET")
+                onPressed: root.resetCalibrationRequested()
             }
 
             Rectangle {

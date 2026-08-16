@@ -29,6 +29,16 @@ TestCase {
     }
 
     Component {
+        id: rtlSdrPanel
+        RtlSdrDevicePanel {}
+    }
+
+    Component {
+        id: rtlCatPanel
+        RtlCatPanel {}
+    }
+
+    Component {
         id: panelHost
         BackendPanelHost {}
     }
@@ -52,6 +62,22 @@ TestCase {
         compare(panel.automaticGain, true)
         compare(panel.ppm, 0)
         compare(panel.biasTee, false)
+    }
+
+    function test_rtlsdr_panel_survives_empty_commands() {
+        const panel = createTemporaryObject(rtlSdrPanel, testCase, { width: 300 })
+        verify(panel !== null, "RtlSdrDevicePanel non istanziato")
+        verify(panel.height > 0, "pannello RTL-SDR di altezza nulla")
+        verify(panel.directInfo !== undefined)
+        verify(typeof panel.ifOutputEnabled === "boolean")
+        verify(panel.ifFrequencyHz > 0)
+    }
+
+    function test_rtlcat_panel_survives_empty_commands() {
+        const panel = createTemporaryObject(rtlCatPanel, testCase, { width: 300 })
+        verify(panel !== null, "RtlCatPanel non istanziato")
+        verify(panel.height > 0, "pannello CAT di altezza nulla")
+        compare(panel.inputBlocked, false)
     }
 
     function test_host_is_hidden_without_panels() {

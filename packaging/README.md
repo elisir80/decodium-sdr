@@ -26,10 +26,19 @@ senza il quale l'applicazione non trova il plugin della piattaforma ed **esce
 in silenzio**: il deploy di Qt usa un layout `bin/` + `share/`, mentre Qt su
 Windows cerca i plugin accanto all'eseguibile.
 
-Su macOS il bundle installato contiene anche il modulo SoapyRTLSDR e il
-runtime `librtlsdr`/`libusb` quando `DSDR_BUNDLE_RTLSDR=ON` (impostazione
-predefinita su macOS). Il percorso del plugin viene impostato dall'app verso
-`Contents/PlugIns/SoapySDR/modules0.8`, quindi il DMG non dipende da Homebrew.
+Le release ufficiali includono i moduli Soapy **RTL-SDR** e **HackRF**, con le
+loro dipendenze runtime. Il loader dell'app dà priorità al percorso incluso:
+
+| Piattaforma | Directory dei moduli inclusi |
+|---|---|
+| macOS | `decodium-sdr.app/Contents/lib/SoapySDR/modules0.8` |
+| Linux / Windows | `lib/SoapySDR/modules0.8` sotto la root del pacchetto |
+
+Quindi il pacchetto non dipende da Homebrew, MSYS2 o da un'installazione Soapy
+preesistente. Altri driver possono essere aggiunti con
+`DSDR_SOAPY_BUNDLE_MODULES` e, se sono fuori dai prefissi standard, con
+`DSDR_SOAPY_MODULE_PATHS`; la configurazione fallisce se un modulo richiesto
+non si trova.
 
 ### Verificare che sia davvero autosufficiente
 
@@ -46,26 +55,44 @@ che avviene prima che il programma possa scrivere alcunché.
 
 ## Dipendenze non-Qt
 
-Il deploy di Qt porta con sé le librerie Qt. FFTW e SoapySDR vengono raccolti
-dal deploy macOS perché sono collegati dall'eseguibile; il modulo SoapyRTLSDR
-e le sue dipendenze USB vengono copiati esplicitamente da
-`src/app/CMakeLists.txt`. L'installazione richiede quindi, per una build macOS
-completa:
+Il deploy di Qt porta con sé le librerie Qt. I moduli Soapy sono plugin caricati
+dopo l'avvio e vengono quindi raccolti esplicitamente: su macOS il loro grafo
+di dipendenze viene ricorsivamente copiato in `Contents/Frameworks` e i link
+Mach-O sono riscritti nel bundle; su Linux linuxdeploy riceve ogni modulo dal
+manifest CMake; su Windows il deploy raccoglie le DLL dal relativo staging.
+
+Per una build macOS completa RTL-SDR + HackRF:
 
 ```sh
-brew install qt@6 fftw ninja soapysdr soapyrtlsdr
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDSDR_QT_CMAKE_DEPLOY=OFF
+brew install qt@6 fftw ninja soapysdr soapyrtlsdr hackrf soapyhackrf hamlib
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DDSDR_QT_CMAKE_DEPLOY=OFF \
+  -DDSDR_BUNDLE_SOAPY=ON \
+  -DDSDR_SOAPY_BUNDLE_MODULES='librtlsdrSupport;libHackRFSupport'
 cmake --build build
 cmake --install build --prefix staging
 macdeployqt staging/decodium-sdr.app -qmldir="$PWD/src/app/qml" -no-codesign -always-overwrite
-cmake -DCMAKE_INSTALL_PREFIX="$PWD/staging" -P build/BundleMacOSSoapyRtlSdr.cmake
+cmake -DCMAKE_INSTALL_PREFIX="$PWD/staging" -P build/BundleMacOSSoapyModules.cmake
+cmake -DCMAKE_INSTALL_PREFIX="$PWD/staging" -P build/BundleMacOSHamlib.cmake
 find staging/decodium-sdr.app/Contents -type f \
-  \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \) \
+  \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
+     -o -path '*/Resources/hamlib/bin/*' \) \
   -exec codesign --remove-signature {} \; 2>/dev/null || true
+find staging/decodium-sdr.app/Contents -type f \
+  \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
+     -o -path '*/Resources/hamlib/bin/*' \) -print0 | \
+  xargs -0 -n1 codesign --force --sign -
+codesign --force --sign - staging/decodium-sdr.app
 ```
 
-Prima di creare il DMG, verificare la presenza di
-`staging/decodium-sdr.app/Contents/PlugIns/SoapySDR/modules0.8/librtlsdrSupport.so`.
+Prima di creare il DMG, eseguire:
+
+```sh
+bash scripts/check-soapy-package.sh staging/decodium-sdr.app \
+  librtlsdrSupport libHackRFSupport
+```
+
+e verificare anche `staging/decodium-sdr.app/Contents/Resources/hamlib/bin/rigctld`.
 
 ## Quello che manca
 

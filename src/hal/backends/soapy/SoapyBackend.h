@@ -11,6 +11,7 @@
 #pragma once
 
 #include "hal/IRadioBackend.h"
+#include "hal/backends/rtlsdr/RtlSdrTuningPlan.h"
 #include "hal/backends/soapy/SoapyProfile.h"
 
 #include <QHash>
@@ -76,6 +77,15 @@ private:
     void setState(BackendState state);
     void reportError(BackendError::Code code, const QString &message, bool fatal = false);
     void onDeviceOpened(const SoapyDeviceProfile &profile);
+    bool isRtlSdr() const;
+    QString deviceIdentity() const;
+    bool autoIfUsesLsb() const;
+    rtlsdr::TuningPlan tuningPlanFor(qint64 dialFrequencyHz) const;
+    bool hardwarePlanIsSupported(const rtlsdr::TuningPlan &plan) const;
+    bool applyTuningPlan(qint64 dialFrequencyHz, bool notifyCenter = true);
+    qint64 ifReferenceFrequency(qint64 fallbackFrequencyHz) const;
+    QVariantMap directSamplingInfo() const;
+    QVariantMap ifSettings() const;
 
     BackendState m_state = BackendState::Idle;
     bool m_open = false;
@@ -88,6 +98,18 @@ private:
     double m_gainDb = -1.0;
     double m_autoGainDb = 0.0;
     double m_gainReductionDb = 0.0;
+    int m_directSampling = 0;
+    bool m_offsetTuning = false;
+    qint64 m_hardwareCenterHz = 100'000'000;
+    double m_appliedBasebandTranslationHz = 0.0;
+    bool m_appliedSpectrumInverted = false;
+    bool m_ifEnabled = false;
+    qint64 m_ifFrequencyHz = 8'830'000;
+    qint64 m_ifUsbShiftHz = 1'500;
+    qint64 m_ifLsbShiftHz = -1'500;
+    int m_ifSideband = 0; // 0 automatico, 1 USB, 2 LSB
+    bool m_ifSpectrumInverted = false;
+    DemodMode m_activeDemod = DemodMode::Usb;
 
     QHash<ChannelId, RxChannelConfig> m_channels;
     QHash<PanId, PanConfig> m_panadapters;

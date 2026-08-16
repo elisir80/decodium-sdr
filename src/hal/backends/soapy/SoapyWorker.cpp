@@ -23,6 +23,7 @@ constexpr std::size_t kReadFrames = 16384;
 /// Timeout di readStream. Determina anche la latenza con cui il ciclo si
 /// accorge di una richiesta di arresto.
 constexpr long kReadTimeoutUs = 200000;
+constexpr double kTwoPi = 6.28318530717958647692;
 
 QString describeError(int code)
 {
@@ -68,6 +69,18 @@ void SoapyWorker::requestGain(double db)
 void SoapyWorker::requestAntenna(int index)
 {
     m_pendingAntenna.store(index, std::memory_order_release);
+}
+
+void SoapyWorker::requestDeviceSetting(const QString &key, const QString &value)
+{
+    std::lock_guard<std::mutex> lock(m_settingsMutex);
+    m_pendingDeviceSettings.insert(key, value);
+}
+
+void SoapyWorker::requestBasebandTransform(double translationHz, bool spectrumInverted)
+{
+    m_pendingTranslationHz.store(translationHz, std::memory_order_release);
+    m_pendingSpectrumInverted.store(spectrumInverted ? 1 : 0, std::memory_order_release);
 }
 
 void SoapyWorker::requestStop()
@@ -161,6 +174,38 @@ void SoapyWorker::applyPendingCommands(SoapySDR::Device *device)
 {
     // SoapySDR non è thread-safe: i comandi si applicano qui, fra una lettura
     // e l'altra, mai dal thread che li ha richiesti.
+    QHash<QString, QString> settings;
+    {
+        std::lock_guard<std::mutex> lock(m_settingsMutex);
+        settings.swap(m_pendingDeviceSettings);
+    }
+    for (auto it = settings.cbegin(); it != settings.cend(); ++it) {
+        try {
+            device->writeSetting(it.key().toStdString(), it.value().toStdString());
+            if (it.key() == QLatin1String("direct_samp"))
+                m_directSamplingActive = it.value() != QLatin1String("0");
+            qCInfo(dsdrHal) << "soapy: impostazione RTL-SDR" << it.key() << it.value();
+        } catch (const std::exception &e) {
+            emit failed(tr("Impostazione %1 rifiutata dal device: %2")
+                            .arg(it.key(), QString::fromUtf8(e.what())), false);
+        }
+    }
+
+    const double rate = m_pendingSampleRate.exchange(-1.0, std::memory_order_acq_rel);
+    if (rate > 0.0) {
+        try {
+            device->setSampleRate(SOAPY_SDR_RX, 0, rate);
+            m_activeSampleRate = rate;
+        } catch (const std::exception &e) {
+            emit failed(tr("Frequenza di campionamento rifiutata: %1")
+                            .arg(QString::fromUtf8(e.what())),
+                        false);
+        }
+    }
+
+    // L'oscillatore della traslazione software dipende dal sample rate: la
+    // frequenza del dispositivo può cambiare nello stesso giro, ma il rate va
+    // applicato prima per non elaborare nemmeno un blocco con lo step vecchio.
     const qint64 frequency = m_pendingFrequency.exchange(-1, std::memory_order_acq_rel);
     if (frequency > 0) {
         try {
@@ -172,15 +217,25 @@ void SoapyWorker::applyPendingCommands(SoapySDR::Device *device)
         }
     }
 
-    const double rate = m_pendingSampleRate.exchange(-1.0, std::memory_order_acq_rel);
-    if (rate > 0.0) {
-        try {
-            device->setSampleRate(SOAPY_SDR_RX, 0, rate);
-        } catch (const std::exception &e) {
-            emit failed(tr("Frequenza di campionamento rifiutata: %1")
-                            .arg(QString::fromUtf8(e.what())),
-                        false);
-        }
+    const int spectrumInverted = m_pendingSpectrumInverted.exchange(-1,
+                                                                       std::memory_order_acq_rel);
+    const double translation = m_pendingTranslationHz.exchange(
+        std::numeric_limits<double>::quiet_NaN(), std::memory_order_acq_rel);
+    if (spectrumInverted >= 0 || std::isfinite(translation)) {
+        if (spectrumInverted >= 0)
+            m_spectrumInverted = spectrumInverted != 0;
+        if (std::isfinite(translation))
+            m_basebandTranslationHz = translation;
+        const double step = m_activeSampleRate > 0.0
+            ? kTwoPi * m_basebandTranslationHz / m_activeSampleRate : 0.0;
+        m_oscillatorI = 1.0;
+        m_oscillatorQ = 0.0;
+        m_oscillatorStepI = std::cos(step);
+        m_oscillatorStepQ = std::sin(step);
+        m_oscillatorNormaliseCounter = 0;
+        qCInfo(dsdrHal) << "soapy: trasformazione IQ"
+                        << "shift" << m_basebandTranslationHz
+                        << "inverted" << m_spectrumInverted;
     }
 
     const int antenna = m_pendingAntenna.exchange(-1, std::memory_order_acq_rel);
@@ -195,7 +250,9 @@ void SoapyWorker::applyPendingCommands(SoapySDR::Device *device)
     if (!m_gainCommandPending.exchange(false, std::memory_order_acq_rel))
         return;
 
-    if (m_gainAuto.load(std::memory_order_acquire)) {
+    if (m_directSamplingActive) {
+        qCInfo(dsdrHal) << "soapy: guadagno tuner ignorato in direct sampling";
+    } else if (m_gainAuto.load(std::memory_order_acquire)) {
         try {
             // AUTO is deliberately client-controlled.  Several Soapy RTL-SDR
             // drivers combine tuner AGC and the RTL2832 AGC too aggressively,
@@ -246,6 +303,8 @@ void SoapyWorker::openAndRun(const QString &deviceArgs, qint64 frequencyHz, doub
         emit finished();
         return;
     }
+
+    m_activeSampleRate = sampleRate;
 
     try {
         if (sampleRate > 0.0)
@@ -346,6 +405,38 @@ void SoapyWorker::runLoop(SoapySDR::Device *device)
         consecutiveErrors = 0;
         if (read == 0)
             continue;
+
+        if (m_spectrumInverted || m_basebandTranslationHz != 0.0) {
+            for (int frame = 0; frame < read; ++frame) {
+                const std::size_t index = static_cast<std::size_t>(frame) * 2;
+                float iSample = m_buffer[index];
+                float qSample = m_buffer[index + 1];
+                if (m_spectrumInverted)
+                    qSample = -qSample;
+                if (m_basebandTranslationHz != 0.0) {
+                    const float mixedI = static_cast<float>(iSample * m_oscillatorI
+                                                              - qSample * m_oscillatorQ);
+                    const float mixedQ = static_cast<float>(iSample * m_oscillatorQ
+                                                              + qSample * m_oscillatorI);
+                    iSample = mixedI;
+                    qSample = mixedQ;
+                    const double nextI = m_oscillatorI * m_oscillatorStepI
+                        - m_oscillatorQ * m_oscillatorStepQ;
+                    m_oscillatorQ = m_oscillatorI * m_oscillatorStepQ
+                        + m_oscillatorQ * m_oscillatorStepI;
+                    m_oscillatorI = nextI;
+                    if ((++m_oscillatorNormaliseCounter & 0x0fffU) == 0U) {
+                        const double magnitude = std::hypot(m_oscillatorI, m_oscillatorQ);
+                        if (magnitude > 0.0) {
+                            m_oscillatorI /= magnitude;
+                            m_oscillatorQ /= magnitude;
+                        }
+                    }
+                }
+                m_buffer[index] = iSample;
+                m_buffer[index + 1] = qSample;
+            }
+        }
 
         const std::size_t floats = static_cast<std::size_t>(read) * 2;
         const std::size_t written = m_ring ? m_ring->write(m_buffer.data(), floats) : 0;

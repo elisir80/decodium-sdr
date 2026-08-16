@@ -280,6 +280,9 @@ bool NewcatDriver::poll(CatState &state)
     if (!isOpen())
         return false;
 
+    state.pttKnown = false;
+    state.transmitting = false;
+
     // `FA` + nove cifre + `;` sono dodici caratteri, non tredici. Con la
     // soglia sbagliata la risposta veniva scartata sempre, la frequenza
     // restava a zero e il panadattatore non aveva dove ancorarsi — senza che
@@ -295,8 +298,10 @@ bool NewcatDriver::poll(CatState &state)
         state.mode = modeFromCode(md.at(3));
 
     const QByteArray tx = ask("TX;");
-    if (tx.size() >= 4 && tx.startsWith("TX"))
+    if (tx.size() >= 4 && tx.startsWith("TX")) {
         state.transmitting = tx.at(2) != '0';
+        state.pttKnown = true;
+    }
 
     // L'S-meter si legge solo in ricezione: in trasmissione lo stesso comando
     // risponde con la potenza, e prenderlo per segnale farebbe schizzare il

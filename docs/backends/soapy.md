@@ -53,13 +53,14 @@ cosa, e questo backend è dove si fermano.
 
 ```sh
 # Debian/Ubuntu
-sudo apt install libsoapysdr-dev soapysdr-module-rtlsdr
+sudo apt install libsoapysdr-dev soapysdr-module-rtlsdr soapysdr-module-hackrf
 
 # macOS
-brew install soapysdr
+brew install soapysdr soapyrtlsdr hackrf soapyhackrf
 
 # MSYS2
-pacman -S mingw-w64-x86_64-soapysdr mingw-w64-x86_64-soapyrtlsdr
+pacman -S mingw-w64-x86_64-soapysdr \
+  mingw-w64-x86_64-soapyrtlsdr mingw-w64-x86_64-soapyhackrf
 ```
 
 I **driver sono pacchetti separati**: SoapySDR senza moduli enumera zero
@@ -67,6 +68,33 @@ device. È il motivo per cui la conformance suite dichiara `skip` invece di
 fallire quando non trova hardware.
 
 Il backend si esclude dalla build con `-DDSDR_BACKEND_SOAPY=OFF`.
+
+## Moduli inclusi nei pacchetti
+
+Le release ufficiali includono un baseline verificato: **RTL-SDR**
+(`librtlsdrSupport`) e **HackRF** (`libHackRFSupport`). I moduli vengono messi
+nel pacchetto, non presi dall'installazione di sviluppo dell'operatore:
+
+| Pacchetto | Directory dei moduli | Priorità a runtime |
+|---|---|---|
+| DMG macOS | `Contents/lib/SoapySDR/modules0.8` | Prima di Homebrew e di altre directory utente |
+| AppImage Linux / ZIP Windows | `lib/SoapySDR/modules0.8` | Prima di `SOAPY_SDR_PLUGIN_PATH` ereditato |
+
+Chi prepara un pacchetto per un altro hardware può estendere la stessa
+procedura, senza aggiungere codice specifico al backend:
+
+```sh
+cmake -S . -B build \
+  -DDSDR_BUNDLE_SOAPY=ON \
+  -DDSDR_SOAPY_BUNDLE_MODULES='librtlsdrSupport;libHackRFSupport;libMioDriverSupport' \
+  -DDSDR_SOAPY_MODULE_PATHS=/percorso/ai/moduli/SoapySDR/modules0.8
+```
+
+Il nome è quello del file modulo senza estensione. La configurazione fallisce
+se uno dei moduli dichiarati non è realmente presente: è intenzionale, perché
+un pacchetto che mostra un backend ma non trova il ricevitore è incompleto.
+Moduli che dipendono da SDK proprietari (per esempio alcuni driver SDRplay)
+vanno inclusi solo dopo averne verificato licenza e redistribuibilità.
 
 ## Comandi nativi
 

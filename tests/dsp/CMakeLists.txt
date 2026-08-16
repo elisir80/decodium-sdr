@@ -67,6 +67,12 @@ dsdr_add_test(tst_audio_graph
     SOURCES tst_audio_graph.cpp
     LIBRARIES dsdr::audio)
 
+# PCM di rete: il test ascolta davvero un datagramma localhost e presidia
+# formato, frequenza e assenza di intestazioni proprietarie.
+dsdr_add_test(tst_network_audio
+    SOURCES tst_network_audio.cpp
+    LIBRARIES dsdr::audio Qt6::Network)
+
 # La soglia AGC-T automatica: due righe di aritmetica che si sbagliano in
 # silenzio, e il difetto si attribuisce all'AGC.
 dsdr_add_test(tst_agc_threshold

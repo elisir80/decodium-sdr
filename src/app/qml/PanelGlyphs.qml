@@ -49,6 +49,12 @@ QtObject {
         "audio":
             "M2,12 L5,12 L7,5 L10,19 L13,8 L16,15 L19,10 L22,12",
 
+        // ── Audio di rete ────────────────────────────────────────────────
+        // Un'onda che esce da una presa: non una freccia generica, ma audio
+        // che lascia l'applicazione verso un altro ricevitore.
+        "rete-audio":
+            "M2,12 L5,12 L7,6 L10,18 L13,8 L16,14 M17,6 L22,6 L22,18 L17,18",
+
         // ── Flusso ───────────────────────────────────────────────────────
         // Due stadi in fila, collegati: è il diagramma, in piccolo.
         "flusso":

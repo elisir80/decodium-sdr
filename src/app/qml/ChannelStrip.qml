@@ -40,6 +40,7 @@ Rectangle {
         ListElement { key: "sintonia" }
         ListElement { key: "strumento" }
         ListElement { key: "audio" }
+        ListElement { key: "rete-audio" }
         ListElement { key: "flusso" }
         ListElement { key: "tempo" }
         ListElement { key: "catena" }
@@ -61,6 +62,7 @@ Rectangle {
         { key: "sintonia",     glyph: "⌗", label: qsTr("Sintonia") },
         { key: "strumento",    glyph: "◔", label: qsTr("Strumento") },
         { key: "audio",        glyph: "♫", label: qsTr("Studio audio") },
+        { key: "rete-audio",   glyph: "⇉", label: qsTr("Audio di rete") },
         { key: "flusso",       glyph: "⇉", label: qsTr("Flusso") },
         { key: "tempo",        glyph: "⏱", label: qsTr("Macchina del tempo") },
         { key: "catena",       glyph: "⨍", label: qsTr("Catena RX") },
@@ -235,6 +237,7 @@ Rectangle {
         case "strumento": return Session.connected
         // Lo studio audio ha senso solo con dell'audio che scorra.
         case "audio":     return Session.connected
+        case "rete-audio": return Session.connected
         // Il diagramma di flusso vale solo con una catena viva: senza, i
         // blocchi ci sarebbero e le misure no.
         case "flusso":    return Session.connected
@@ -252,6 +255,7 @@ Rectangle {
         case "sintonia":  return tuningPanel
         case "strumento": return sMeterPanel
         case "audio":     return audioStudioPanel
+        case "rete-audio": return networkAudioPanel
         case "greyline":  return greylinePanel
         case "condizioni": return conditionsPanel
         case "flusso":    return chainFlowPanel
@@ -410,6 +414,12 @@ Rectangle {
         id: audioStudioPanel
 
         AudioStudioPanel {}
+    }
+
+    Component {
+        id: networkAudioPanel
+
+        NetworkAudioPanel {}
     }
 
     Component {

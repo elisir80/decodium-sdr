@@ -5,6 +5,9 @@
 
 #include <QElapsedTimer>
 #include <QLibrary>
+#include <QCoreApplication>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QTest>
 
 #include <functional>
@@ -32,8 +35,28 @@ class TestIqModule : public QObject
     Q_OBJECT
 
 private slots:
+    void initTestCase();
+    void cleanup();
     void loadsAndReceivesBaseband();
+    void enablesAndDisablesIndividualModule();
 };
+
+void TestIqModule::initTestCase()
+{
+    QStandardPaths::setTestModeEnabled(true);
+    QCoreApplication::setOrganizationName(QStringLiteral("DecodiumSdrTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("iq_module"));
+    QSettings settings;
+    settings.remove(QStringLiteral("iqModules"));
+    settings.sync();
+}
+
+void TestIqModule::cleanup()
+{
+    QSettings settings;
+    settings.remove(QStringLiteral("iqModules"));
+    settings.sync();
+}
 
 void TestIqModule::loadsAndReceivesBaseband()
 {
@@ -61,6 +84,27 @@ void TestIqModule::loadsAndReceivesBaseband()
              "connessione demo fallita");
     QVERIFY2(waitFor([&] { return calls() > 0 && frames() > 0; }, 3000),
              "il modulo IQ non ha ricevuto il baseband del canale");
+}
+
+void TestIqModule::enablesAndDisablesIndividualModule()
+{
+    const QString path = qEnvironmentVariable("DSDR_TEST_IQ_MODULE");
+    QVERIFY(!path.isEmpty());
+
+    SessionManager session;
+    QVERIFY(session.loadIqModule(path));
+    QCOMPARE(session.iqModuleCatalog().size(), 1);
+    QCOMPARE(session.iqModuleCatalog().first().toMap().value(QStringLiteral("state")).toString(),
+             QStringLiteral("active"));
+
+    QVERIFY(session.setIqModuleEnabled(path, false));
+    QCOMPARE(session.iqModuleCatalog().first().toMap().value(QStringLiteral("enabled")).toBool(),
+             false);
+    QCOMPARE(session.iqModuleCatalog().first().toMap().value(QStringLiteral("loaded")).toBool(),
+             false);
+    QCOMPARE(session.iqModuleCatalog().first().toMap().value(QStringLiteral("state")).toString(),
+             QStringLiteral("disabled"));
+    QVERIFY(session.iqModuleNames().isEmpty());
 }
 
 QTEST_MAIN(TestIqModule)

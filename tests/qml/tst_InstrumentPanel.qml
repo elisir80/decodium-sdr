@@ -220,7 +220,34 @@ TestCase {
         wait(50)
         compare(panel.s9ReferenceDb, panel.defaultS9ReferenceDb,
                 "una S9 sopra il fondo scala non è stata riparata")
-        verify(!panel.calibrated, "la tara non valida è rimasta marcata valida")
+        verify(panel.calibrated,
+               "la tara riparata deve impedire al timer di riscrivere il valore")
+
+        // Anche S9 = 0 è una tara automatica compressa: con un livello reale
+        // sotto fondo scala darebbe S0 pur in presenza di rumore forte.
+        panel.s9ReferenceDb = 0
+        wait(50)
+        compare(panel.s9ReferenceDb, panel.defaultS9ReferenceDb,
+                "la tara S9 = 0 non è stata riparata")
+
+        // Anche un valore appena sotto lo zero lascia troppo poco margine per
+        // leggere un punto S: era il caso osservato dopo la pressione di TARA.
+        panel.s9ReferenceDb = -0.84
+        wait(50)
+        compare(panel.s9ReferenceDb, panel.defaultS9ReferenceDb,
+                "la tara S9 quasi a fondo scala non è stata riparata")
+    }
+
+    function test_reset_returns_to_the_deterministic_reference() {
+        const panel = createTemporaryObject(panelComponent, testCase)
+        panel.s9ReferenceDb = -72
+        panel.calibrated = true
+        wait(50)
+
+        panel.resetCalibration()
+        compare(panel.s9ReferenceDb, panel.defaultS9ReferenceDb)
+        verify(panel.calibrated,
+               "il reset non deve avviare subito una tara automatica")
     }
 
     function test_rds_panel_displays_decoded_station_data() {

@@ -35,6 +35,12 @@ public:
     void requestBiasTee(bool enabled);
     void requestDirectSampling(int mode); ///< 0 off, 1 I, 2 Q
     void requestOffsetTuning(bool enabled);
+    /// Raddrizza un'IF invertita e porta il canale scelto a 0 Hz prima del DSP.
+    void requestBasebandTransform(double translationHz, bool spectrumInverted);
+    /// Ferma la lettura USB e scarta ogni campione finche' la radio e' in TX.
+    /// Non e' un attenuatore RF: e' il gate software che evita di consegnare
+    /// al DSP dati ricevuti mentre l'uscita IF non e' garantita sicura.
+    void requestStreamPause(bool paused);
     void requestStop();
 
 public slots:
@@ -53,6 +59,11 @@ private:
     RtlSdrDeviceProfile readProfile(rtlsdr_dev_t *device, int deviceIndex,
                                     const QString &serial) const;
     void applyPendingCommands(rtlsdr_dev_t *device);
+    /// Solo stato DSP: e' sicuro applicarlo dal callback senza fermare USB.
+    void applyPendingBasebandTransform();
+    /// Interrompe read_async: la riconfigurazione viene applicata nel thread
+    /// del ricevitore, prima di riaprire il flusso USB.
+    void requestReconfigure();
     void fail(const QString &message, bool fatal);
 
     dsp::SpscRing<float> *m_ring = nullptr;
@@ -61,6 +72,8 @@ private:
     QList<int> m_gainSteps;
 
     std::atomic<bool> m_running{false};
+    std::atomic<bool> m_reconfigureRequested{false};
+    std::atomic<bool> m_streamPaused{false};
     std::atomic<rtlsdr_dev_t *> m_device{nullptr};
     std::atomic<qint64> m_pendingFrequency{-1};
     std::atomic<double> m_pendingSampleRate{-1.0};
@@ -69,6 +82,18 @@ private:
     std::atomic<int> m_pendingBiasTee{-1};
     std::atomic<int> m_pendingDirectSampling{-1};
     std::atomic<int> m_pendingOffsetTuning{-1};
+    std::atomic<double> m_pendingTranslationHz{std::numeric_limits<double>::quiet_NaN()};
+    std::atomic<int> m_pendingSpectrumInverted{-1};
+
+    bool m_directSamplingActive = false;
+    bool m_spectrumInverted = false;
+    double m_activeSampleRate = 0.0;
+    double m_basebandTranslationHz = 0.0;
+    double m_oscillatorI = 1.0;
+    double m_oscillatorQ = 0.0;
+    double m_oscillatorStepI = 1.0;
+    double m_oscillatorStepQ = 0.0;
+    quint32 m_oscillatorNormaliseCounter = 0;
 };
 
 } // namespace dsdr::hal::rtlsdr

@@ -323,6 +323,9 @@ bool CivDriver::poll(CatState &state)
     if (!isOpen())
         return false;
 
+    state.pttKnown = false;
+    state.transmitting = false;
+
     const QByteArray frequency = ask(QByteArray(1, char(0x03)));
     if (frequency.isEmpty())
         return false;   // la radio ha smesso di rispondere: CAT perso
@@ -340,8 +343,10 @@ bool CivDriver::poll(CatState &state)
     pttQuery.append(char(0x1C));
     pttQuery.append(char(0x00));
     const QByteArray ptt = ask(pttQuery);
-    if (ptt.size() >= 8 && static_cast<quint8>(ptt.at(4)) == 0x1C)
+    if (ptt.size() >= 8 && static_cast<quint8>(ptt.at(4)) == 0x1C) {
         state.transmitting = static_cast<quint8>(ptt.at(6)) != 0x00;
+        state.pttKnown = true;
+    }
 
     // L'S-meter si legge solo in ricezione, come sulle Yaesu: in trasmissione
     // lo stesso comando parla di potenza.
