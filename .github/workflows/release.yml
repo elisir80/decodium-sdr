@@ -333,28 +333,11 @@ jobs:
             cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
               -P build/BundleMacOSHamlib.cmake
             # macdeployqt and the custom Soapy bundle step both rewrite Mach-O
-            # files. Remove any linker/ad-hoc signatures left by Homebrew or
-            # Qt after those rewrites; otherwise macOS can terminate the
-            # bundle with "Code Signature Invalid". A notarized release must
-            # replace this with one final Developer ID signing pass.
-            # `macdeployqt` può lasciare plugin Qt come symlink. Seguendoli
-            # firmiamo il Mach-O reale invece di saltare il link e ritrovarci
-            # con un bundle apparentemente firmato ma rifiutato da macOS.
-            find -L "$PREFIX/decodium-sdr.app/Contents" -type f \
-              \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
-                 -o -path '*/Resources/hamlib/bin/*' \) \
-              -exec codesign --remove-signature {} \; 2>/dev/null || true
-            # Anche i driver Soapy sono Mach-O caricati dopo l'avvio: ogni
-            # componente eseguibile riceve una firma ad-hoc coerente. Una
-            # release notarizzata sostituirà tutto con una firma Developer ID.
-            find -L "$PREFIX/decodium-sdr.app/Contents" -type f \
-              \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
-                 -o -path '*/Resources/hamlib/bin/*' \) -print0 | \
-              xargs -0 -n1 codesign --force --sign -
-            # `macdeployqt` può installare renderer come symlink o bundle
-            # annidati, non enumerabili come file normali da `find`. Il passo
-            # finale ricorsivo firma anche questi componenti Qt, così la firma
-            # dell'app non fallisce su un plugin interno rimasto unsigned.
+            # files. Sign the complete nested-code graph in one operation:
+            # signing every symlinked file first can sign the same Qt plug-in
+            # through two paths and leaves the enclosing bundle inconsistent
+            # on current macOS runners. A notarized release must replace this
+            # ad-hoc pass with the corresponding Developer ID signing pass.
             codesign --force --deep --sign - "$PREFIX/decodium-sdr.app"
             codesign --verify --deep --strict --verbose=2 "$PREFIX/decodium-sdr.app"
           fi

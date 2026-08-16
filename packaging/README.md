@@ -74,15 +74,8 @@ cmake --install build --prefix staging
 macdeployqt staging/decodium-sdr.app -qmldir="$PWD/src/app/qml" -no-codesign -always-overwrite
 cmake -DCMAKE_INSTALL_PREFIX="$PWD/staging" -P build/BundleMacOSSoapyModules.cmake
 cmake -DCMAKE_INSTALL_PREFIX="$PWD/staging" -P build/BundleMacOSHamlib.cmake
-find staging/decodium-sdr.app/Contents -type f \
-  \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
-     -o -path '*/Resources/hamlib/bin/*' \) \
-  -exec codesign --remove-signature {} \; 2>/dev/null || true
-find staging/decodium-sdr.app/Contents -type f \
-  \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
-     -o -path '*/Resources/hamlib/bin/*' \) -print0 | \
-  xargs -0 -n1 codesign --force --sign -
-codesign --force --sign - staging/decodium-sdr.app
+codesign --force --deep --sign - staging/decodium-sdr.app
+codesign --verify --deep --strict --verbose=2 staging/decodium-sdr.app
 ```
 
 Prima di creare il DMG, eseguire:

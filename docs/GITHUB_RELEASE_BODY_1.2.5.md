@@ -99,10 +99,11 @@ Apple Silicon e Intel, Linux x86-64 e Linux ARM64.
 - Estesa la diagnostica di backend, CAT, sicurezza TX, rete, DSP e pacchetti
   per rendere distinguibili un'impostazione non supportata, una radio non
   raggiungibile e un reale errore di ricezione.
-- Il DSP ora accorpa le notifiche IQ/audio prima della propria coda e
-  suddivide una raffica in brevi turni dell'event loop: la creazione di un
-  canale, i cambi filtro e i moduli IQ non possono più restare bloccati dietro
-  un flusso continuo su macchine ARM più lente.
+- Il DSP ora aspetta il primo canale prima di svuotare una nuova sorgente,
+  accorpa le notifiche IQ/audio prima della propria coda e suddivide una
+  raffica in brevi turni dell'event loop: la creazione di un canale, i cambi
+  filtro e i moduli IQ non possono più perdere i primi frame o restare
+  bloccati dietro un flusso continuo su macchine ARM più lente.
 - Corretto il pannello Condizioni: le sue curve convertono esplicitamente i
   punti in un array QML, eliminando il warning `PathPolyline: path of type 0
   not supported` all'avvio.
@@ -232,10 +233,11 @@ Linux x86-64, and Linux ARM64.
 - Extended backend, CAT, TX-safety, network, DSP and package diagnostics so an
   unsupported setting, an unreachable radio and a genuine reception problem
   can be distinguished.
-- The DSP now coalesces IQ/audio notifications before its event queue and
-  splits a burst into short event-loop turns, so channel creation, filter
-  changes and IQ modules cannot be starved behind a continuous stream on
-  slower ARM machines.
+- The DSP now waits for the first channel before draining a newly attached
+  source, coalesces IQ/audio notifications before its event queue and splits
+  a burst into short event-loop turns. Channel creation, filter changes and
+  IQ modules can no longer lose their first frames or be starved behind a
+  continuous stream on slower ARM machines.
 - Fixed the Conditions panel: its curves now explicitly convert points to a
   QML array, removing the start-up warning `PathPolyline: path of type 0 not
   supported`.

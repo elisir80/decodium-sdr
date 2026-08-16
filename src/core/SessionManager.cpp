@@ -1357,11 +1357,13 @@ void SessionManager::selectBackend(const QString &backendId)
             return;
         m_sampleRate = rate;
         if (m_engine) {
+            const bool waitForInitialChannel = m_channels.rowCount() == 0;
             if (m_capabilities.clientDemod()) {
-                m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+                m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency,
+                                    waitForInitialChannel);
             } else {
                 m_engine->setAudioSource(m_backend->audioStream(kInvalidChannel),
-                                         m_sampleRate, m_centerFrequency);
+                                         m_sampleRate, m_centerFrequency, waitForInitialChannel);
             }
         }
         qCInfo(dsdrCore) << "sample rate aggiornato dal backend:" << rate;
@@ -1541,11 +1543,13 @@ void SessionManager::connectToDevice(int deviceRow)
     // backend: chi demodula a bordo consegna audio, e il motore lo tratta
     // ricostruendone il segnale analitico — da lì in poi è banda base come
     // qualunque altra (SPEC-004 §2).
+    const bool waitForInitialChannel = m_channels.rowCount() == 0;
     if (m_capabilities.clientDemod()) {
-        m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+        m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency,
+                            waitForInitialChannel);
     } else {
         m_engine->setAudioSource(m_backend->audioStream(kInvalidChannel),
-                                 m_sampleRate, m_centerFrequency);
+                                 m_sampleRate, m_centerFrequency, waitForInitialChannel);
     }
 
     // Il motore TX riceve il ring del backend, non il backend: sopra la HAL
@@ -1985,11 +1989,13 @@ void SessionManager::setSampleRate(double rate)
     // backend: chi demodula a bordo consegna audio, e il motore lo tratta
     // ricostruendone il segnale analitico — da lì in poi è banda base come
     // qualunque altra (SPEC-004 §2).
+    const bool waitForInitialChannel = m_channels.rowCount() == 0;
     if (m_capabilities.clientDemod()) {
-        m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency);
+        m_engine->setSource(m_backend->iqStream(), m_sampleRate, m_centerFrequency,
+                            waitForInitialChannel);
     } else {
         m_engine->setAudioSource(m_backend->audioStream(kInvalidChannel),
-                                 m_sampleRate, m_centerFrequency);
+                                 m_sampleRate, m_centerFrequency, waitForInitialChannel);
     }
 
     // Il motore TX riceve il ring del backend, non il backend: sopra la HAL

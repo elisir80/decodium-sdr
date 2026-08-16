@@ -18,6 +18,7 @@
 #include <QTest>
 #include <QThread>
 
+#include <atomic>
 #include <cmath>
 #include <vector>
 
@@ -119,6 +120,7 @@ private slots:
     void theLowerSidebandIsNotSilence();
     void whatIsOutsideThePassbandDoesNotSurvive();
     void withoutASourceNothingComesOut();
+    void sourceSwapWithAnExistingChannelKeepsReceptionActive();
     void foreignFrameNotificationsLeaveRoomForChannelControl();
 };
 
@@ -204,6 +206,26 @@ void TestAudioSource::withoutASourceNothingComesOut()
     QCOMPARE(engine.audioRing()->available(), std::size_t(0));
 }
 
+void TestAudioSource::sourceSwapWithAnExistingChannelKeepsReceptionActive()
+{
+    DspEngine engine;
+    dsp::SpscRing<float> firstInput(1 << 20);
+    dsp::SpscRing<float> replacementInput(1 << 20);
+
+    engine.setAudioSource(&firstInput, kRate, 7'100'000);
+    engine.setAudioSideband(static_cast<int>(DspEngine::Sideband::Upper));
+    engine.addChannel(1, plainChannel(DemodMode::Usb));
+
+    // Un cambio di sample rate o una riconnessione del server sostituisce il
+    // ring ma non il canale. In questo caso non si deve aspettare un nuovo
+    // addChannel: l'RX esistente deve riprendere immediatamente a demodulare.
+    engine.setAudioSource(&replacementInput, kRate, 7'100'000, false);
+    const auto out = runThrough(engine, replacementInput, tone(1000.0, 48000));
+
+    QVERIFY2(out.size() > 20000,
+             "il riaggancio della sorgente ha bloccato un canale gia' esistente");
+}
+
 void TestAudioSource::foreignFrameNotificationsLeaveRoomForChannelControl()
 {
     // È il caso del backend reale: il produttore è su un thread diverso dal
@@ -224,12 +246,22 @@ void TestAudioSource::foreignFrameNotificationsLeaveRoomForChannelControl()
     const auto audio = tone(1000.0, 6 * dsp::kMaxBlockFrames);
     QCOMPARE(input.write(audio.data(), audio.size()), audio.size());
 
+    // L'evento DSP viene deliberatamente prima del comando addChannel. Prima
+    // della correzione consumava quattro blocchi senza una catena canale e il
+    // backend vivo poteva continuare a mettergli eventi davanti all'avvio.
+    std::atomic_size_t framesBeforeFirstChannel{0};
+    std::atomic_bool measuredBeforeFirstChannel{false};
+
     hal::AudioFrame frame;
     frame.sampleRate = kRate;
     frame.frameCount = 1024;
     for (int i = 0; i < 256; ++i)
         engine->onAudioFrameReady(frame);
 
+    const bool measurementQueued = QMetaObject::invokeMethod(engine, [&] {
+        framesBeforeFirstChannel.store(input.available(), std::memory_order_release);
+        measuredBeforeFirstChannel.store(true, std::memory_order_release);
+    }, Qt::QueuedConnection);
     const bool channelQueued = QMetaObject::invokeMethod(engine, [engine] {
         engine->addChannel(1, plainChannel(DemodMode::Usb));
     }, Qt::QueuedConnection);
@@ -237,6 +269,13 @@ void TestAudioSource::foreignFrameNotificationsLeaveRoomForChannelControl()
     // davanti a addChannel, la sua continuazione deve invece restare dietro.
     // È la versione deterministica della coda piena osservata sul runner ARM.
     dspThread.start();
+
+    QElapsedTimer measurementTimer;
+    measurementTimer.start();
+    while (measurementTimer.elapsed() < 3000
+           && !measuredBeforeFirstChannel.load(std::memory_order_acquire)) {
+        QTest::qWait(10);
+    }
 
     std::vector<float> chunk(4096);
     bool producedAudio = false;
@@ -262,7 +301,10 @@ void TestAudioSource::foreignFrameNotificationsLeaveRoomForChannelControl()
     dspThread.quit();
     const bool stopped = dspThread.wait(3000);
 
+    QVERIFY(measurementQueued);
     QVERIFY(channelQueued);
+    QVERIFY(measuredBeforeFirstChannel.load(std::memory_order_acquire));
+    QCOMPARE(framesBeforeFirstChannel.load(std::memory_order_acquire), audio.size());
     QVERIFY(destroyed);
     QVERIFY(stopped);
     QVERIFY2(producedAudio, "la raffica di frame ha affamato il comando addChannel");

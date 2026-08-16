@@ -111,15 +111,17 @@ DspEngine::~DspEngine()
     unloadIqModules();
 }
 
-void DspEngine::setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz)
+void DspEngine::setSource(dsp::SpscRing<float> *ring, double sampleRate,
+                          qint64 centerFrequencyHz, bool waitForInitialChannel)
 {
     m_sourceIsAudio.store(false, std::memory_order_release);
-    attachSource(ring, sampleRate, centerFrequencyHz);
+    attachSource(ring, sampleRate, centerFrequencyHz, waitForInitialChannel);
 }
 
 void DspEngine::attachSource(dsp::SpscRing<float> *ring, double sampleRate,
-                             qint64 centerFrequencyHz)
+                             qint64 centerFrequencyHz, bool waitForInitialChannel)
 {
+    m_waitingForInitialChannel.store(waitForInitialChannel, std::memory_order_release);
     m_sourceRate.store(sampleRate, std::memory_order_release);
     m_centerHz.store(centerFrequencyHz, std::memory_order_release);
     m_source.store(ring, std::memory_order_release);
@@ -127,10 +129,10 @@ void DspEngine::attachSource(dsp::SpscRing<float> *ring, double sampleRate,
 }
 
 void DspEngine::setAudioSource(dsp::SpscRing<float> *ring, double sampleRate,
-                               qint64 centerFrequencyHz)
+                               qint64 centerFrequencyHz, bool waitForInitialChannel)
 {
     m_sourceIsAudio.store(true, std::memory_order_release);
-    attachSource(ring, sampleRate, centerFrequencyHz);
+    attachSource(ring, sampleRate, centerFrequencyHz, waitForInitialChannel);
 }
 
 void DspEngine::setAudioSideband(int sideband)
@@ -146,6 +148,7 @@ void DspEngine::setAudioSideband(int sideband)
 
 void DspEngine::clearSource()
 {
+    m_waitingForInitialChannel.store(true, std::memory_order_release);
     m_source.store(nullptr, std::memory_order_release);
     m_sourceIsAudio.store(false, std::memory_order_release);
     m_audioRing->clear();
@@ -504,6 +507,12 @@ void DspEngine::addChannel(ChannelId id, const dsp::ChannelSettings &settings)
     }
 
     m_channels.emplace(id, std::move(channel));
+    // Alla prima apertura il worker può avere già riempito il ring mentre il
+    // comando addChannel attraversava il thread DSP. Si comincia qui, quando
+    // la catena audio e gli IQ module sono realmente presenti: fino a questo
+    // momento svuotare il ring produrrebbe solo uno spettro senza ricezione.
+    m_waitingForInitialChannel.store(false, std::memory_order_release);
+    queueProcess();
 }
 
 void DspEngine::updateChannel(ChannelId id, const dsp::ChannelSettings &settings)
@@ -746,6 +755,9 @@ void DspEngine::processAvailable()
 {
     dsp::SpscRing<float> *source = m_source.load(std::memory_order_acquire);
     if (!source)
+        return;
+
+    if (m_waitingForInitialChannel.load(std::memory_order_acquire))
         return;
 
     const quint64 dropped = m_pendingDroppedFrames.exchange(0, std::memory_order_acq_rel);

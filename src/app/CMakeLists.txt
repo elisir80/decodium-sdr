@@ -410,14 +410,16 @@ if(DSDR_BUNDLE_HAMLIB)
         # `applicationDirPath()` lo trova prima del PATH di sistema.
         install(PROGRAMS "${DSDR_RIGCTLD_EXECUTABLE}" DESTINATION bin)
         if(WIN32)
-            # La release ufficiale Hamlib contiene una libusb diversa da
-            # quella richiesta da Soapy/MSYS2. La scegliamo esplicitamente
-            # qui, prima del resolver generico, così tutta l'app usa una sola
-            # copia ABI-compatibile e CMake non può mescolare due runtime.
+            # Il bridge Hamlib distribuisce anche libusb, ma Soapy e RTL-SDR
+            # ne usano già una dal runtime MSYS2. Copiarle entrambe nello
+            # staging rende ambiguo il grafo di dipendenze di CMake e può
+            # perfino far scegliere una DLL diversa a rigctld. Installiamo
+            # soltanto Hamlib: il resolver qui sotto aggiunge l'unica
+            # libusb-1.0.dll comune all'intero pacchetto.
             get_filename_component(DSDR_RIGCTLD_DIRECTORY
                                    "${DSDR_RIGCTLD_EXECUTABLE}" DIRECTORY)
             set(DSDR_WINDOWS_HAMLIB_DLLS)
-            foreach(dsdr_hamlib_dll libhamlib-4.dll libusb-1.0.dll)
+            foreach(dsdr_hamlib_dll libhamlib-4.dll)
                 set(dsdr_hamlib_dll_path
                     "${DSDR_RIGCTLD_DIRECTORY}/${dsdr_hamlib_dll}")
                 if(NOT EXISTS "${dsdr_hamlib_dll_path}")
@@ -454,6 +456,13 @@ if(WIN32)
     endif()
     list(APPEND DSDR_DEP_DIRS "${DSDR_COMPILER_DIR}")
     install(CODE "
+        # CMake 4.2 normalizza i percorsi prima di confrontarli durante la
+        # raccolta del grafo DLL. Usiamo esplicitamente la semantica nuova:
+        # evita un warning per ogni dipendenza senza alterare il contenuto del
+        # pacchetto su versioni CMake precedenti.
+        if(POLICY CMP0207)
+            cmake_policy(SET CMP0207 NEW)
+        endif()
         set(dsdr_exe \"\${CMAKE_INSTALL_PREFIX}/bin/decodium-sdr.exe\")
 
         # Non solo l'eseguibile: anche le librerie e i plugin che il deploy di

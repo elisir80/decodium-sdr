@@ -74,7 +74,8 @@ public:
 
     /// Aggancia la sorgente IQ. Thread-safe: il thread DSP recepisce il
     /// cambiamento al frame successivo, senza fermare nulla a mano.
-    void setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz);
+    void setSource(dsp::SpscRing<float> *ring, double sampleRate, qint64 centerFrequencyHz,
+                   bool waitForInitialChannel = true);
 
     // ── Sorgente audio: i backend server-DSP (SPEC-004) ─────────────────
     //
@@ -101,7 +102,7 @@ public:
     };
 
     void setAudioSource(dsp::SpscRing<float> *ring, double sampleRate,
-                        qint64 centerFrequencyHz);
+                        qint64 centerFrequencyHz, bool waitForInitialChannel = true);
     void setAudioSideband(int sideband);
 
     void clearSource();
@@ -257,7 +258,7 @@ private:
     void queueProcess();
     void processAvailable();
     void attachSource(dsp::SpscRing<float> *ring, double sampleRate,
-                      qint64 centerFrequencyHz);
+                      qint64 centerFrequencyHz, bool waitForInitialChannel);
 
     /// Trasforma `count` campioni audio reali (in `m_mono`) nel segnale
     /// analitico interleaved di `m_interleaved`. Da qui in poi il resto del
@@ -317,6 +318,13 @@ private:
     // coda per addChannel, filtri o moduli IQ sulle macchine ARM lente.
     std::atomic_bool m_processEventPending{false};
     std::atomic<quint64> m_pendingDroppedFrames{0};
+    // Una sorgente nuova parte senza canali mentre SessionManager completa la
+    // connessione. I primi frame non vanno consumati in quel breve intervallo:
+    // il loro spettro sarebbe calcolato, ma audio e moduli non esisterebbero
+    // ancora. `addChannel()` sblocca il flusso e programma subito il giro
+    // rimasto; togliere poi tutti i canali non riattiva questa guardia, così
+    // il panadattatore continua a mostrare la banda.
+    std::atomic_bool m_waitingForInitialChannel{true};
 
     std::unique_ptr<dsp::SpscRing<float>> m_audioRing;
     SpectrumFeed *m_spectrum = nullptr;
