@@ -83,9 +83,23 @@ foreach(dsdr_dependency IN LISTS dsdr_resolved)
         file(SHA256 "${dsdr_dependency}" dsdr_source_hash)
         file(SHA256 "${dsdr_destination}" dsdr_destination_hash)
         if(NOT dsdr_source_hash STREQUAL dsdr_destination_hash)
-            message(FATAL_ERROR
-                "Due dipendenze SoapySDR hanno lo stesso nome ma contenuto diverso: "
-                "${dsdr_dependency_name}")
+            # macdeployqt può aver già copiato SoapySDR perché è una
+            # dipendenza diretta dell'app e averne poi riscritto l'install
+            # name. Il modulo vede l'originale Homebrew: i byte differiscono
+            # ma è la stessa libreria, e il bundle deve riusare la copia già
+            # coerente con l'eseguibile. Per ogni altro nome il conflitto resta
+            # invece un errore: due librerie diverse con lo stesso basename
+            # renderebbero ambiguo il caricamento a runtime.
+            if(dsdr_dependency_name STREQUAL "libSoapySDR.0.8.dylib")
+                message(STATUS
+                    "Reusing macdeployqt's rewritten ${dsdr_dependency_name}")
+            else()
+                message(FATAL_ERROR
+                    "Due dipendenze SoapySDR hanno lo stesso nome ma contenuto diverso: "
+                    "${dsdr_dependency_name}\n"
+                    "  esistente: ${dsdr_destination}\n"
+                    "  richiesta: ${dsdr_dependency}")
+            endif()
         endif()
     else()
         dsdr_copy_binary("${dsdr_dependency}" "${dsdr_destination}")

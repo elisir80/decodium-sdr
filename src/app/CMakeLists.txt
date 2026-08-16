@@ -409,6 +409,27 @@ if(DSDR_BUNDLE_HAMLIB)
         # Linux AppImage e Windows installano il bridge accanto all'app:
         # `applicationDirPath()` lo trova prima del PATH di sistema.
         install(PROGRAMS "${DSDR_RIGCTLD_EXECUTABLE}" DESTINATION bin)
+        if(WIN32)
+            # La release ufficiale Hamlib contiene una libusb diversa da
+            # quella richiesta da Soapy/MSYS2. La scegliamo esplicitamente
+            # qui, prima del resolver generico, così tutta l'app usa una sola
+            # copia ABI-compatibile e CMake non può mescolare due runtime.
+            get_filename_component(DSDR_RIGCTLD_DIRECTORY
+                                   "${DSDR_RIGCTLD_EXECUTABLE}" DIRECTORY)
+            set(DSDR_WINDOWS_HAMLIB_DLLS)
+            foreach(dsdr_hamlib_dll libhamlib-4.dll libusb-1.0.dll)
+                set(dsdr_hamlib_dll_path
+                    "${DSDR_RIGCTLD_DIRECTORY}/${dsdr_hamlib_dll}")
+                if(NOT EXISTS "${dsdr_hamlib_dll_path}")
+                    message(FATAL_ERROR
+                        "Il runtime Hamlib Windows è incompleto: manca "
+                        "${dsdr_hamlib_dll_path}")
+                endif()
+                list(APPEND DSDR_WINDOWS_HAMLIB_DLLS
+                     "${dsdr_hamlib_dll_path}")
+            endforeach()
+            install(FILES ${DSDR_WINDOWS_HAMLIB_DLLS} DESTINATION bin)
+        endif()
     endif()
 endif()
 
@@ -432,20 +453,6 @@ if(WIN32)
         list(APPEND DSDR_DEP_DIRS "${DSDR_SOAPY_ROOT}/bin")
     endif()
     list(APPEND DSDR_DEP_DIRS "${DSDR_COMPILER_DIR}")
-    set(DSDR_WINDOWS_HAMLIB_RUNTIME)
-    if(DSDR_BUNDLE_HAMLIB AND DSDR_RIGCTLD_EXECUTABLE)
-        # Nel codice di installazione il prefisso e' quello scelto da CPack,
-        # non quello della configurazione: il dollaro resta quindi protetto.
-        # Le DLL di rigctld non sono dipendenze del GUI: aggiungiamo la sua
-        # directory al resolver esplicitamente, altrimenti un pacchetto
-        # Windows conterrebbe l'exe ma non libhamlib/libusb del runtime.
-        get_filename_component(DSDR_RIGCTLD_DIRECTORY
-                               "${DSDR_RIGCTLD_EXECUTABLE}" DIRECTORY)
-        list(APPEND DSDR_DEP_DIRS "${DSDR_RIGCTLD_DIRECTORY}")
-        set(DSDR_WINDOWS_HAMLIB_RUNTIME
-            " \"\${CMAKE_INSTALL_PREFIX}/bin/rigctld.exe\"")
-    endif()
-
     install(CODE "
         set(dsdr_exe \"\${CMAKE_INSTALL_PREFIX}/bin/decodium-sdr.exe\")
 
@@ -472,7 +479,7 @@ if(WIN32)
         # «multiple conflicting paths» e interrompe l'installazione a metà —
         # con un pacchetto che sembra costruito e non lo è.
         file(GET_RUNTIME_DEPENDENCIES
-            EXECUTABLES \"\${dsdr_exe}\"${DSDR_WINDOWS_HAMLIB_RUNTIME}
+            EXECUTABLES \"\${dsdr_exe}\"
             MODULES \${dsdr_installed_libs}
             RESOLVED_DEPENDENCIES_VAR dsdr_resolved
             UNRESOLVED_DEPENDENCIES_VAR dsdr_unresolved

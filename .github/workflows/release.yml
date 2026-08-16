@@ -90,7 +90,7 @@ jobs:
             libvulkan-dev libegl1-mesa-dev libfuse2 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
-            libxcb-xkb1 libpulse-dev libhamlib-utils
+            libxcb-xkb1 libpulse-dev libhamlib-utils pulseaudio
 
       - name: Qt 6.8 (Linux)
         if: matrix.platform == 'linux'
@@ -291,7 +291,16 @@ jobs:
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build --output-on-failure --timeout 180
+        shell: bash
+        run: |
+          # I runner ARM non avviano un server audio: senza un sink PulseAudio
+          # i test di spettro, registrazione IQ e moduli ricevono zero frame.
+          # Il server è usato esclusivamente in CI, non viene incluso nell'AppImage.
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            pulseaudio --start --exit-idle-time=-1
+            pactl info
+          fi
+          ctest --test-dir build --output-on-failure --timeout 180
 
       - name: Installa in staging
         shell: bash
