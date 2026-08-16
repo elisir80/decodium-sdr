@@ -267,6 +267,12 @@ jobs:
             # symlink path on this runner; deploy the finished app explicitly.
             QT_DEPLOY_ARG="-DDSDR_QT_CMAKE_DEPLOY=OFF"
           fi
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            # setup-msys2 ricostruisce PATH per ogni step e ignora GITHUB_PATH.
+            # Esponiamo quindi il rigctld appena verificato al solo CMake che
+            # lo installa e ne risolve le DLL nel pacchetto finale.
+            export PATH="$PWD/third_party/hamlib-w64-4.7.2/bin:$PATH"
+          fi
           # `DSDR_STRICT_BACKENDS`: qui si costruisce per altri, e un backend
           # che si spegne perché manca una dipendenza deve fermare la
           # costruzione. La 1.1.3 è uscita senza `audiorig` — niente CAT,
