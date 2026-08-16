@@ -345,9 +345,21 @@ endif()
 # mostrare centinaia di radio nel selettore, ma nessuna funziona sulla macchina
 # di chi scarica perché manca l'eseguibile che possiede davvero la porta CAT.
 if(DSDR_BUNDLE_HAMLIB)
-    find_program(DSDR_RIGCTLD_EXECUTABLE
-        NAMES rigctld rigctld.exe
-        PATHS /opt/homebrew/bin /usr/local/bin)
+    set(DSDR_RIGCTLD_BIN "" CACHE FILEPATH
+        "Percorso esplicito di rigctld da includere nel pacchetto")
+    if(DSDR_RIGCTLD_BIN)
+        if(EXISTS "${DSDR_RIGCTLD_BIN}")
+            set(DSDR_RIGCTLD_EXECUTABLE "${DSDR_RIGCTLD_BIN}")
+        else()
+            message(FATAL_ERROR
+                "DSDR_RIGCTLD_BIN non punta a un eseguibile esistente: "
+                "${DSDR_RIGCTLD_BIN}")
+        endif()
+    else()
+        find_program(DSDR_RIGCTLD_EXECUTABLE
+            NAMES rigctld rigctld.exe
+            PATHS /opt/homebrew/bin /usr/local/bin)
+    endif()
 
     if(NOT DSDR_RIGCTLD_EXECUTABLE)
         set(dsdr_hamlib_message

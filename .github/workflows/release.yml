@@ -262,16 +262,19 @@ jobs:
       - name: Compila
         run: |
           QT_DEPLOY_ARG=""
+          HAMLIB_RIGCTLD_ARG=""
           if [ "${{ matrix.platform }}" = "macos" ]; then
             # Qt 6.11/macdeployqt has a broken CMake-generated QML plugin
             # symlink path on this runner; deploy the finished app explicitly.
             QT_DEPLOY_ARG="-DDSDR_QT_CMAKE_DEPLOY=OFF"
           fi
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            # setup-msys2 ricostruisce PATH per ogni step e ignora GITHUB_PATH.
-            # Esponiamo quindi il rigctld appena verificato al solo CMake che
-            # lo installa e ne risolve le DLL nel pacchetto finale.
-            export PATH="$PWD/third_party/hamlib-w64-4.7.2/bin:$PATH"
+            # Il runtime Hamlib include DLL che non devono precedere quelle
+            # della toolchain MSYS2 nel PATH. Lo consegniamo a CMake con un
+            # parametro dedicato, dopo aver convertito il percorso in forma
+            # Windows per il binario CMake nativo.
+            HAMLIB_RIGCTLD="$(cygpath -m "$PWD/third_party/hamlib-w64-4.7.2/bin/rigctld.exe")"
+            HAMLIB_RIGCTLD_ARG="-DDSDR_RIGCTLD_BIN=$HAMLIB_RIGCTLD"
           fi
           # `DSDR_STRICT_BACKENDS`: qui si costruisce per altri, e un backend
           # che si spegne perché manca una dipendenza deve fermare la
@@ -282,7 +285,7 @@ jobs:
                 -DDSDR_STRICT_BACKENDS=ON -DDSDR_BUNDLE_HAMLIB=ON \
                 -DDSDR_BUNDLE_SOAPY=ON \
                 -DDSDR_SOAPY_BUNDLE_MODULES="librtlsdrSupport;libHackRFSupport" \
-                $QT_DEPLOY_ARG
+                $QT_DEPLOY_ARG $HAMLIB_RIGCTLD_ARG
           cmake --build build
 
       - name: Test
