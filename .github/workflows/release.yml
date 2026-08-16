@@ -145,7 +145,8 @@ jobs:
           HAMLIB_VERSION=4.7.2
           ARCHIVE="third_party/hamlib-w64-${HAMLIB_VERSION}.zip"
           URL="https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VERSION}/hamlib-w64-${HAMLIB_VERSION}.zip"
-          WANT=5ebea37b184023b68fc08950975cfeb7632a5c2149ebb6a74bece9675fdce161
+          # Digest pubblicato nell'API ufficiale della release Hamlib 4.7.2.
+          WANT=8553bc6c5c6032e8debf99c017e98f58fed7e07e7c25d04815dc3e8bbe3304c7
           mkdir -p third_party
           curl -fsSL "$URL" -o "$ARCHIVE"
           GOT=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
