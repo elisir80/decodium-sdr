@@ -494,6 +494,8 @@ void DspEngine::addChannel(ChannelId id, const dsp::ChannelSettings &settings)
     if (id == kInvalidChannel || m_channels.find(id) != m_channels.end())
         return;
 
+    const bool firstChannel = m_channels.empty();
+
     Channel channel;
     channel.processor = std::make_unique<dsp::ChannelProcessor>();
     channel.settings = settings;
@@ -512,7 +514,19 @@ void DspEngine::addChannel(ChannelId id, const dsp::ChannelSettings &settings)
     // la catena audio e gli IQ module sono realmente presenti: fino a questo
     // momento svuotare il ring produrrebbe solo uno spettro senza ricezione.
     m_waitingForInitialChannel.store(false, std::memory_order_release);
-    queueProcess();
+
+    // `addChannel()` gira gia' nel thread DSP. Il primo evento di frame puo'
+    // essere stato accodato quando non esisteva ancora una catena e, su una
+    // CPU lenta, restare indietro rispetto alla barriera di avvio della
+    // sessione. Avviando qui un giro limitato facciamo esistere subito
+    // spettro, registrazione e moduli IQ prima di confermare il primo RX.
+    // `processAvailable()` conserva il proprio budget e riaccoda da se' il
+    // lavoro residuo, quindi non trasforma l'aggiunta dei canali successivi
+    // in un blocco senza fine del thread DSP.
+    if (firstChannel)
+        processAvailable();
+    else
+        queueProcess();
 }
 
 void DspEngine::updateChannel(ChannelId id, const dsp::ChannelSettings &settings)

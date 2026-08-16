@@ -121,6 +121,7 @@ private slots:
     void whatIsOutsideThePassbandDoesNotSurvive();
     void withoutASourceNothingComesOut();
     void sourceSwapWithAnExistingChannelKeepsReceptionActive();
+    void firstChannelProcessesBufferedFramesBeforeReturning();
     void foreignFrameNotificationsLeaveRoomForChannelControl();
 };
 
@@ -224,6 +225,45 @@ void TestAudioSource::sourceSwapWithAnExistingChannelKeepsReceptionActive()
 
     QVERIFY2(out.size() > 20000,
              "il riaggancio della sorgente ha bloccato un canale gia' esistente");
+}
+
+void TestAudioSource::firstChannelProcessesBufferedFramesBeforeReturning()
+{
+    // Una sorgente puo' aver gia' riempito il ring quando SessionManager
+    // conferma il primo RX. La barriera non e' completa se addChannel() torna
+    // al chiamante prima che il DSP abbia elaborato almeno il primo blocco:
+    // su ARM quella finestra bastava ai test di spettro, IQ module e recorder
+    // per scadere senza ricevere un solo frame.
+    auto *engine = new DspEngine;
+    dsp::SpscRing<float> input(1 << 17);
+    QThread dspThread;
+
+    engine->setAudioSource(&input, kRate, 7'100'000);
+    engine->setAudioSideband(static_cast<int>(DspEngine::Sideband::Upper));
+    const auto audio = tone(1000.0, 4 * dsp::kMaxBlockFrames);
+    QCOMPARE(input.write(audio.data(), audio.size()), audio.size());
+
+    engine->moveToThread(&dspThread);
+    dspThread.start();
+
+    bool immediateAudio = false;
+    const bool channelAdded = QMetaObject::invokeMethod(engine, [engine, &immediateAudio] {
+        engine->addChannel(1, plainChannel(DemodMode::Usb));
+        immediateAudio = engine->audioRing()->available() > 0;
+    }, Qt::BlockingQueuedConnection);
+
+    const bool destroyed = QMetaObject::invokeMethod(engine, [engine] {
+        engine->clearSource();
+        delete engine;
+    }, Qt::BlockingQueuedConnection);
+    dspThread.quit();
+    const bool stopped = dspThread.wait(3000);
+
+    QVERIFY(channelAdded);
+    QVERIFY(destroyed);
+    QVERIFY(stopped);
+    QVERIFY2(immediateAudio,
+             "il primo canale ha rimandato il primo giro DSP oltre la barriera di avvio");
 }
 
 void TestAudioSource::foreignFrameNotificationsLeaveRoomForChannelControl()
