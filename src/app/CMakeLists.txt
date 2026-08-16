@@ -353,8 +353,8 @@ if(DSDR_BUNDLE_HAMLIB)
         set(dsdr_hamlib_message
             "DSDR_BUNDLE_HAMLIB=ON ma rigctld non è disponibile.\n"
             "  macOS : brew install hamlib\n"
-            "  Debian: apt install hamlib-utils\n"
-            "  MSYS2 : pacman -S mingw-w64-x86_64-hamlib")
+            "  Debian: apt install libhamlib-utils\n"
+            "  Windows: aggiungere rigctld.exe al PATH")
         if(DSDR_STRICT_BACKENDS)
             message(FATAL_ERROR ${dsdr_hamlib_message})
         endif()
@@ -424,6 +424,12 @@ if(WIN32)
     if(DSDR_BUNDLE_HAMLIB AND DSDR_RIGCTLD_EXECUTABLE)
         # Nel codice di installazione il prefisso e' quello scelto da CPack,
         # non quello della configurazione: il dollaro resta quindi protetto.
+        # Le DLL di rigctld non sono dipendenze del GUI: aggiungiamo la sua
+        # directory al resolver esplicitamente, altrimenti un pacchetto
+        # Windows conterrebbe l'exe ma non libhamlib/libusb del runtime.
+        get_filename_component(DSDR_RIGCTLD_DIRECTORY
+                               "${DSDR_RIGCTLD_EXECUTABLE}" DIRECTORY)
+        list(APPEND DSDR_DEP_DIRS "${DSDR_RIGCTLD_DIRECTORY}")
         set(DSDR_WINDOWS_HAMLIB_RUNTIME
             " \"\${CMAKE_INSTALL_PREFIX}/bin/rigctld.exe\"")
     endif()

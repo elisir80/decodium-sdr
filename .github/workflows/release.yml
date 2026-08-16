@@ -90,7 +90,7 @@ jobs:
             libvulkan-dev libegl1-mesa-dev libfuse2 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
-            libxcb-xkb1 libpulse-dev hamlib-utils
+            libxcb-xkb1 libpulse-dev libhamlib-utils
 
       - name: Qt 6.8 (Linux)
         if: matrix.platform == 'linux'
@@ -129,9 +129,37 @@ jobs:
             mingw-w64-x86_64-soapysdr
             mingw-w64-x86_64-soapyrtlsdr
             mingw-w64-x86_64-soapyhackrf
-            mingw-w64-x86_64-hamlib
             mingw-w64-x86_64-nsis
+            unzip
             zip
+
+      # MSYS2 non pubblica più un pacchetto Hamlib per MINGW64. Il runtime
+      # ufficiale x64 conserva invece rigctld e l'intero catalogo radio; lo
+      # fissiamo a versione e SHA-256, perché un bridge CAT diverso da quello
+      # verificato renderebbe il pacchetto non riproducibile.
+      - name: Runtime Hamlib ufficiale (Windows)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          HAMLIB_VERSION=4.7.2
+          ARCHIVE="third_party/hamlib-w64-${HAMLIB_VERSION}.zip"
+          URL="https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VERSION}/hamlib-w64-${HAMLIB_VERSION}.zip"
+          WANT=5ebea37b184023b68fc08950975cfeb7632a5c2149ebb6a74bece9675fdce161
+          mkdir -p third_party
+          curl -fsSL "$URL" -o "$ARCHIVE"
+          GOT=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::il runtime Hamlib scaricato non è quello atteso"
+            echo "  atteso:    $WANT"
+            echo "  scaricato: $GOT"
+            exit 1
+          fi
+          unzip -q "$ARCHIVE" -d third_party
+          HAMLIB_BIN="$PWD/third_party/hamlib-w64-${HAMLIB_VERSION}/bin"
+          test -x "$HAMLIB_BIN/rigctld.exe"
+          echo "$HAMLIB_BIN" >> "$GITHUB_PATH"
+          echo "Hamlib ${HAMLIB_VERSION} x64 verificato: $GOT"
 
       # La libreria del ColibriNANO. È del costruttore ma è rilasciata sotto
       # Unlicense — «free to copy, publish, distribute... either in source code

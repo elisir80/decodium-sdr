@@ -82,7 +82,8 @@ Apple Silicon e Intel, Linux x86-64 e Linux ARM64.
   inclusi, quindi non richiede Homebrew, MSYS2 o un'installazione Soapy di
   sviluppo per questi ricevitori.
 - Il bundle macOS raccoglie ricorsivamente i moduli Soapy e le dipendenze,
-  riscrive i link Mach-O e include `rigctld`/Hamlib. Linux e Windows usano il
+  riscrive i link Mach-O e include `rigctld`/Hamlib. Windows include il runtime
+  ufficiale Hamlib 4.7.2, bloccato con SHA-256; Linux e Windows usano il
   medesimo manifest CMake e controlli di completezza del pacchetto.
 - La CI produce artefatti nativi per **Windows x64**, **macOS arm64**,
   **macOS x86-64**, **Linux x86-64** e **Linux ARM64**. L'AppImage ARM64 non
@@ -196,8 +197,9 @@ Linux x86-64, and Linux ARM64.
   Homebrew, MSYS2 or a development Soapy installation is not required for
   those receivers.
 - The macOS bundle recursively collects Soapy modules and dependencies,
-  rewrites Mach-O links, and contains `rigctld`/Hamlib. Linux and Windows use
-  the same CMake manifest and package-completeness checks.
+  rewrites Mach-O links, and contains `rigctld`/Hamlib. Windows includes the
+  official Hamlib 4.7.2 runtime, pinned by SHA-256; Linux and Windows use the
+  same CMake manifest and package-completeness checks.
 - CI builds native **Windows x64**, **macOS arm64**, **macOS x86-64**,
   **Linux x86-64** and **Linux ARM64** artefacts. The ARM64 AppImage does not
   ship `colibrinano_lib`, because its publisher does not provide a compatible
