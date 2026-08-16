@@ -99,6 +99,24 @@ Apple Silicon e Intel, Linux x86-64 e Linux ARM64.
 - Estesa la diagnostica di backend, CAT, sicurezza TX, rete, DSP e pacchetti
   per rendere distinguibili un'impostazione non supportata, una radio non
   raggiungibile e un reale errore di ricezione.
+- Il DSP ora suddivide una raffica IQ in brevi turni dell'event loop: la
+  creazione di un canale, i cambi filtro e i moduli IQ non possono più restare
+  bloccati dietro un flusso continuo su macchine ARM più lente.
+- Corretto il pannello Condizioni: le sue curve convertono esplicitamente i
+  punti in un array QML, eliminando il warning `PathPolyline: path of type 0
+  not supported` all'avvio.
+- Il selettore sorgente non interroga più comandi manuali opzionali sui
+  backend che non li dichiarano: l'avvio non produce quindi warning fuorvianti
+  per una capability semplicemente non disponibile.
+- L'autoscala del panadattatore ora misura la sola banda laterale attiva per
+  le radio CAT con audio a 48 kHz (USB a destra, LSB a sinistra, entrambe per
+  AM/FM): il silenzio sul lato opposto non trascina più il fondo verso il
+  basso né incendia il waterfall. I panadapter IF con IQ reale restano a
+  doppia banda invariati.
+- Per la sola vista CAT+audio, la banda laterale SSB viene anche riflessa
+  **solo graficamente** attorno al VFO: l'immagine resta centrata come un
+  panadapter IQ, mentre DSP, CAT, registrazione e sintonia restano sul flusso
+  reale. Un clic sulla copia riflessa viene ricondotto alla frequenza vera.
 - Aggiunti test per protocollo SDR++ Server, IQ raw TCP/UDP, audio UDP,
   configurazione seriale Hamlib, sicurezza TX RTL+CAT, piano di sintonia
   RTL-SDR, catalogo moduli, scheduler, sessione e pannelli QML. La suite della
@@ -213,6 +231,23 @@ Linux x86-64, and Linux ARM64.
 - Extended backend, CAT, TX-safety, network, DSP and package diagnostics so an
   unsupported setting, an unreachable radio and a genuine reception problem
   can be distinguished.
+- The DSP now splits an IQ burst into short event-loop turns, so channel
+  creation, filter changes and IQ modules cannot be starved behind a
+  continuous stream on slower ARM machines.
+- Fixed the Conditions panel: its curves now explicitly convert points to a
+  QML array, removing the start-up warning `PathPolyline: path of type 0 not
+  supported`.
+- The source selector no longer queries optional manual-entry commands on
+  backends that do not declare them, so start-up does not emit misleading
+  warnings for a capability that is simply unavailable.
+- Panadapter auto-ranging now measures only the active sideband for CAT radios
+  delivering 48 kHz audio (USB on the right, LSB on the left, both for AM/FM).
+  Silence on the opposite side no longer drags the floor down or saturates the
+  waterfall; IF panadapters receiving real IQ remain dual-sided and unchanged.
+- In the CAT+audio view only, the SSB sideband is also mirrored **for display
+  only** around the VFO. The image stays centred like an IQ panadapter while
+  DSP, CAT, recording and tuning remain on the real stream; a click on the
+  reflection is mapped back to the true frequency.
 - Added tests for SDR++ Server protocol, raw TCP/UDP IQ, UDP audio, Hamlib
   serial configuration, RTL+CAT TX safety, RTL-SDR tuning plan, module
   catalogue, scheduler, session and QML panels. The release suite runs 49

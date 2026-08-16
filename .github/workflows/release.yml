@@ -338,7 +338,11 @@ jobs:
               \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
                  -o -path '*/Resources/hamlib/bin/*' \) -print0 | \
               xargs -0 -n1 codesign --force --sign -
-            codesign --force --sign - "$PREFIX/decodium-sdr.app"
+            # `macdeployqt` può installare renderer come symlink o bundle
+            # annidati, non enumerabili come file normali da `find`. Il passo
+            # finale ricorsivo firma anche questi componenti Qt, così la firma
+            # dell'app non fallisce su un plugin interno rimasto unsigned.
+            codesign --force --deep --sign - "$PREFIX/decodium-sdr.app"
           fi
 
       - name: I moduli Soapy sono nel pacchetto

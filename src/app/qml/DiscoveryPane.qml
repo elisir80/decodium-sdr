@@ -111,10 +111,13 @@ Rectangle {
                                                       && drivers.length > driverBox.currentIndex
                                                       && drivers[driverBox.currentIndex].id === "hamlib-local"
             readonly property string manualEntryAction:
-                Session.nativeCommand("device.manualEntryAction", {})
+                // L'elemento esiste anche per i backend che non supportano
+                // l'inserimento manuale. Non interrogarli: un comando nativo
+                // opzionale assente non è un warning di avvio.
+                (visible ? Session.nativeCommand("device.manualEntryAction", {}) : "")
                 || qsTr("METTI NELL'ELENCO")
             readonly property string manualEntryHint:
-                Session.nativeCommand("device.manualEntryHint", {}) || ""
+                visible ? (Session.nativeCommand("device.manualEntryHint", {}) || "") : ""
             // L'elenco arriva dal rigctld installato: non promettiamo una
             // radio in una lista scritta a mano se Hamlib non la supporta.
             property var hamlibModels: hamlibLocalDriver

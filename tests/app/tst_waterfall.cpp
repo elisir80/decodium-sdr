@@ -73,6 +73,7 @@ private slots:
     void noiseStaysBelowTheBlackThreshold();
     void autoRangeIgnoresIsolatedSpurs();
     void autoRangeKeepsAUsableSpan();
+    void autoRangeUsesTheVisibleBand();
     void manualRangeIsNotOverwritten();
     void toneControlsAreClamped();
     void theScaleKeepsAUsableSpan();
@@ -316,6 +317,32 @@ void WaterfallTest::autoRangeKeepsAUsableSpan()
 
     QVERIFY2(view.ceilingDb() - view.floorDb() >= 25.0,
              qPrintable(QStringLiteral("intervallo %1 dB").arg(view.ceilingDb() - view.floorDb())));
+}
+
+void WaterfallTest::autoRangeUsesTheVisibleBand()
+{
+    PanadapterView view;
+    view.setAutoRange(true);
+
+    // Il caso di una radio tradizionale: il codec consegna 48 kHz, ma la
+    // passata da vedere è una finestra stretta attorno al VFO. Fuori ci sono
+    // bin silenziosi (o fortemente filtrati) che non devono decidere il fondo
+    // della scala della porzione realmente mostrata.
+    std::vector<float> row(1024, -150.0f);
+    for (int bin = 768; bin < 1024; ++bin)
+        row[static_cast<std::size_t>(bin)] = -72.0f;
+    for (int bin = 860; bin < 868; ++bin)
+        row[static_cast<std::size_t>(bin)] = -42.0f;
+
+    view.setViewSpan(0.25);
+    view.setViewStart(0.75);
+    view.reportMeasuredLevels(row, view.viewStart(), view.viewSpan());
+
+    QVERIFY2(view.noiseFloorDb() > -80.0 && view.noiseFloorDb() < -65.0,
+             qPrintable(QStringLiteral("fondo visibile %1, ha incluso il silenzio esterno")
+                            .arg(view.noiseFloorDb())));
+    QVERIFY2(view.peakLevelDb() > -55.0,
+             qPrintable(QStringLiteral("picco visibile %1").arg(view.peakLevelDb())));
 }
 
 void WaterfallTest::manualRangeIsNotOverwritten()

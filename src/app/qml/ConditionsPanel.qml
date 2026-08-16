@@ -157,6 +157,23 @@ PanelFrame {
             return out
         }
 
+        // `Repeater` conserva ciascun segmento come valore QVariant. Passarlo
+        // direttamente a PathPolyline lo lascia di tipo QVariant invalido su
+        // alcune versioni Qt (il warning "path of type 0 not supported").
+        // Ricreiamo esplicitamente un array JavaScript di QPointF: è il
+        // contratto di PathPolyline e mantiene separati i buchi della serie.
+        function pathPoints(segment) {
+            const out = []
+            if (!segment)
+                return out
+            for (let i = 0; i < segment.length; ++i) {
+                const point = segment[i]
+                if (point && isFinite(point.x) && isFinite(point.y))
+                    out.push(Qt.point(point.x, point.y))
+            }
+            return out
+        }
+
         Rectangle {
             anchors.fill: parent
             color: Theme.surfaceSunken
@@ -227,7 +244,9 @@ PanelFrame {
                 model: root.registry ? chart.segmentsOf(root.registry.typical) : []
 
                 delegate: Shape {
+                    id: typicalSegment
                     required property var modelData
+                    readonly property var pathPoints: chart.pathPoints(modelData)
 
                     anchors.fill: parent
                     preferredRendererType: Shape.CurveRenderer
@@ -236,7 +255,7 @@ PanelFrame {
                         strokeColor: Theme.textDisabled
                         strokeWidth: 1.4
                         fillColor: "transparent"
-                        PathPolyline { path: parent.parent.modelData }
+                        PathPolyline { path: typicalSegment.pathPoints }
                     }
                 }
             }
@@ -246,7 +265,9 @@ PanelFrame {
                 model: root.registry ? chart.segmentsOf(root.registry.today) : []
 
                 delegate: Shape {
+                    id: todaySegment
                     required property var modelData
+                    readonly property var pathPoints: chart.pathPoints(modelData)
 
                     anchors.fill: parent
                     preferredRendererType: Shape.CurveRenderer
@@ -255,7 +276,7 @@ PanelFrame {
                         strokeColor: Theme.accent
                         strokeWidth: 1.8
                         fillColor: "transparent"
-                        PathPolyline { path: parent.parent.modelData }
+                        PathPolyline { path: todaySegment.pathPoints }
                     }
                 }
             }

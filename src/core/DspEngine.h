@@ -306,6 +306,9 @@ private:
     std::atomic<float> m_nbActivity{0.0f};
 
     double m_activeRate = 0.0;
+    // Accesso solo dal thread DSP. Evita di accodare una continuazione per
+    // ogni notifica IQ quando il producer è più veloce del processore.
+    bool m_processContinuationPending = false;
 
     std::unique_ptr<dsp::SpscRing<float>> m_audioRing;
     SpectrumFeed *m_spectrum = nullptr;

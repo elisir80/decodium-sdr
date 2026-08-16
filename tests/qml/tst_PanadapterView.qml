@@ -49,6 +49,17 @@ TestCase {
         return pane.deliveredBandView(bandSpanHz, clientDemod)
     }
 
+    function audioRange(start, span, clientDemod, mode) {
+        const pane = createTemporaryObject(paneComponent, testCase)
+        verify(pane !== null, "panadattatore non istanziato")
+        pane.viewStart = start
+        pane.viewSpan = span
+        pane.currentChannelMode = mode
+        // La prova chiama la funzione direttamente per non dipendere da un
+        // backend reale; il flag è l'unica capability che decide la forma.
+        return pane.audioAutoRangeWindow(clientDemod)
+    }
+
     function test_wheel_direction_ignores_zero_vertical_delta() {
         const pane = createTemporaryObject(paneComponent, testCase)
         verify(pane !== null, "panadattatore non istanziato")
@@ -67,6 +78,59 @@ TestCase {
         const view = deliveredView(48000, false)
         compare(view.span, 7000 / 48000)
         compare(view.start + view.span / 2, 0.5)
+    }
+
+    // L'audio CAT è già demodulato: per USB si misura soltanto il lato alto
+    // del VFO, altrimenti la metà opposta (silenziosa per contratto) abbassa
+    // artificialmente il fondo dell'autoscala e incendia il waterfall.
+    function test_audio_radio_autorange_uses_the_active_sideband() {
+        const usb = audioRange(0.5 - 7000 / 96000, 7000 / 48000, false, 0)
+        compare(usb.start, 0.5)
+        compare(usb.span, 7000 / 96000)
+
+        const lsb = audioRange(0.5 - 7000 / 96000, 7000 / 48000, false, 1)
+        compare(lsb.start, 0.5 - 7000 / 96000)
+        compare(lsb.span, 7000 / 96000)
+
+        const fm = audioRange(0.5 - 7000 / 96000, 7000 / 48000, false, 6)
+        compare(fm.start, 0.5 - 7000 / 96000)
+        compare(fm.span, 7000 / 48000)
+    }
+
+    // Il panadapter IF riceve IQ: non si applica alcun ritaglio laterale.
+    function test_iq_panadapter_autorange_keeps_the_visible_window() {
+        const range = audioRange(0.25, 0.4, true, 0)
+        compare(range.start, 0.25)
+        compare(range.span, 0.4)
+    }
+
+    function test_audio_radio_mirrors_only_a_single_sideband() {
+        const pane = createTemporaryObject(paneComponent, testCase)
+        verify(pane !== null, "panadattatore non istanziato")
+
+        pane.currentChannelMode = 0 // USB
+        verify(pane.audioMirrorEnabled(false),
+               "USB audio CAT deve essere riflesso solo a video")
+        verify(!pane.audioMirrorEnabled(true),
+               "un panadapter IF deve conservare il suo IQ reale")
+
+        pane.currentChannelMode = 6 // FM larga: due lati già reali
+        verify(!pane.audioMirrorEnabled(false),
+               "AM/FM non devono ricevere una copia grafica")
+    }
+
+    function test_audio_radio_mirror_maps_clicks_to_the_real_sideband() {
+        const pane = createTemporaryObject(paneComponent, testCase)
+        verify(pane !== null, "panadattatore non istanziato")
+
+        pane.panadapterView.mirrorSideband = true
+        pane.panadapterView.mirrorLowerSideband = false // USB: la sinistra è copiata
+        compare(pane.panadapterView.sourceFractionForDisplay(0.42), 0.58)
+        compare(pane.panadapterView.sourceFractionForDisplay(0.58), 0.58)
+
+        pane.panadapterView.mirrorLowerSideband = true // LSB: la destra è copiata
+        compare(pane.panadapterView.sourceFractionForDisplay(0.58), 0.42)
+        compare(pane.panadapterView.sourceFractionForDisplay(0.42), 0.42)
     }
 
     // Per un ricevitore IQ il centro può muoversi dentro tutta la banda;

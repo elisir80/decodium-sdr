@@ -250,6 +250,10 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
     m_spectrumRatio = static_cast<float>(item->spectrumRatio());
     m_viewStart = static_cast<float>(item->viewStart());
     m_viewSpan = static_cast<float>(item->viewSpan());
+    m_autoRangeStart = static_cast<float>(item->autoRangeStart());
+    m_autoRangeSpan = static_cast<float>(item->autoRangeSpan());
+    m_mirrorSideband = item->mirrorSideband();
+    m_mirrorLowerSideband = item->mirrorLowerSideband();
     m_mode = item->waterfallMode();
     m_paletteIndex = item->paletteIndex();
     m_gamma = static_cast<float>(item->gamma());
@@ -289,6 +293,17 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
     // schermo, non che la radio si ferma.
     m_pendingRows = m_feed->fetchRows(m_fetched, kMaxRowsPerFrame);
 
+    if (m_pendingRows > 0) {
+        const std::size_t offset = static_cast<std::size_t>(m_pendingRows - 1)
+            * static_cast<std::size_t>(m_binCount);
+        // Meter e autoscala devono restare una misura della radio, non della
+        // sua copia grafica. Si salva l'ultima riga prima di riflettere le
+        // righe che finiranno nella texture e nella traccia.
+        m_measurementRow.assign(m_fetched.begin() + offset,
+                                m_fetched.begin() + offset + m_binCount);
+        mirrorFetchedRows();
+    }
+
     // Il fondo per bin si aggiorna sempre, anche mentre l'immagine è ferma:
     // riprendendo, una stima vecchia di dieci secondi correggerebbe il
     // waterfall con la pendenza che la banda aveva prima.
@@ -309,12 +324,34 @@ void PanadapterRenderer::synchronize(QQuickRhiItem *rhiItem)
         // L'auto-range misura qui, dove i campioni ci sono già, e riporta i
         // livelli all'item: `synchronize()` è l'unico punto in cui il thread
         // GUI è fermo e lo scambio è sicuro in entrambe le direzioni.
-        item->reportMeasuredLevels(m_latestRow);
+        // Questa finestra viene copiata da QML nello stesso synchronize().
+        // Per un SDR IQ coincide con la vista; con audio+CAT esclude invece
+        // il lato opposto al VFO, che la radio non ha mai consegnato.
+        item->reportMeasuredLevels(m_measurementRow, m_autoRangeStart, m_autoRangeSpan);
 
         // E quante righe sono passate: da qui l'item ricava quanti secondi di
         // storia stia mostrando il waterfall, che è l'unico modo onesto di
         // graduarne l'asse dei tempi.
         item->reportRowsConsumed(m_pendingRows, kWaterfallRows);
+    }
+}
+
+void PanadapterRenderer::mirrorFetchedRows()
+{
+    if (!m_mirrorSideband || m_binCount < 2 || m_pendingRows <= 0)
+        return;
+
+    const int half = m_binCount / 2;
+    for (int row = 0; row < m_pendingRows; ++row) {
+        float *values = m_fetched.data()
+            + static_cast<std::size_t>(row) * static_cast<std::size_t>(m_binCount);
+        for (int lowerBin = 0; lowerBin < half; ++lowerBin) {
+            const int upperBin = m_binCount - 1 - lowerBin;
+            if (m_mirrorLowerSideband)
+                values[upperBin] = values[lowerBin];
+            else
+                values[lowerBin] = values[upperBin];
+        }
     }
 }
 

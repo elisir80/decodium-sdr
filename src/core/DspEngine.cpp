@@ -40,6 +40,15 @@ constexpr std::size_t kScopeRingFrames = 8192;
 /// dei ChannelProcessor: nessuna suddivisione ulteriore, nessuna allocazione.
 constexpr std::size_t kProcessBlock = dsp::kMaxBlockFrames;
 
+/// Un backend può produrre più IQ di quanti il DSP riesca a svuotare in un
+/// singolo giro. Se si continuasse finché il ring non è vuoto, il thread DSP
+/// non tornerebbe mai al proprio event loop: i comandi queued (nuovi canali,
+/// cambi di filtro, moduli IQ) resterebbero indietro proprio sotto carico.
+/// Quattro blocchi tengono il tratto atomico corto anche a 2 MS/s; il resto
+/// viene rimesso in coda, senza perdere campioni né dare priorità al controllo
+/// sul flusso radio.
+constexpr std::size_t kMaxProcessBlocksPerDispatch = 4;
+
 /// Intervallo minimo fra due emissioni di meter. L'occhio non distingue oltre
 /// ~15 aggiornamenti al secondo, mentre ogni signal costa un attraversamento
 /// di thread e, a valle, un dataChanged che rilancia le animazioni del delegate.
@@ -737,7 +746,8 @@ void DspEngine::processAvailable()
     // flusso, e ogni stadio della SPEC-003 continua a valere.
     const bool audioSource = m_sourceIsAudio.load(std::memory_order_acquire);
 
-    while (true) {
+    std::size_t processedBlocks = 0;
+    while (processedBlocks < kMaxProcessBlocksPerDispatch) {
         const std::size_t availableFrames =
             audioSource ? source->available() : source->available() / 2;
         if (availableFrames == 0)
@@ -759,6 +769,7 @@ void DspEngine::processAvailable()
 
         m_statsIqFrames += count;
         ++m_statsBlocks;
+        ++processedBlocks;
 
         // Tap di registrazione prima di qualunque elaborazione: su disco
         // finisce ciò che la radio ha consegnato, non ciò che il DSP ne ha
@@ -1057,6 +1068,19 @@ void DspEngine::processAvailable()
             m_statsAudioFrames = 0;
             m_statsBlocks = 0;
         }
+    }
+
+    // Se è arrivata una raffica più lunga del budget, continuiamo nel giro
+    // successivo dell'event loop. Questo lascia spazio ai comandi queued
+    // destinati al DSP senza aspettare che il produttore smetta di scrivere.
+    const std::size_t remainingFrames =
+        audioSource ? source->available() : source->available() / 2;
+    if (remainingFrames > 0 && !m_processContinuationPending) {
+        m_processContinuationPending = true;
+        QMetaObject::invokeMethod(this, [this] {
+            m_processContinuationPending = false;
+            processAvailable();
+        }, Qt::QueuedConnection);
     }
 
     // Il centro può essere cambiato mentre eravamo dentro il ciclo: la

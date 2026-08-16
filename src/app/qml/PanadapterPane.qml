@@ -27,6 +27,16 @@ Item {
         return visibleStartHz + (x / Math.max(width, 1)) * visibleSpanHz
     }
 
+    /// La metà riflessa di una radio CAT+audio è solo un aiuto visivo. Ogni
+    /// gesto che agisce sulla radio deve però usare la coordinata campionata
+    /// vera: cliccare sulla copia sinistra USB deve sintonizzare la stessa
+    /// frequenza della cresta gemella a destra, non il suo fantasma RF.
+    function sourceFrequencyAt(x) {
+        const displayed = viewStart + (x / Math.max(width, 1)) * viewSpan
+        const source = panadapter.sourceFractionForDisplay(displayed)
+        return startHz + source * spanHz
+    }
+
     function xForFrequency(hz) {
         return (hz - visibleStartHz) / visibleSpanHz * width
     }
@@ -153,6 +163,58 @@ Item {
     /// Frequenza del ricevitore scelto: la scrive il suo delegate.
     property real currentChannelHz: 0
 
+    /// Modo del canale scelto. Serve anche a distinguere l'unico lato che una
+    /// radio tradizionale consegna al codec: USB/DIGU/CW sopra il VFO,
+    /// LSB/DIGL/CWR sotto, AM/FM su entrambi i lati.
+    property int currentChannelMode: 0
+
+    function audioIsLowerSideband(mode) {
+        return mode === 1 || mode === 3 || mode === 9
+    }
+
+    function audioIsDoubleSideband(mode) {
+        return mode === 4 || mode === 5 || mode === 6 || mode === 7
+               || mode === 10 || mode === 11
+    }
+
+    function audioMirrorEnabled(clientDemodOverride) {
+        const clientDemod = clientDemodOverride === undefined
+                            ? Session.capabilities.clientDemod : clientDemodOverride
+        return !clientDemod && !audioIsDoubleSideband(currentChannelMode)
+    }
+
+    function audioAutoRangeWindow(clientDemodOverride) {
+        const start = viewStart
+        const end = viewStart + viewSpan
+        const clientDemod = clientDemodOverride === undefined
+                            ? Session.capabilities.clientDemod : clientDemodOverride
+        if (clientDemod)
+            return { "start": start, "span": viewSpan }
+
+        // Valori di DemodMode: LSB, CWR e DIGL hanno banda laterale inferiore;
+        // AM, SAM, FM/NFM, IQ e DSB sono realmente a doppia banda laterale.
+        const lower = audioIsLowerSideband(currentChannelMode)
+        const doubleSideband = audioIsDoubleSideband(currentChannelMode)
+        if (doubleSideband)
+            return { "start": start, "span": viewSpan }
+
+        const sideStart = lower ? start : Math.max(start, 0.5)
+        const sideEnd = lower ? Math.min(end, 0.5) : end
+        // Se un pan/zoom cade completamente dal lato senza segnale, misura la
+        // finestra che si guarda: mostrare il silenzio deve restare possibile.
+        if (sideEnd - sideStart < 0.005)
+            return { "start": start, "span": viewSpan }
+        return { "start": sideStart, "span": sideEnd - sideStart }
+    }
+
+    readonly property var autoRangeWindow: audioAutoRangeWindow()
+
+    readonly property bool audioLowerSideband: audioIsLowerSideband(currentChannelMode)
+    readonly property bool audioDoubleSideband: audioIsDoubleSideband(currentChannelMode)
+    // Il riflesso è un ausilio visivo soltanto per l'audio già demodulato.
+    // Un panadapter IF/RTL-SDR porta IQ reale su due lati e non viene toccato.
+    readonly property bool mirrorAudioSideband: audioMirrorEnabled()
+
     // ── Righello ─────────────────────────────────────────────────────────
     //
     // Si prende con Shift e si trascina. Misura quanto è larga una emissione o
@@ -211,6 +273,10 @@ Item {
         spectrumRatio: root.spectrumRatio
         viewStart: root.viewStart
         viewSpan: root.viewSpan
+        autoRangeStart: root.autoRangeWindow.start
+        autoRangeSpan: root.autoRangeWindow.span
+        mirrorSideband: root.mirrorAudioSideband
+        mirrorLowerSideband: root.audioLowerSideband
         // In trasmissione la traccia cambia colore: si guarda il proprio
         // segnale, e confonderlo con quello di qualcun altro sarebbe il modo
         // migliore di credere di aver ricevuto quel che si è appena detto.
@@ -401,6 +467,14 @@ Item {
                 restoreMode: Binding.RestoreNone
             }
 
+            Binding {
+                target: root
+                property: "currentChannelMode"
+                value: plate.mode
+                when: Session.channels.currentIndex === plate.index
+                restoreMode: Binding.RestoreNone
+            }
+
             Component.onCompleted: {
                 x = Math.max(0, (root.width - width) / 2)
                 y = Theme.spacing + index * (implicitHeight + Theme.spacingTight)
@@ -424,7 +498,7 @@ Item {
         onClicked: (mouse) => {
             if (!Session.connected || panned)
                 return
-            const target = Math.round(root.frequencyAt(mouse.x))
+            const target = Math.round(root.sourceFrequencyAt(mouse.x))
             if (Session.channels.currentIndex >= 0)
                 Session.setChannelFrequency(Session.channels.currentIndex, target)
             else
@@ -433,7 +507,7 @@ Item {
 
         onDoubleClicked: (mouse) => {
             if (Session.connected)
-                Session.addChannel(Math.round(root.frequencyAt(mouse.x)))
+                Session.addChannel(Math.round(root.sourceFrequencyAt(mouse.x)))
         }
 
         // Tasto destro: un notch dove si vede il disturbo (SPEC-003 §5). È il
@@ -460,7 +534,7 @@ Item {
             if (mouse.button === Qt.RightButton) {
                 if (Session.connected && Session.channels.currentIndex >= 0) {
                     Session.addChannelNotch(Session.channels.currentIndex,
-                                            Math.round(root.frequencyAt(mouse.x)), 150)
+                                            Math.round(root.sourceFrequencyAt(mouse.x)), 150)
                 }
                 return
             }
@@ -470,14 +544,14 @@ Item {
             // sbaglio lo toglie ripetendo quello che ha appena fatto.
             if (mouse.button === Qt.MiddleButton) {
                 if (Session.connected)
-                    Markers.toggle(root.frequencyAt(mouse.x))
+                    Markers.toggle(root.sourceFrequencyAt(mouse.x))
                 return
             }
 
             // Shift: si sta misurando, non si sta spostando la vista.
             measuring = (mouse.modifiers & Qt.ShiftModifier) !== 0
             if (measuring) {
-                root.rulerFromHz = root.frequencyAt(mouse.x)
+                root.rulerFromHz = root.sourceFrequencyAt(mouse.x)
                 root.rulerActive = true
                 panned = true      // niente sintonia al rilascio: era una misura
                 return
@@ -613,11 +687,12 @@ Item {
 
         cursorX: pointerX
         cursorY: spectrumMouse.mouseY
-        cursorHz: root.frequencyAt(pointerX)
+        cursorHz: root.sourceFrequencyAt(pointerX)
         cursorLevelDb: {
             root.levelTick    // dipendenza voluta: vedi `levelTick`
-            return panadapter.levelAt(root.viewStart
-                                      + (pointerX / Math.max(root.width, 1)) * root.viewSpan)
+            const displayed = root.viewStart
+                              + (pointerX / Math.max(root.width, 1)) * root.viewSpan
+            return panadapter.levelAt(panadapter.sourceFractionForDisplay(displayed))
         }
         referenceHz: root.currentChannelHz
         floorDb: panadapter.floorDb

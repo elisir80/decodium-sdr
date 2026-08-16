@@ -141,6 +141,10 @@ void PanadapterView::setViewStart(qreal value)
     if (qFuzzyCompare(m_viewStart, value))
         return;
     m_viewStart = value;
+    // Cambiando porzione della banda cambia anche il fondo di riferimento.
+    // Tenerlo dal tratto precedente lascerebbe l'autoscala quasi immobile per
+    // diversi secondi, proprio quando l'operatore ha chiesto di guardare altro.
+    m_levelsSeeded = false;
     emit viewChanged();
     update();
 }
@@ -155,8 +159,65 @@ void PanadapterView::setViewSpan(qreal value)
     m_viewSpan = value;
     if (m_viewStart + m_viewSpan > 1.0)
         m_viewStart = 1.0 - m_viewSpan;
+    // Vedi setViewStart(): la nuova finestra deve partire dalla sua misura,
+    // non dalla media lenta della finestra che l'ha preceduta.
+    m_levelsSeeded = false;
     emit viewChanged();
     update();
+}
+
+void PanadapterView::setAutoRangeStart(qreal value)
+{
+    value = qBound(0.0, value, 1.0 - m_autoRangeSpan);
+    if (qFuzzyCompare(m_autoRangeStart, value))
+        return;
+    m_autoRangeStart = value;
+    // La banda laterale attiva è cambiata: il vecchio fondo non è una misura
+    // della nuova regione, perciò non va trascinato dalla media esponenziale.
+    m_levelsSeeded = false;
+    emit autoRangeWindowChanged();
+    update();
+}
+
+void PanadapterView::setAutoRangeSpan(qreal value)
+{
+    value = qBound(0.005, value, 1.0);
+    if (qFuzzyCompare(m_autoRangeSpan, value))
+        return;
+    m_autoRangeSpan = value;
+    if (m_autoRangeStart + m_autoRangeSpan > 1.0)
+        m_autoRangeStart = 1.0 - m_autoRangeSpan;
+    m_levelsSeeded = false;
+    emit autoRangeWindowChanged();
+    update();
+}
+
+void PanadapterView::setMirrorSideband(bool enabled)
+{
+    if (m_mirrorSideband == enabled)
+        return;
+    m_mirrorSideband = enabled;
+    emit displayMappingChanged();
+    update();
+}
+
+void PanadapterView::setMirrorLowerSideband(bool lower)
+{
+    if (m_mirrorLowerSideband == lower)
+        return;
+    m_mirrorLowerSideband = lower;
+    emit displayMappingChanged();
+    update();
+}
+
+qreal PanadapterView::sourceFractionForDisplay(qreal displayedFraction) const
+{
+    const qreal fraction = qBound<qreal>(0.0, displayedFraction, 1.0);
+    if (!m_mirrorSideband)
+        return fraction;
+
+    const bool copiedHalf = m_mirrorLowerSideband ? fraction >= 0.5 : fraction < 0.5;
+    return copiedHalf ? 1.0 - fraction : fraction;
 }
 
 void PanadapterView::setAutoRange(bool enabled)
@@ -173,17 +234,31 @@ void PanadapterView::setAutoRange(bool enabled)
     update();
 }
 
-void PanadapterView::reportMeasuredLevels(const std::vector<float> &row)
+void PanadapterView::reportMeasuredLevels(const std::vector<float> &row,
+                                          qreal viewStart, qreal viewSpan)
 {
     if (row.empty())
         return;
 
     // La riga si conserva così com'è: `m_levelScratch` viene riordinato dai
     // nth_element qui sotto, e non è più buono per dire che livello c'è a una
-    // certa frequenza.
+    // certa frequenza. I percentili invece usano solo la finestra visibile:
+    // su audio+CAT il codec porta 48 kHz, ma la UI ne mostra 7 kHz attorno al
+    // VFO. Includere i 41 kHz vuoti farebbe sprofondare il fondo e colorare
+    // tutta la passata audio di giallo o rosso.
     m_lastRow = row;
 
-    m_levelScratch = row;
+    const auto rowSize = row.size();
+    const qreal start = qBound<qreal>(0.0, viewStart, 1.0);
+    const qreal span = qBound<qreal>(0.0, viewSpan, 1.0 - start);
+    const std::size_t first = std::min<std::size_t>(
+        static_cast<std::size_t>(std::floor(start * static_cast<qreal>(rowSize))),
+        rowSize - 1);
+    const std::size_t end = std::clamp<std::size_t>(
+        static_cast<std::size_t>(std::ceil((start + span) * static_cast<qreal>(rowSize))),
+        first + 1, rowSize);
+    m_levelScratch.assign(row.begin() + static_cast<std::ptrdiff_t>(first),
+                          row.begin() + static_cast<std::ptrdiff_t>(end));
     const auto count = m_levelScratch.size();
 
     const auto noiseAt = static_cast<std::size_t>(

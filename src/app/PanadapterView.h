@@ -37,6 +37,14 @@ class PanadapterView : public QQuickRhiItem
     Q_PROPERTY(qreal peakDecayDb READ peakDecayDb WRITE setPeakDecayDb NOTIFY peakHoldChanged)
     Q_PROPERTY(qreal viewStart READ viewStart WRITE setViewStart NOTIFY viewChanged)
     Q_PROPERTY(qreal viewSpan READ viewSpan WRITE setViewSpan NOTIFY viewChanged)
+    Q_PROPERTY(qreal autoRangeStart READ autoRangeStart WRITE setAutoRangeStart
+               NOTIFY autoRangeWindowChanged)
+    Q_PROPERTY(qreal autoRangeSpan READ autoRangeSpan WRITE setAutoRangeSpan
+               NOTIFY autoRangeWindowChanged)
+    Q_PROPERTY(bool mirrorSideband READ mirrorSideband WRITE setMirrorSideband
+               NOTIFY displayMappingChanged)
+    Q_PROPERTY(bool mirrorLowerSideband READ mirrorLowerSideband
+               WRITE setMirrorLowerSideband NOTIFY displayMappingChanged)
     Q_PROPERTY(WaterfallMode waterfallMode READ waterfallMode WRITE setWaterfallMode NOTIFY waterfallModeChanged)
     Q_PROPERTY(int paletteIndex READ paletteIndex WRITE setPaletteIndex NOTIFY paletteChanged)
     Q_PROPERTY(QStringList paletteNames READ paletteNames CONSTANT)
@@ -146,6 +154,22 @@ public:
     qreal viewSpan() const { return m_viewSpan; }
     void setViewSpan(qreal value);
 
+    /// Finestra usata dai percentili dell'autoscala. Di solito coincide con
+    /// quella visibile; sulle sorgenti audio+CAT QML la limita alla banda
+    /// laterale effettiva, lasciando fuori il lato volutamente vuoto.
+    qreal autoRangeStart() const { return m_autoRangeStart; }
+    void setAutoRangeStart(qreal value);
+    qreal autoRangeSpan() const { return m_autoRangeSpan; }
+    void setAutoRangeSpan(qreal value);
+
+    /// Solo presentazione: una sorgente CAT+audio ha una banda laterale reale
+    /// sola; rifletterla sul lato opposto la rende leggibile attorno al VFO
+    /// senza cambiare il DSP, la sintonia o il flusso registrato.
+    bool mirrorSideband() const { return m_mirrorSideband; }
+    void setMirrorSideband(bool enabled);
+    bool mirrorLowerSideband() const { return m_mirrorLowerSideband; }
+    void setMirrorLowerSideband(bool lower);
+
     WaterfallMode waterfallMode() const { return m_waterfallMode; }
     void setWaterfallMode(WaterfallMode mode);
 
@@ -251,7 +275,18 @@ public:
 
     /// Chiamata dal thread di rendering dentro `synchronize()`, l'unico punto
     /// in cui il thread GUI è fermo. Non emette nulla direttamente: accoda.
-    void reportMeasuredLevels(const std::vector<float> &row);
+    ///
+    /// I percentili devono descrivere la stessa porzione che l'operatore vede.
+    /// In particolare un ricevitore audio+CAT consegna 48 kHz ma ne mostra
+    /// circa 7 kHz attorno al VFO: misurare anche il silenzio esterno farebbe
+    /// scegliere una scala inadatta alla passata visibile.
+    void reportMeasuredLevels(const std::vector<float> &row, qreal viewStart = 0.0,
+                              qreal viewSpan = 1.0);
+
+    /// Con il riflesso visivo dell'audio CAT converte una coordinata mostrata
+    /// nella coordinata del campione reale. La UI lo usa per non sintonizzare
+    /// la frequenza speculare quando l'operatore clicca sulla copia grafica.
+    Q_INVOKABLE qreal sourceFractionForDisplay(qreal displayedFraction) const;
 
     /// Quante righe di waterfall sono state consumate in questo frame.
     /// Stesso contratto di `reportMeasuredLevels`: render thread, niente
@@ -261,6 +296,8 @@ public:
 signals:
     void feedChanged();
     void viewChanged();
+    void autoRangeWindowChanged();
+    void displayMappingChanged();
     void waterfallModeChanged();
     void paletteChanged();
     void toneChanged();
@@ -293,6 +330,10 @@ private:
     qreal m_peakDecayDb = 12.0;
     qreal m_viewStart = 0.0;
     qreal m_viewSpan = 1.0;
+    qreal m_autoRangeStart = 0.0;
+    qreal m_autoRangeSpan = 1.0;
+    bool m_mirrorSideband = false;
+    bool m_mirrorLowerSideband = false;
 
     WaterfallMode m_waterfallMode = Flat;
     int m_paletteIndex = 0;

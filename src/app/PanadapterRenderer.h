@@ -42,6 +42,7 @@ private:
     void updateTraceGeometry(QRhiResourceUpdateBatch *batch);
     void updatePeakGeometry(QRhiResourceUpdateBatch *batch);
     void releaseSpectrumResources();
+    void mirrorFetchedRows();
 
     QRhi *m_rhi = nullptr;
 
@@ -95,6 +96,10 @@ private:
     float m_spectrumRatio = 0.42f;
     float m_viewStart = 0.0f;
     float m_viewSpan = 1.0f;
+    float m_autoRangeStart = 0.0f;
+    float m_autoRangeSpan = 1.0f;
+    bool m_mirrorSideband = false;
+    bool m_mirrorLowerSideband = false;
     PanadapterView::WaterfallMode m_mode = PanadapterView::Flat;
     int m_paletteIndex = 0;
     float m_gamma = 0.85f;
@@ -119,6 +124,9 @@ private:
     std::vector<float> m_traceVertices;
     std::vector<float> m_fillVertices;
     std::vector<float> m_latestRow;
+    /// Riga non trasformata per meter e autoscala. `m_fetched` può invece
+    /// ricevere una copia speculare destinata esclusivamente al rendering.
+    std::vector<float> m_measurementRow;
     int m_pendingRows = 0;
     bool m_traceDirty = false;
 
