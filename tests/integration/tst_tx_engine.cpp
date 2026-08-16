@@ -455,7 +455,11 @@ void TestTxEngine::theTransmitEqualizerIsInTheChain()
     // E spento non deve toccare niente. Uno stadio che lavora anche in bypass
     // è il difetto che nessuno cerca, perché nessuno pensa di doverlo cercare.
     engine.equalizer().setEnabled(false);
-    speak(engine, mic, 0.2);
+    // Le curve sono medie esponenziali: dopo una campana da -12 dB la nuova
+    // voce deve attraversare abbastanza finestre da sostituire davvero la
+    // misura precedente. Cinque blocchi sono sufficienti su un desktop, ma
+    // non quando il timer del runner ARM/macOS viene consegnato in ritardo.
+    speak(engine, mic, 0.2, 12);
     engine.setTransmitting(false);
 
     QVERIFY2(std::abs(engine.voiceBinDb(false, bin) - engine.voiceBinDb(true, bin)) < 1.0f,

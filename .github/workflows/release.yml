@@ -90,7 +90,8 @@ jobs:
             libvulkan-dev libegl1-mesa-dev libfuse2 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
-            libxcb-xkb1 libpulse-dev libhamlib-utils pulseaudio
+            libxcb-xkb1 libpulse-dev libhamlib-utils pulseaudio \
+            libgstreamer-plugins-bad1.0-0
 
       - name: Qt 6.8 (Linux)
         if: matrix.platform == 'linux'
