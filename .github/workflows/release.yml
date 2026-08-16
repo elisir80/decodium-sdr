@@ -91,8 +91,7 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
             libxcb-xkb1 libpulse-dev libhamlib-utils pulseaudio \
-            libgstreamer-plugins-bad1.0-0 \
-            libgstreamer-plugins-extra1.0-0
+            libgstreamer-plugins-bad1.0-0
 
       - name: Qt 6.8 (Linux)
         if: matrix.platform == 'linux'
@@ -321,6 +320,19 @@ jobs:
           # percorso relativo, e il messaggio arriva dopo che l'installazione
           # ha già copiato mezza Qt. Su MSYS2 serve anche la forma Windows,
           # perché cmake lì è un binario nativo.
+          # Qt Multimedia qui viene usato solo per QAudioSink, QAudioSource e
+          # QMediaDevices. Il plugin `multimedia` invece è un player/video
+          # backend e non è nel percorso audio SDR; linuxdeploy tenta di
+          # raccogliere il suo grafo GStreamer, che su Ubuntu 24.04 non è
+          # distribuibile in modo coerente fra x86-64 e ARM64. Rimuoverlo
+          # prima del deploy fa dichiarare al plugin Qt che non esiste e non
+          # lo include nell'AppImage.
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            QT_PATHS_BIN="$(command -v qtpaths6 || command -v qtpaths)"
+            QT_PLUGIN_DIR="$("$QT_PATHS_BIN" --query QT_INSTALL_PLUGINS)"
+            test -d "$QT_PLUGIN_DIR/multimedia"
+            rm -rf "$QT_PLUGIN_DIR/multimedia"
+          fi
           PREFIX="$(pwd)/staging"
           if command -v cygpath >/dev/null 2>&1; then
             PREFIX="$(cygpath -m "$PREFIX")"
