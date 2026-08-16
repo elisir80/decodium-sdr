@@ -91,7 +91,8 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
             libxcb-xkb1 libpulse-dev libhamlib-utils pulseaudio \
-            libgstreamer-plugins-bad1.0-0
+            libgstreamer-plugins-bad1.0-0 \
+            libgstreamer-plugins-extra1.0-0
 
       - name: Qt 6.8 (Linux)
         if: matrix.platform == 'linux'
@@ -575,15 +576,4 @@ jobs:
           draft: true
           name: ${{ github.ref_name }} «${{ env.DSDR_NAME }}»
           files: artifacts/*
-          generate_release_notes: true
-          body: |
-            ## DECODIUM SDR ${{ github.ref_name }} «${{ env.DSDR_NAME }}»
-
-            Pacchetti per Linux x86-64/ARM64 (AppImage), macOS Apple
-            Silicon/Intel (DMG) e Windows x64 — installatore e ZIP portable.
-
-            > Il DMG non è ancora firmato né notarizzato: al primo avvio macOS
-            > chiederà conferma. Serve un Apple Developer ID.
-
-            Le note qui sotto sono generate automaticamente: sostituirle prima
-            di pubblicare.
+          body_path: docs/GITHUB_RELEASE_BODY_1.2.5.md
