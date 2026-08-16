@@ -50,6 +50,39 @@ function(dsdr_change_link binary old new)
     endif()
 endfunction()
 
+# `macdeployqt` aggiorna gli install name delle librerie già copiate nel
+# bundle. Il contenuto binario cambia, quindi un confronto SHA-256 non basta
+# per riconoscere la stessa libreria dopo tale riscrittura. Il UUID Mach-O,
+# invece, resta quello del file di origine: lo usiamo per riusare soltanto la
+# copia effettivamente identica, senza nascondere collisioni fra due runtime
+# diversi che hanno per caso lo stesso basename.
+function(dsdr_same_macho_uuid left right result)
+    execute_process(
+        COMMAND dwarfdump --uuid "${left}"
+        RESULT_VARIABLE dsdr_left_uuid_result
+        OUTPUT_VARIABLE dsdr_left_uuid_output
+        ERROR_VARIABLE dsdr_left_uuid_error)
+    execute_process(
+        COMMAND dwarfdump --uuid "${right}"
+        RESULT_VARIABLE dsdr_right_uuid_result
+        OUTPUT_VARIABLE dsdr_right_uuid_output
+        ERROR_VARIABLE dsdr_right_uuid_error)
+    if(NOT dsdr_left_uuid_result EQUAL 0 OR NOT dsdr_right_uuid_result EQUAL 0)
+        message(FATAL_ERROR
+            "Impossibile confrontare gli UUID Mach-O per le dipendenze SoapySDR:\n"
+            "  sinistra: ${left} (${dsdr_left_uuid_error})\n"
+            "  destra: ${right} (${dsdr_right_uuid_error})")
+    endif()
+
+    string(REGEX MATCHALL "UUID: [0-9A-Fa-f-]+" dsdr_left_uuids "${dsdr_left_uuid_output}")
+    string(REGEX MATCHALL "UUID: [0-9A-Fa-f-]+" dsdr_right_uuids "${dsdr_right_uuid_output}")
+    if(dsdr_left_uuids AND dsdr_left_uuids STREQUAL dsdr_right_uuids)
+        set(${result} TRUE PARENT_SCOPE)
+    else()
+        set(${result} FALSE PARENT_SCOPE)
+    endif()
+endfunction()
+
 file(MAKE_DIRECTORY "${dsdr_modules}" "${dsdr_frameworks}")
 set(dsdr_modules_in_bundle)
 foreach(dsdr_source IN LISTS dsdr_sources)
@@ -83,14 +116,13 @@ foreach(dsdr_dependency IN LISTS dsdr_resolved)
         file(SHA256 "${dsdr_dependency}" dsdr_source_hash)
         file(SHA256 "${dsdr_destination}" dsdr_destination_hash)
         if(NOT dsdr_source_hash STREQUAL dsdr_destination_hash)
-            # macdeployqt può aver già copiato SoapySDR perché è una
-            # dipendenza diretta dell'app e averne poi riscritto l'install
-            # name. Il modulo vede l'originale Homebrew: i byte differiscono
-            # ma è la stessa libreria, e il bundle deve riusare la copia già
-            # coerente con l'eseguibile. Per ogni altro nome il conflitto resta
-            # invece un errore: due librerie diverse con lo stesso basename
-            # renderebbero ambiguo il caricamento a runtime.
-            if(dsdr_dependency_name STREQUAL "libSoapySDR.0.8.dylib")
+            dsdr_same_macho_uuid("${dsdr_dependency}" "${dsdr_destination}"
+                                 dsdr_reuses_macdeployqt_copy)
+            # Una corrispondenza UUID prova che macdeployqt ha solo riscritto
+            # gli install name della stessa libreria. In tutti gli altri casi
+            # fermiamo il pacchetto: due runtime differenti con lo stesso nome
+            # renderebbero ambiguo il caricamento dei plugin SoapySDR.
+            if(dsdr_reuses_macdeployqt_copy)
                 message(STATUS
                     "Reusing macdeployqt's rewritten ${dsdr_dependency_name}")
             else()
