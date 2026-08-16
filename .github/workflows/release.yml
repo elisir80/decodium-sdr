@@ -291,7 +291,6 @@ jobs:
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
-        shell: bash
         run: |
           # I runner ARM non avviano un server audio: senza un sink PulseAudio
           # i test di spettro, registrazione IQ e moduli ricevono zero frame.
@@ -300,6 +299,17 @@ jobs:
             pulseaudio --start --exit-idle-time=-1
             pactl info
           fi
+          # Su Windows la shell predefinita della matrice è MSYS2/MINGW64:
+          # mantenerla qui è essenziale. Git Bash può trovare `ctest`, ma non
+          # il runtime DLL con cui gli eseguibili sono stati compilati; il
+          # risultato è una sequenza di timeout senza una diagnosi utile.
+          # Questi due test coprono un eseguibile Qt GUI e uno app-less prima
+          # della suite completa, così un problema del runtime fallisce subito
+          # con il comando effettivo e l'output verboso.
+          printf 'shell: %s\n' "$(command -v bash)"
+          printf 'ctest: %s\n' "$(command -v ctest)"
+          ctest --test-dir build --output-on-failure --verbose --timeout 60 \
+            -R '^(tst_waterfall|tst_dsp_primitives)$'
           ctest --test-dir build --output-on-failure --timeout 180
 
       - name: Installa in staging
@@ -327,14 +337,17 @@ jobs:
             # Qt after those rewrites; otherwise macOS can terminate the
             # bundle with "Code Signature Invalid". A notarized release must
             # replace this with one final Developer ID signing pass.
-            find "$PREFIX/decodium-sdr.app/Contents" -type f \
+            # `macdeployqt` può lasciare plugin Qt come symlink. Seguendoli
+            # firmiamo il Mach-O reale invece di saltare il link e ritrovarci
+            # con un bundle apparentemente firmato ma rifiutato da macOS.
+            find -L "$PREFIX/decodium-sdr.app/Contents" -type f \
               \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
                  -o -path '*/Resources/hamlib/bin/*' \) \
               -exec codesign --remove-signature {} \; 2>/dev/null || true
             # Anche i driver Soapy sono Mach-O caricati dopo l'avvio: ogni
             # componente eseguibile riceve una firma ad-hoc coerente. Una
             # release notarizzata sostituirà tutto con una firma Developer ID.
-            find "$PREFIX/decodium-sdr.app/Contents" -type f \
+            find -L "$PREFIX/decodium-sdr.app/Contents" -type f \
               \( -name '*.dylib' -o -name '*.so' -o -path '*/MacOS/*' \
                  -o -path '*/Resources/hamlib/bin/*' \) -print0 | \
               xargs -0 -n1 codesign --force --sign -
@@ -343,6 +356,7 @@ jobs:
             # finale ricorsivo firma anche questi componenti Qt, così la firma
             # dell'app non fallisce su un plugin interno rimasto unsigned.
             codesign --force --deep --sign - "$PREFIX/decodium-sdr.app"
+            codesign --verify --deep --strict --verbose=2 "$PREFIX/decodium-sdr.app"
           fi
 
       - name: I moduli Soapy sono nel pacchetto

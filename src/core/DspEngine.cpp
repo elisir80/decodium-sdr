@@ -5,6 +5,7 @@
 #include <QLoggingCategory>
 #include <QFileInfo>
 #include <QLibrary>
+#include <QThread>
 
 #include <algorithm>
 #include <cmath>
@@ -544,23 +545,43 @@ void DspEngine::removeChannel(ChannelId id)
 void DspEngine::onAudioFrameReady(const hal::AudioFrame &frame)
 {
     Q_UNUSED(frame)
-    ++m_statsAudioFrames;
-    processAvailable();
+    // Normalmente la notifica arriva dal thread del backend. Accodare una
+    // chiamata per ogni frame fa crescere la coda più in fretta del DSP e
+    // lascia addChannel dietro migliaia di eventi su ARM. `queueProcess()`
+    // ne mantiene una sola; nel test/unitario, dove il motore vive già nel
+    // thread chiamante, l'elaborazione resta sincrona e deterministica.
+    if (QThread::currentThread() == thread())
+        processAvailable();
+    else
+        queueProcess();
 }
 
 void DspEngine::onIqFrameReady(const hal::IqFrame &frame)
 {
-    if (frame.droppedFrames > 0) {
-        m_totalDropped += frame.droppedFrames;
-        // In overrun sostenuto il segnale arriverebbe a ogni frame: la UI ne
-        // ricaverebbe solo un flusso di re-layout della barra di stato.
-        const qint64 now = m_uptime.nsecsElapsed();
-        if (now - m_lastOverrunReportNs >= 500'000'000) {
-            m_lastOverrunReportNs = now;
-            emit overrunDetected(m_totalDropped);
-        }
+    if (frame.droppedFrames > 0)
+        m_pendingDroppedFrames.fetch_add(frame.droppedFrames, std::memory_order_relaxed);
+
+    if (QThread::currentThread() == thread())
+        processAvailable();
+    else
+        queueProcess();
+}
+
+void DspEngine::queueProcess()
+{
+    // È sicuro da qualunque thread. Solo la prima notifica fra due turni
+    // mette un evento nella coda del DSP; tutte le altre trovano il ring già
+    // svegliato e non possono affamare i comandi queued dell'operatore.
+    bool expected = false;
+    if (!m_processEventPending.compare_exchange_strong(expected, true,
+                                                        std::memory_order_acq_rel)) {
+        return;
     }
-    processAvailable();
+
+    QMetaObject::invokeMethod(this, [this] {
+        m_processEventPending.store(false, std::memory_order_release);
+        processAvailable();
+    }, Qt::QueuedConnection);
 }
 
 void DspEngine::analyzeAudio(std::size_t frames)
@@ -726,6 +747,18 @@ void DspEngine::processAvailable()
     dsp::SpscRing<float> *source = m_source.load(std::memory_order_acquire);
     if (!source)
         return;
+
+    const quint64 dropped = m_pendingDroppedFrames.exchange(0, std::memory_order_acq_rel);
+    if (dropped > 0) {
+        m_totalDropped += dropped;
+        // In overrun sostenuto il segnale arriverebbe a ogni frame: la UI ne
+        // ricaverebbe solo un flusso di re-layout della barra di stato.
+        const qint64 now = m_uptime.nsecsElapsed();
+        if (now - m_lastOverrunReportNs >= 500'000'000) {
+            m_lastOverrunReportNs = now;
+            emit overrunDetected(m_totalDropped);
+        }
+    }
 
     if (m_needsReconfigure.load(std::memory_order_acquire))
         reconfigure();
@@ -1075,13 +1108,8 @@ void DspEngine::processAvailable()
     // destinati al DSP senza aspettare che il produttore smetta di scrivere.
     const std::size_t remainingFrames =
         audioSource ? source->available() : source->available() / 2;
-    if (remainingFrames > 0 && !m_processContinuationPending) {
-        m_processContinuationPending = true;
-        QMetaObject::invokeMethod(this, [this] {
-            m_processContinuationPending = false;
-            processAvailable();
-        }, Qt::QueuedConnection);
-    }
+    if (remainingFrames > 0)
+        queueProcess();
 
     // Il centro può essere cambiato mentre eravamo dentro il ciclo: la
     // geometria dello spettro va allineata prima del prossimo frame.

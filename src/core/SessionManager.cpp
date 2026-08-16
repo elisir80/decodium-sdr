@@ -1436,11 +1436,15 @@ void SessionManager::selectBackend(const QString &backendId)
     // legge poi i campioni dal ring (§4.1). Si collegano entrambi i versi —
     // IQ e audio — perché quale dei due arrivi dipende dal backend, e un
     // backend che li emettesse tutti e due sarebbe comunque coerente: il
-    // motore consuma solo il ring che gli è stato agganciato.
+    // motore consuma solo il ring che gli è stato agganciato. La chiamata è
+    // diretta ma il relativo slot non fa DSP sul thread del backend: coalesce
+    // una sola continuazione thread-safe nel motore. Una QueuedConnection per
+    // frame saturerebbe invece la coda del DSP prima dei comandi addChannel,
+    // filtro e moduli IQ sulle CPU ARM più lente.
     connect(m_backend, &hal::IRadioBackend::iqFrameReady,
-            m_engine, &DspEngine::onIqFrameReady, Qt::QueuedConnection);
+            m_engine, &DspEngine::onIqFrameReady, Qt::DirectConnection);
     connect(m_backend, &hal::IRadioBackend::audioFrameReady,
-            m_engine, &DspEngine::onAudioFrameReady, Qt::QueuedConnection);
+            m_engine, &DspEngine::onAudioFrameReady, Qt::DirectConnection);
 
     emit backendChanged();
     setStatus(tr("Backend attivo: %1").arg(backendName()));

@@ -250,6 +250,11 @@ private:
     /// Gira sul thread DSP, dentro il ciclo di elaborazione.
     void analyzeAudio(std::size_t frames);
 
+    /// Accoda al più un giro di DSP. Può essere chiamato dal thread che
+    /// produce IQ/audio: le notifiche di frame non devono mai riempire la
+    /// coda del thread DSP più rapidamente di quanto i comandi CAT/UI possano
+    /// attraversarla.
+    void queueProcess();
     void processAvailable();
     void attachSource(dsp::SpscRing<float> *ring, double sampleRate,
                       qint64 centerFrequencyHz);
@@ -306,9 +311,12 @@ private:
     std::atomic<float> m_nbActivity{0.0f};
 
     double m_activeRate = 0.0;
-    // Accesso solo dal thread DSP. Evita di accodare una continuazione per
-    // ogni notifica IQ quando il producer è più veloce del processore.
-    bool m_processContinuationPending = false;
+    // Il produttore IQ/audio e il thread DSP sono diversi. Questa guardia
+    // atomica coalesca le notifiche nel loro punto d'ingresso: limitare solo
+    // il lavoro *dopo* che migliaia di signal sono già queued non libera la
+    // coda per addChannel, filtri o moduli IQ sulle macchine ARM lente.
+    std::atomic_bool m_processEventPending{false};
+    std::atomic<quint64> m_pendingDroppedFrames{0};
 
     std::unique_ptr<dsp::SpscRing<float>> m_audioRing;
     SpectrumFeed *m_spectrum = nullptr;

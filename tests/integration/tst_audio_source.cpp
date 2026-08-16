@@ -14,7 +14,9 @@
 #include "core/DspEngine.h"
 #include "dsp/SpscRing.h"
 
+#include <QElapsedTimer>
 #include <QTest>
+#include <QThread>
 
 #include <cmath>
 #include <vector>
@@ -117,6 +119,7 @@ private slots:
     void theLowerSidebandIsNotSilence();
     void whatIsOutsideThePassbandDoesNotSurvive();
     void withoutASourceNothingComesOut();
+    void foreignFrameNotificationsLeaveRoomForChannelControl();
 };
 
 void TestAudioSource::aToneGoesInAndComesOutAtTheSameFrequency()
@@ -199,6 +202,70 @@ void TestAudioSource::withoutASourceNothingComesOut()
     engine.onAudioFrameReady(frame);
 
     QCOMPARE(engine.audioRing()->available(), std::size_t(0));
+}
+
+void TestAudioSource::foreignFrameNotificationsLeaveRoomForChannelControl()
+{
+    // È il caso del backend reale: il produttore è su un thread diverso dal
+    // DSP e può annunciare molti blocchi mentre la UI mette il primo canale
+    // in coda. Non deve eseguire DSP nel proprio thread né riempire la coda
+    // del DSP con una notifica per frame; altrimenti su ARM addChannel arriva
+    // dopo che la banda è già stata consumata e non nasce né audio né spettro.
+    auto *engine = new DspEngine;
+    dsp::SpscRing<float> input(1 << 17);
+    QThread dspThread;
+
+    engine->setAudioSource(&input, kRate, 7'100'000);
+    engine->setAudioSideband(static_cast<int>(DspEngine::Sideband::Upper));
+    engine->moveToThread(&dspThread);
+
+    // Quattro turni del DSP consumano 4 × kMaxBlockFrames: la raffica deve
+    // superarli, altrimenti non rimane nulla da elaborare dopo addChannel.
+    const auto audio = tone(1000.0, 6 * dsp::kMaxBlockFrames);
+    QCOMPARE(input.write(audio.data(), audio.size()), audio.size());
+
+    hal::AudioFrame frame;
+    frame.sampleRate = kRate;
+    frame.frameCount = 1024;
+    for (int i = 0; i < 256; ++i)
+        engine->onAudioFrameReady(frame);
+
+    const bool channelQueued = QMetaObject::invokeMethod(engine, [engine] {
+        engine->addChannel(1, plainChannel(DemodMode::Usb));
+    }, Qt::QueuedConnection);
+    // Il thread parte solo dopo aver fissato l'ordine: il primo giro DSP è
+    // davanti a addChannel, la sua continuazione deve invece restare dietro.
+    // È la versione deterministica della coda piena osservata sul runner ARM.
+    dspThread.start();
+
+    std::vector<float> chunk(4096);
+    bool producedAudio = false;
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 3000 && !producedAudio) {
+        const std::size_t got = engine->audioRing()->read(chunk.data(), chunk.size());
+        for (std::size_t i = 0; i < got; ++i) {
+            if (std::abs(chunk[i]) > 0.01f) {
+                producedAudio = true;
+                break;
+            }
+        }
+        if (!producedAudio)
+            QTest::qWait(10);
+    }
+    // Il cleanup è esplicito anche quando l'asserzione sotto fallisce: un
+    // QThread lasciato vivo trasformerebbe un test negativo in un SIGABRT.
+    const bool destroyed = QMetaObject::invokeMethod(engine, [engine] {
+        engine->clearSource();
+        delete engine;
+    }, Qt::BlockingQueuedConnection);
+    dspThread.quit();
+    const bool stopped = dspThread.wait(3000);
+
+    QVERIFY(channelQueued);
+    QVERIFY(destroyed);
+    QVERIFY(stopped);
+    QVERIFY2(producedAudio, "la raffica di frame ha affamato il comando addChannel");
 }
 
 QTEST_MAIN(TestAudioSource)
