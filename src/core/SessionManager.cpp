@@ -2061,6 +2061,27 @@ int SessionManager::addChannel(qint64 frequencyHz)
     entry.settings.agcThresholdDb = -100.0;
     entry.settings.volume = 0.7f;
 
+    // All'apertura il backend può avere già cominciato a scrivere nel ring.
+    // Il primo canale non è un comando UI differibile: deve essere presente
+    // nel thread DSP prima che connectToDevice() dichiari pronta la sessione,
+    // altrimenti un runner lento può esaurire la finestra iniziale senza
+    // produrre spettro, registrazione o frame per un modulo IQ. I canali
+    // successivi restano queued, perché non fanno parte della barriera di
+    // avvio e non devono bloccare l'interazione.
+    const bool firstChannel = m_channels.rowCount() == 0;
+    const Qt::ConnectionType connection = firstChannel
+        ? Qt::BlockingQueuedConnection
+        : Qt::QueuedConnection;
+    const bool engineAccepted = QMetaObject::invokeMethod(
+        m_engine, "addChannel", connection,
+        Q_ARG(dsdr::ChannelId, id),
+        Q_ARG(dsdr::dsp::ChannelSettings, entry.settings));
+    if (!engineAccepted) {
+        qCWarning(dsdrCore) << "il thread DSP ha rifiutato il canale" << id;
+        m_backend->destroyRxChannel(id);
+        return -1;
+    }
+
     const int row = m_channels.append(entry);
 
     qCInfo(dsdrCore) << "canale aggiunto:" << entry.label
@@ -2068,10 +2089,6 @@ int SessionManager::addChannel(qint64 frequencyHz)
                      << "frequency:" << frequencyHz
                      << "mode:" << demodModeName(entry.settings.mode)
                      << "filter:" << entry.settings.filterLowHz << entry.settings.filterHighHz;
-
-    QMetaObject::invokeMethod(m_engine, "addChannel", Qt::QueuedConnection,
-                              Q_ARG(dsdr::ChannelId, id),
-                              Q_ARG(dsdr::dsp::ChannelSettings, entry.settings));
 
     // Il canale di trasmissione può essere proprio questo — all'apertura del
     // device il primo canale nasce dopo che la sessione è connessa, e senza
