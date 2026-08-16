@@ -320,19 +320,6 @@ jobs:
           # percorso relativo, e il messaggio arriva dopo che l'installazione
           # ha già copiato mezza Qt. Su MSYS2 serve anche la forma Windows,
           # perché cmake lì è un binario nativo.
-          # Qt Multimedia qui viene usato solo per QAudioSink, QAudioSource e
-          # QMediaDevices. Il plugin `multimedia` invece è un player/video
-          # backend e non è nel percorso audio SDR; linuxdeploy tenta di
-          # raccogliere il suo grafo GStreamer, che su Ubuntu 24.04 non è
-          # distribuibile in modo coerente fra x86-64 e ARM64. Rimuoverlo
-          # prima del deploy fa dichiarare al plugin Qt che non esiste e non
-          # lo include nell'AppImage.
-          if [ "${{ matrix.platform }}" = "linux" ]; then
-            QT_PATHS_BIN="$(command -v qtpaths6 || command -v qtpaths)"
-            QT_PLUGIN_DIR="$("$QT_PATHS_BIN" --query QT_INSTALL_PLUGINS)"
-            test -d "$QT_PLUGIN_DIR/multimedia"
-            rm -rf "$QT_PLUGIN_DIR/multimedia"
-          fi
           PREFIX="$(pwd)/staging"
           if command -v cygpath >/dev/null 2>&1; then
             PREFIX="$(cygpath -m "$PREFIX")"
@@ -389,6 +376,19 @@ jobs:
           # AppDir con la struttura che linuxdeploy si aspetta.
           mkdir -p AppDir/usr
           cp -r staging/* AppDir/usr/
+
+          # Qt Multimedia qui viene usato solo per QAudioSink, QAudioSource e
+          # QMediaDevices. Il plugin `multimedia` invece è un player/video
+          # backend e non è nel percorso audio SDR; linuxdeploy tenta di
+          # raccogliere il suo grafo GStreamer, che su Ubuntu 24.04 non è
+          # distribuibile in modo coerente fra x86-64 e ARM64. Il deploy
+          # CMake deve però vederlo per completare; lo si esclude soltanto
+          # dall'AppDir e dalla successiva scansione di linuxdeploy.
+          rm -rf AppDir/usr/plugins/multimedia
+          QT_PATHS_BIN="$(command -v qtpaths6 || command -v qtpaths)"
+          QT_PLUGIN_DIR="$("$QT_PATHS_BIN" --query QT_INSTALL_PLUGINS)"
+          test -d "$QT_PLUGIN_DIR/multimedia"
+          rm -rf "$QT_PLUGIN_DIR/multimedia"
 
           mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
           cat > AppDir/usr/share/applications/it.decodium.sdr.desktop <<'EOF'
