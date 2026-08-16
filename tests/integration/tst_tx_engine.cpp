@@ -346,6 +346,41 @@ static void speak(TxEngine &engine, dsp::SpscRing<float> &mic, double amplitude,
     }
 }
 
+/// Alimenta il motore finché le due misure dello spettro voce non descrivono
+/// più l'equalizzatore appena spento. L'analizzatore usa una media
+/// esponenziale e gira su un timer: un numero fisso di blocchi rendeva questo
+/// controllo dipendente dalla puntualità del runner, non dalla catena TX.
+static bool speakUntilVoiceBinsAgree(TxEngine &engine, dsp::SpscRing<float> &mic,
+                                     int bin, double amplitude)
+{
+    constexpr int kMaximumRounds = 48;
+    constexpr int kConsecutiveMatches = 3;
+    std::vector<float> block(4800);
+    std::size_t phase = 0;
+    int matches = 0;
+
+    engine.setTransmitting(true);
+    for (int round = 0; round < kMaximumRounds; ++round) {
+        for (std::size_t i = 0; i < block.size(); ++i, ++phase) {
+            block[i] = static_cast<float>(amplitude
+                * std::sin(dsp::kTwoPi * 700.0 * static_cast<double>(phase) / 48000.0));
+        }
+        mic.write(block.data(), block.size());
+        spin(90);
+
+        const float dry = engine.voiceBinDb(false, bin);
+        const float wet = engine.voiceBinDb(true, bin);
+        if (dry > -100.0f && wet > -100.0f && std::abs(dry - wet) < 0.75f) {
+            if (++matches == kConsecutiveMatches)
+                return true;
+        } else {
+            matches = 0;
+        }
+    }
+
+    return false;
+}
+
 void TestTxEngine::theMonitorOnlySoundsWhileTransmitting()
 {
     dsp::SpscRing<float> ring(1 << 20);
@@ -455,15 +490,14 @@ void TestTxEngine::theTransmitEqualizerIsInTheChain()
     // E spento non deve toccare niente. Uno stadio che lavora anche in bypass
     // è il difetto che nessuno cerca, perché nessuno pensa di doverlo cercare.
     engine.equalizer().setEnabled(false);
-    // Le curve sono medie esponenziali: dopo una campana da -12 dB la nuova
-    // voce deve attraversare abbastanza finestre da sostituire davvero la
-    // misura precedente. Cinque blocchi sono sufficienti su un desktop, ma
-    // non quando il timer del runner ARM/macOS viene consegnato in ritardo.
-    speak(engine, mic, 0.2, 12);
+    const bool bypassSettled = speakUntilVoiceBinsAgree(engine, mic, bin, 0.2);
     engine.setTransmitting(false);
 
-    QVERIFY2(std::abs(engine.voiceBinDb(false, bin) - engine.voiceBinDb(true, bin)) < 1.0f,
-             "l'equalizzatore spento continua a lavorare");
+    const float bypassDry = engine.voiceBinDb(false, bin);
+    const float bypassWet = engine.voiceBinDb(true, bin);
+    QVERIFY2(bypassSettled,
+             qPrintable(QStringLiteral("equalizzatore spento: prima %1 dB, dopo %2 dB")
+                            .arg(bypassDry).arg(bypassWet)));
 }
 
 QTEST_MAIN(TestTxEngine)
