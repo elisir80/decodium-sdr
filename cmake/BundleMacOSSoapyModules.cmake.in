@@ -76,7 +76,8 @@ function(dsdr_same_macho_uuid left right result)
 
     string(REGEX MATCHALL "UUID: [0-9A-Fa-f-]+" dsdr_left_uuids "${dsdr_left_uuid_output}")
     string(REGEX MATCHALL "UUID: [0-9A-Fa-f-]+" dsdr_right_uuids "${dsdr_right_uuid_output}")
-    if(dsdr_left_uuids AND dsdr_left_uuids STREQUAL dsdr_right_uuids)
+    if(NOT "${dsdr_left_uuids}" STREQUAL ""
+       AND "${dsdr_left_uuids}" STREQUAL "${dsdr_right_uuids}")
         set(${result} TRUE PARENT_SCOPE)
     else()
         set(${result} FALSE PARENT_SCOPE)
