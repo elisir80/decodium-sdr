@@ -268,6 +268,24 @@ QVariantList RtlSdrCatBackend::serialPorts() const
         if (free)
             probe.close();
         entry.insert(QStringLiteral("busy"), !free);
+        // Il client usa questa etichetta senza perdere il nome della porta:
+        // l'oggetto completo resta nel modello QML e il valore inviato a
+        // rigctld è sempre `port`, non una stringa presentazionale.
+        const QStringList detail = {
+            info.description(),
+            info.manufacturer() != info.description() ? info.manufacturer() : QString(),
+            info.serialNumber(),
+        };
+        QStringList shown;
+        for (const QString &part : detail) {
+            if (!part.isEmpty())
+                shown.append(part);
+        }
+        const QString suffix = shown.isEmpty() ? QObject::tr("porta seriale")
+                                                : shown.join(QStringLiteral(" · "));
+        entry.insert(QStringLiteral("displayName"),
+                     QStringLiteral("%1 · %2%3")
+                         .arg(info.portName(), !free ? QObject::tr("occupata — ") : QString(), suffix));
         ports.append(entry);
     }
     return ports;

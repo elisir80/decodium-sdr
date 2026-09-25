@@ -217,7 +217,10 @@ Rectangle {
                 if (serialDriver) {
                     if (portBox.currentIndex < 0 || portBox.currentIndex >= ports.length)
                         return null
-                    port = ports[portBox.currentIndex].port
+                    const selectedPort = portBox.model[portBox.currentIndex]
+                    if (!selectedPort || !selectedPort.port)
+                        return null
+                    port = selectedPort.port
                     baud = baudBox.currentIndex > 0 ? parseInt(baudBox.currentText) : 0
                 }
                 if (!port)
@@ -249,6 +252,17 @@ Rectangle {
                 manualRadioSettings.dtr = profile.dtr
                 manualRadioSettings.rts = profile.rts
                 manualRadioSettings.hamlibModelId = profile.hamlibModel
+            }
+
+            function declareCurrentProfile() {
+                const profile = currentProfile()
+                if (!profile)
+                    return false
+                saveProfile(profile)
+                const declared = Session.nativeCommand("device.declare", profile)
+                if (declared)
+                    savedProfileDeclared = true
+                return declared
             }
 
             function applyDriverDefaults() {
@@ -475,14 +489,40 @@ Rectangle {
                     id: portBox
 
                     Layout.fillWidth: true
-                    model: {
-                        const list = []
-                        for (let i = 0; i < parent.parent.ports.length; ++i) {
-                            const p = parent.parent.ports[i]
-                            list.push(manualRadioEntry.serialPortLabel(p))
+                    // Conserva l'oggetto porta nel modello. Prima il modello
+                    // era una lista di etichette e currentProfile() usava lo
+                    // stesso indice su un secondo array: dopo un refresh
+                    // l'etichetta poteva restare quella scelta mentre il
+                    // nome passato al backend apparteneva alla porta
+                    // precedente.
+                    model: parent.parent.ports
+                    textRole: "displayName"
+                    delegate: ItemDelegate {
+                        required property var model
+                        required property int index
+
+                        width: portBox.width
+                        height: Theme.controlHeight
+                        highlighted: portBox.highlightedIndex === index
+
+                        contentItem: Text {
+                            text: model.displayName
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontNormal
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
                         }
-                        return list
+
+                        background: Rectangle {
+                            color: highlighted ? Theme.accentDim : "transparent"
+                        }
                     }
+
+                    // La porta scelta deve essere effettiva anche se
+                    // l'operatore procede subito a «Connetti»: il pulsante
+                    // resta il modo esplicito per salvare, ma non è più un
+                    // requisito per aggiornare il backend corrente.
+                    onActivated: manualRadioEntry.declareCurrentProfile()
                 }
 
                 // Zero significa «prova tutte»: è la differenza fra «scegli la
@@ -662,9 +702,7 @@ Rectangle {
                     const profile = manualRadioEntry.currentProfile()
                     if (!profile)
                         return
-                    manualRadioEntry.saveProfile(profile)
-                    if (Session.nativeCommand("device.declare", profile))
-                        manualRadioEntry.savedProfileDeclared = true
+                    manualRadioEntry.declareCurrentProfile()
                 }
             }
 

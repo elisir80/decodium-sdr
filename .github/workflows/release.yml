@@ -588,4 +588,4 @@ jobs:
           draft: true
           name: ${{ github.ref_name }} «${{ env.DSDR_NAME }}»
           files: artifacts/*
-          body_path: docs/GITHUB_RELEASE_BODY_1.2.5.md
+          body_path: docs/GITHUB_RELEASE_BODY_1.2.6.md
