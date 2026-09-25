@@ -127,9 +127,6 @@ jobs:
             mingw-w64-x86_64-qt6-shadertools
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw
-            mingw-w64-x86_64-soapysdr
-            mingw-w64-x86_64-soapyrtlsdr
-            mingw-w64-x86_64-soapyhackrf
             mingw-w64-x86_64-nsis
             unzip
             zip
@@ -276,6 +273,11 @@ jobs:
             # Windows per il binario CMake nativo.
             HAMLIB_RIGCTLD="$(cygpath -m "$PWD/third_party/hamlib-w64-4.7.2/bin/rigctld.exe")"
             HAMLIB_RIGCTLD_ARG="-DDSDR_RIGCTLD_BIN=$HAMLIB_RIGCTLD"
+            # MSYS2 non distribuisce più SoapySDR e i suoi moduli per
+            # MINGW64. Il pacchetto Windows resta utile con i backend nativi
+            # e CAT, ma non deve pretendere una capability che il runner non
+            # può compilare o distribuire.
+            SOAPY_BACKEND_ARG="-DDSDR_BACKEND_SOAPY=OFF -DDSDR_BUNDLE_SOAPY=OFF"
           fi
           # `DSDR_STRICT_BACKENDS`: qui si costruisce per altri, e un backend
           # che si spegne perché manca una dipendenza deve fermare la
@@ -286,7 +288,7 @@ jobs:
                 -DDSDR_STRICT_BACKENDS=ON -DDSDR_BUNDLE_HAMLIB=ON \
                 -DDSDR_BUNDLE_SOAPY=ON \
                 -DDSDR_SOAPY_BUNDLE_MODULES="librtlsdrSupport;libHackRFSupport" \
-                $QT_DEPLOY_ARG $HAMLIB_RIGCTLD_ARG
+                $QT_DEPLOY_ARG $HAMLIB_RIGCTLD_ARG $SOAPY_BACKEND_ARG
           cmake --build build
 
       - name: Test
@@ -345,6 +347,7 @@ jobs:
 
       - name: I moduli Soapy sono nel pacchetto
         shell: bash
+        if: matrix.platform != 'windows'
         run: |
           if [ "${{ matrix.platform }}" = "macos" ]; then
             bash scripts/check-soapy-package.sh staging/decodium-sdr.app \
