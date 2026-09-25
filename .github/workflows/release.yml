@@ -340,7 +340,7 @@ jobs:
 
           if [ "${{ matrix.platform }}" = "macos" ]; then
             macdeployqt "$PREFIX/decodium-sdr.app" \
-              -qmldir="$PWD/src/app/qml" -no-codesign -always-overwrite
+              -qmldir="$PWD/src/app/qml" -always-overwrite
             cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
               -P build/BundleMacOSSoapyModules.cmake
             cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
