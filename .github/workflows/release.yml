@@ -37,7 +37,7 @@ jobs:
             arch: aarch64
             artifact: decodium-sdr-linux-aarch64.AppImage
           - name: macOS DMG (Apple Silicon)
-            os: macos-14
+            os: macos-15
             platform: macos
             arch: arm64
             artifact: decodium-sdr-macos-arm64.dmg
@@ -127,6 +127,7 @@ jobs:
             mingw-w64-x86_64-qt6-shadertools
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw
+            mingw-w64-x86_64-libusb
             mingw-w64-x86_64-nsis
             unzip
             zip
