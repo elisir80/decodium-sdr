@@ -20,6 +20,7 @@ class SpscRing;
 
 namespace dsdr::hal::rtlsdr {
 
+class RtlSdrWorkerTest;
 class RtlSdrWorker : public QObject
 {
     Q_OBJECT
@@ -54,13 +55,14 @@ signals:
     void samplesProduced(quint32 frames, quint32 dropped, quint64 timestampNs);
 
 private:
+    friend class RtlSdrWorkerTest;
     static void asyncCallback(unsigned char *buffer, quint32 length, void *context);
     void onSamples(unsigned char *buffer, quint32 length);
     RtlSdrDeviceProfile readProfile(rtlsdr_dev_t *device, int deviceIndex,
                                     const QString &serial) const;
     void applyPendingCommands(rtlsdr_dev_t *device);
     /// Solo stato DSP: e' sicuro applicarlo dal callback senza fermare USB.
-    void applyPendingBasebandTransform();
+    void applyPendingBasebandTransform(bool sampleRateChanged = false);
     /// Interrompe read_async: la riconfigurazione viene applicata nel thread
     /// del ricevitore, prima di riaprire il flusso USB.
     void requestReconfigure();
