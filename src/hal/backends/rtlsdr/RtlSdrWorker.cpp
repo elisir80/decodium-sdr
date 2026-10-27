@@ -204,16 +204,19 @@ void RtlSdrWorker::applyPendingCommands(rtlsdr_dev_t *device)
         && rtlsdr_set_freq_correction(device, ppm) != 0)
         qCWarning(dsdrHal) << "rtlsdr: correzione PPM rifiutata" << ppm;
 
+    bool sampleRateChanged = false;
     const double sampleRate = m_pendingSampleRate.exchange(-1.0, std::memory_order_acq_rel);
     if (sampleRate > 0.0) {
         const int result = rtlsdr_set_sample_rate(device, static_cast<uint32_t>(sampleRate));
         if (result != 0)
             qCWarning(dsdrHal) << "rtlsdr: sample rate rifiutato" << sampleRate << result;
-        else
+        else {
             m_activeSampleRate = sampleRate;
+            sampleRateChanged = true;
+        }
     }
 
-    applyPendingBasebandTransform();
+    applyPendingBasebandTransform(sampleRateChanged);
 
     const qint64 frequency = m_pendingFrequency.exchange(-1, std::memory_order_acq_rel);
     if (frequency > 0) {
@@ -275,13 +278,13 @@ void RtlSdrWorker::applyPendingCommands(rtlsdr_dev_t *device)
     }
 }
 
-void RtlSdrWorker::applyPendingBasebandTransform()
+void RtlSdrWorker::applyPendingBasebandTransform(bool sampleRateChanged)
 {
     const int spectrumInverted = m_pendingSpectrumInverted.exchange(-1,
                                                                        std::memory_order_acq_rel);
     const double translation = m_pendingTranslationHz.exchange(
         std::numeric_limits<double>::quiet_NaN(), std::memory_order_acq_rel);
-    if (spectrumInverted < 0 && !std::isfinite(translation))
+    if (!sampleRateChanged && spectrumInverted < 0 && !std::isfinite(translation))
         return;
 
     if (spectrumInverted >= 0)

@@ -35,6 +35,10 @@ if(DSDR_BACKEND_RTLSDR)
     dsdr_add_test(tst_rtlsdr_profile
         SOURCES tst_rtlsdr_profile.cpp
         LIBRARIES dsdr::hal)
+    dsdr_add_test(tst_rtlsdr_worker
+        SOURCES tst_rtlsdr_worker.cpp
+        LIBRARIES dsdr::hal)
+    target_include_directories(tst_rtlsdr_worker PRIVATE ${DSDR_RTLSDR_INCLUDE_DIR})
 endif()
 
 if(DSDR_BACKEND_RTLSDR OR DSDR_BACKEND_SOAPY)
