@@ -43,6 +43,9 @@ add_custom_command(OUTPUT "${_dsdr_vdl_library}"
 add_custom_target(dsdr_vdl2_protocol_build DEPENDS "${_dsdr_vdl_library}")
 add_library(dsdr_vdl2_protocol STATIC IMPORTED GLOBAL)
 set_target_properties(dsdr_vdl2_protocol PROPERTIES IMPORTED_LOCATION "${_dsdr_vdl_library}")
+if(MINGW)
+    set_property(TARGET dsdr_vdl2_protocol APPEND PROPERTY INTERFACE_LINK_LIBRARIES synchronization)
+endif()
 add_dependencies(dsdr_vdl2_protocol dsdr_vdl2_protocol_build)
 add_library(dsdr_vdl2_adapter STATIC "${PROJECT_SOURCE_DIR}/src/dsp/vdl2/Vdl2Frame.cpp"
     "${PROJECT_SOURCE_DIR}/src/dsp/vdl2/Vdl2Burst.cpp"

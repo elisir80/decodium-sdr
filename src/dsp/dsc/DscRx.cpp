@@ -24,7 +24,7 @@ std::optional<Distress> decode(const std::vector<uint8_t>& b, std::size_t start,
         const int actual = symbol(b, start, i, inv);
         if (actual != expected && (actual >= 0 || ++phaseErasures > 4)) return {};
     }
-    int values[30]; int repaired = 0;
+    int values[30]{}; int repaired = 0;
     for (int i = 0; i < length+3; ++i) {
         const int dx = symbol(b, start, 12 + 2*i, inv);
         const int rx = symbol(b, start, 17 + 2*i, inv);

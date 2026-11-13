@@ -212,7 +212,7 @@ jobs:
           fi
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DDSDR_WARNINGS_AS_ERRORS=ON $SOAPY_BACKEND_ARG
+            -DDSDR_WARNINGS_AS_ERRORS=ON -DDSDR_BUNDLE_SOAPY=OFF $SOAPY_BACKEND_ARG
 
       - name: Compila
         run: cmake --build build
@@ -243,6 +243,7 @@ jobs:
           fi
           cmake -S . -B build-vdl2 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DDSDR_BUNDLE_SOAPY=OFF \
             -DDSDR_BUILD_VDL2_PROTOCOL_EXPERIMENT=ON \
             $VDL2_RUST_TARGET
 
