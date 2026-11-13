@@ -89,7 +89,7 @@ jobs:
           - name: Linux (x86-64)
             os: ubuntu-24.04
           - name: macOS (Apple Silicon)
-            os: macos-14
+            os: macos-15
           - name: Windows (MSYS2 / MinGW)
             os: windows-latest
 
@@ -125,7 +125,7 @@ jobs:
           cache: true
 
       - name: Dipendenze (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         shell: bash
         run: |
           brew update
@@ -205,9 +205,13 @@ jobs:
       # ── Build ───────────────────────────────────────────────────────────
       - name: Configura
         run: |
+          SOAPY_BACKEND_ARG=""
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            SOAPY_BACKEND_ARG="-DDSDR_BACKEND_SOAPY=OFF"
+          fi
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DDSDR_WARNINGS_AS_ERRORS=ON
+            -DDSDR_WARNINGS_AS_ERRORS=ON $SOAPY_BACKEND_ARG
 
       - name: Compila
         run: cmake --build build
@@ -234,7 +238,7 @@ jobs:
         run: |
           VDL2_RUST_TARGET=""
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            VDL2_RUST_TARGET="-DDSDR_VDL2_RUST_TARGET=x86_64-pc-windows-gnu"
+            VDL2_RUST_TARGET="-DDSDR_VDL2_RUST_TARGET=x86_64-pc-windows-gnu -DDSDR_BACKEND_SOAPY=OFF"
           fi
           cmake -S . -B build-vdl2 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \

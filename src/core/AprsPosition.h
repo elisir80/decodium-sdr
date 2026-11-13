@@ -83,7 +83,8 @@ inline std::optional<AprsPosition> parseAprsPosition(QStringView info) {
     if(latMin>=6000 || lonMin>=6000 || latDeg>90 || lonDeg>180 ||
        (latDeg==90 && latMin) || (lonDeg==180 && lonMin)) return {};
     double y=latDeg+latMin/6000.0, x=lonDeg+lonMin/6000.0;
-    if(lat[7]==u'S') y=-y; if(lon[8]==u'W') x=-x;
+    if (lat[7] == u'S') y = -y;
+    if (lon[8] == u'W') x = -x;
     return AprsPosition{y,x,objectName};
 }
 }
