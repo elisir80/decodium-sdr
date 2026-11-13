@@ -35,11 +35,16 @@ private slots:
         const auto iq=signal(rate,90,7000,true);
         const auto feedRange=[&](std::size_t begin,std::size_t end) {
             float data[2048];
+            unsigned blocks = 0;
             for(std::size_t at=begin;at<end;) {
                 const auto n=std::min<std::size_t>(1024,end-at);
                 for(std::size_t i=0;i<n;++i) { data[2*i]=iq[at+i].real(); data[2*i+1]=iq[at+i].imag(); }
                 QCOMPARE(ring.write(data,n*2),n*2); hal::IqFrame f; f.frameCount=n; engine.onIqFrameReady(f);
-                at+=n; QTest::qWait(1);
+                at+=n;
+                // Windows timer granularity makes a sleep per 1024 samples
+                // multiply high-rate fixtures into many minutes. Yield at a
+                // bounded interval while still servicing the decoder worker.
+                if (++blocks % 16 == 0) QTest::qWait(1);
             }
         };
         const auto feed=[&] { feedRange(0,iq.size()); };

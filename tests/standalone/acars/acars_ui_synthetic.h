@@ -29,6 +29,7 @@ static std::vector<unsigned char> payload(bool parityBad=false) {
 static std::vector<Complex> generate(bool badCrc=false,bool badParity=false, double offset=0, bool badLayout=false) {
     auto body=payload(badParity); if(badLayout) body[12]=parity(4); unsigned c=crc(body); if(badCrc) c^=1;
     std::vector<unsigned char> bytes(20,0xff);
+    bytes.reserve(20 + body.size() + 8);
     bytes.push_back(parity('+')); bytes.push_back(parity('*')); bytes.push_back(0x16); bytes.push_back(0x16); bytes.push_back(1);
     bytes.insert(bytes.end(),body.begin(),body.end()); bytes.push_back(c&255); bytes.push_back(c>>8); bytes.push_back(0x7f);
     std::vector<int> bits; for(unsigned char b:bytes) for(int k=0;k<8;++k) bits.push_back((b>>k)&1);
