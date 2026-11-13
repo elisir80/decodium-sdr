@@ -149,7 +149,6 @@ jobs:
             mingw-w64-x86_64-qt6-shadertools
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw
-            mingw-w64-x86_64-soapysdr
 
       # Il motore della riduzione di rumore neurale. Il sorgente non sta nel
       # repository — è di Xiph, e un sorgente altrui versionato è un sorgente

@@ -136,7 +136,6 @@ jobs:
             mingw-w64-x86_64-qt6-shadertools
             mingw-w64-x86_64-qt6-tools
             mingw-w64-x86_64-fftw
-            mingw-w64-x86_64-libusb
             mingw-w64-x86_64-nsis
             unzip
             zip
