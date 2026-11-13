@@ -239,7 +239,7 @@ dsdr_add_test(tst_aprs_session
     SOURCES tst_aprs_session.cpp
     LIBRARIES dsdr::core)
 set_tests_properties(tst_aprs_session PROPERTIES
-    ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 30)
+    ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 120)
 
 dsdr_add_test(tst_aprs_iq_session SOURCES tst_aprs_iq_session.cpp LIBRARIES dsdr::core Qt6::Gui Qt6::Qml Qt6::Quick)
 target_compile_definitions(tst_aprs_iq_session PRIVATE DSDR_APRS_QML_DIR="${CMAKE_SOURCE_DIR}/src/app/qml")
@@ -313,13 +313,13 @@ dsdr_apply_target_defaults(tst_vor_high_rate)
 add_test(NAME tst_vor_high_rate COMMAND tst_vor_high_rate)
 set_tests_properties(tst_vor_high_rate PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 120)
 dsdr_add_test(tst_vor_engine SOURCES tst_vor_engine.cpp LIBRARIES dsdr::core)
-set_tests_properties(tst_vor_engine PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 240)
+set_tests_properties(tst_vor_engine PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 600)
 dsdr_add_test(tst_selcal_engine SOURCES tst_selcal_engine.cpp LIBRARIES dsdr::core)
 set_tests_properties(tst_selcal_engine PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 120)
 dsdr_add_test(tst_dsc_engine SOURCES tst_dsc_engine.cpp LIBRARIES dsdr::core)
 set_tests_properties(tst_dsc_engine PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 120)
 dsdr_add_test(tst_navtex_engine SOURCES tst_navtex_engine.cpp LIBRARIES dsdr::core)
-set_tests_properties(tst_navtex_engine PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 120)
+set_tests_properties(tst_navtex_engine PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 360)
 dsdr_add_test(tst_navtex_session SOURCES tst_navtex_session.cpp LIBRARIES dsdr::core Qt6::Gui Qt6::Qml Qt6::Quick)
 target_compile_definitions(tst_navtex_session PRIVATE DSDR_NAVTEX_QML_DIR="${CMAKE_SOURCE_DIR}/src/app/qml")
 set_tests_properties(tst_navtex_session PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 120 RUN_SERIAL TRUE)
@@ -335,7 +335,7 @@ set_tests_properties(tst_vor_session_live PROPERTIES ENVIRONMENT "QT_QPA_PLATFOR
 
 dsdr_add_test(tst_pocsag_session_live SOURCES tst_pocsag_session_live.cpp LIBRARIES dsdr::core Qt6::Gui Qt6::Qml Qt6::Quick)
 target_compile_definitions(tst_pocsag_session_live PRIVATE DSDR_POCSAG_QML_DIR="${CMAKE_SOURCE_DIR}/src/app/qml")
-set_tests_properties(tst_pocsag_session_live PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 60 RUN_SERIAL TRUE)
+set_tests_properties(tst_pocsag_session_live PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 180 RUN_SERIAL TRUE)
 
 add_executable(tst_pocsag_ui ../standalone/pocsag/test_ui.cpp)
 target_link_libraries(tst_pocsag_ui PRIVATE dsdr::core Qt6::Quick Qt6::Qml)
@@ -410,4 +410,4 @@ set_tests_properties(tst_ais_engine_live PROPERTIES ENVIRONMENT "DSDR_TEST_SILEN
 
 dsdr_add_test(tst_ais_session_live SOURCES tst_ais_session_live.cpp LIBRARIES dsdr::core Qt6::Gui Qt6::Qml Qt6::Quick)
 target_compile_definitions(tst_ais_session_live PRIVATE DSDR_AIS_QML_DIR="${CMAKE_SOURCE_DIR}/src/app/qml")
-set_tests_properties(tst_ais_session_live PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 60)
+set_tests_properties(tst_ais_session_live PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 180)

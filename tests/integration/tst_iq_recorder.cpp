@@ -17,6 +17,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QtEndian>
+#include <cstring>
 
 using namespace dsdr;
 using namespace dsdr::core;
@@ -139,10 +140,12 @@ void TestIqRecorder::producesReadableWavWithCorrectHeader()
     const QByteArray fmt = findChunk(wav, "fmt ");
     QCOMPARE(fmt.size(), 16);
 
-    const quint16 format = qFromLittleEndian<quint16>(fmt.constData());
-    const quint16 channels = qFromLittleEndian<quint16>(fmt.constData() + 2);
-    const quint32 rate = qFromLittleEndian<quint32>(fmt.constData() + 4);
-    const quint16 bits = qFromLittleEndian<quint16>(fmt.constData() + 14);
+    char fmtBytes[16];
+    std::memcpy(fmtBytes, fmt.constData(), sizeof(fmtBytes));
+    const quint16 format = qFromLittleEndian<quint16>(fmtBytes);
+    const quint16 channels = qFromLittleEndian<quint16>(fmtBytes + 2);
+    const quint32 rate = qFromLittleEndian<quint32>(fmtBytes + 4);
+    const quint16 bits = qFromLittleEndian<quint16>(fmtBytes + 14);
 
     QCOMPARE(format, quint16(3));      // IEEE float
     QCOMPARE(channels, quint16(2));    // I e Q
@@ -202,8 +205,11 @@ void TestIqRecorder::recordsAudioMixWithAudioSidecar()
     QCOMPARE(wav.left(4), QByteArray("RIFF"));
     QCOMPARE(wav.mid(8, 4), QByteArray("WAVE"));
     const QByteArray fmt = findChunk(wav, "fmt ");
-    QCOMPARE(qFromLittleEndian<quint16>(fmt.constData() + 2), quint16(2));
-    QCOMPARE(qFromLittleEndian<quint32>(fmt.constData() + 4), quint32(48000));
+    QVERIFY(fmt.size() >= 8);
+    char fmtBytes[8];
+    std::memcpy(fmtBytes, fmt.constData(), sizeof(fmtBytes));
+    QCOMPARE(qFromLittleEndian<quint16>(fmtBytes + 2), quint16(2));
+    QCOMPARE(qFromLittleEndian<quint32>(fmtBytes + 4), quint32(48000));
 
     QFile sidecar(dir.filePath(QStringLiteral("audio.json")));
     QVERIFY(sidecar.open(QIODevice::ReadOnly));

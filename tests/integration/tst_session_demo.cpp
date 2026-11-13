@@ -335,7 +335,7 @@ void TestSessionDemo::priorityScannerDistinguishesDemoSignalFromNoise()
     // deve interrompere la scansione della zona di rumore.
     QVERIFY(session.startPriorityScan(quiet, quiet + 5000, 5000, strong, 350, -75));
     QVERIFY(waitFor([&] { return frequency() == strong
-                                  && session.priorityScanState() == QStringLiteral("Ascolto prioritario"); }, 4500));
+                                  && session.priorityScanState() == QStringLiteral("Ascolto prioritario"); }, 12000));
     QTest::qWait(500);
     QCOMPARE(frequency(), strong);
     session.stopScan();

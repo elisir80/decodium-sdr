@@ -86,5 +86,19 @@ int main() {
     assert((slow.resets == std::vector<std::size_t>{0, 2}));
     auto stats = overload.stats();
     assert(stats.accepted == 3 && stats.droppedBlocks >= 3 && stats.droppedSamples >= 5);
+
+    // Race an empty worker against the producer's final submit and drain.
+    // Every accepted block must be delivered even if stop follows immediately.
+    Sink drain;
+    AsyncIqDecoder repeated(4, 1, drain.callbacks());
+    for (int iteration = 0; iteration < 2000; ++iteration) {
+        repeated.start();
+        Complex sample(static_cast<float>(iteration), 0);
+        assert(repeated.submit(&sample, 1) == R::Accepted);
+        if (iteration % 2 == 0) std::this_thread::yield();
+        repeated.stop();
+        assert(drain.values.size() == static_cast<std::size_t>(iteration + 1));
+        assert(drain.values.back() == iteration);
+    }
     std::puts("async IQ decoder A/B and overload: OK");
 }

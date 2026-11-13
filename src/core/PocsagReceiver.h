@@ -21,7 +21,7 @@ public:
         std::size_t size = 0;
         std::array<char, 1024> text{};
     };
-    explicit PocsagReceiver(std::size_t slots = 64, std::size_t maxFrames = 4096,
+    explicit PocsagReceiver(std::size_t slots = 128, std::size_t maxFrames = 4096,
                             std::size_t messageCapacity = 32,
                             WorkerHook hook = nullptr, void *hookContext = nullptr);
     ~PocsagReceiver();

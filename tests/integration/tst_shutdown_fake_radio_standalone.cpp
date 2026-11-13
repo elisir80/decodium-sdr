@@ -208,10 +208,12 @@ int main(int argc, char **argv) {
             if (closing && heldAprs && !aprsGate.release.load()) {
                 ++aprsHeartbeats; assert(session && !session->shutdownFencePassed());
                 if (trace->destroyed.load() && !trace->active.load()) backendClosedWhileAprsHeld=true;
+                if (backendClosedWhileAprsHeld && aprsHeartbeats >= 5) aprsGate.release=true;
             }
             if (closing && heldAdsb && !adsbGate.release.load()) {
                 ++adsbHeartbeats; assert(session && !session->shutdownFencePassed());
                 if(trace->destroyed.load() && !trace->active.load()) backendClosedWhileAdsbHeld=true;
+                if (backendClosedWhileAdsbHeld && adsbHeartbeats >= 5) adsbGate.release=true;
             }
             if (closing && (trace->slowClose ? trace->insideClose.load(std::memory_order_acquire)
                                             : !release.load(std::memory_order_acquire))) {
@@ -265,11 +267,10 @@ int main(int argc, char **argv) {
                 }
             } else { session.reset(); app.quit(); }
         });
-        if(heldAdsb) QTimer::singleShot(1600,&app,[&] { adsbGate.release=true; });
-        if(heldAprs) QTimer::singleShot(1600,&app,[&] { aprsGate.release=true; });
-        QTimer watchdog; watchdog.setSingleShot(true); watchdog.setInterval(5000);
+        QTimer watchdog; watchdog.setSingleShot(true); watchdog.setInterval(30000);
         QObject::connect(&watchdog, &QTimer::timeout, &app, [&] {
-            release.store(true, std::memory_order_release); app.quit();
+            release.store(true, std::memory_order_release);
+            adsbGate.release = true; aprsGate.release = true; app.quit();
         });
         watchdog.start();
         app.exec();

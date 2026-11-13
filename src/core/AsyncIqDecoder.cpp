@@ -74,7 +74,13 @@ void AsyncIqDecoder::run() noexcept
         if (!m_running.load(std::memory_order_acquire) && !m_drain.load(std::memory_order_relaxed)) break;
         const auto r = m_read.load(std::memory_order_relaxed);
         if (r == m_write.load(std::memory_order_acquire)) {
-            if (!m_running.load(std::memory_order_acquire)) break;
+            // A producer may publish its last block between the empty check
+            // and stop(). Re-read after observing stop so draining cannot
+            // discard that block using the earlier, stale write position.
+            if (!m_running.load(std::memory_order_acquire)) {
+                if (r == m_write.load(std::memory_order_acquire)) break;
+                continue;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
