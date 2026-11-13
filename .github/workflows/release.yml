@@ -282,7 +282,7 @@ jobs:
             # Qt 6.11/macdeployqt has a broken CMake-generated QML plugin
             # symlink path on this runner; deploy the finished app explicitly.
             QT_DEPLOY_ARG="-DDSDR_QT_CMAKE_DEPLOY=OFF"
-            EXTRA_CMAKE_ARGS+=("-DDSDR_SOAPY_MODULE_PATHS=$(brew --prefix soapyrtlsdr)/lib/SoapySDR/modules0.8;$(brew --prefix soapyhackrf)/lib/SoapySDR/modules0.8")
+            EXTRA_CMAKE_ARGS+=("-DDSDR_SOAPY_MODULE_PATHS=$(brew --prefix soapyrtlsdr)/lib/SoapySDR/modules0.9;$(brew --prefix soapyhackrf)/lib/SoapySDR/modules0.9;$(brew --prefix soapyrtlsdr)/lib/SoapySDR/modules0.8;$(brew --prefix soapyhackrf)/lib/SoapySDR/modules0.8")
           fi
           if [ "${{ matrix.platform }}" = "windows" ]; then
             VDL2_RUST_TARGET="-DDSDR_VDL2_RUST_TARGET=x86_64-pc-windows-gnu"
