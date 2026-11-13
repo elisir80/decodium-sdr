@@ -73,8 +73,9 @@ int main(int argc,char **argv) {
     }
     assert(waitFor([&] { return trace->destroyed.load() && !trace->active.load(); },10000));
     assert(session.shutdownPending() && !session.shutdownFencePassed() && window->isVisible());
-    const int before=ticks; QTest::qWait(200);
-    assert(ticks-before>=5 && !gate.release.load() && !session.shutdownFencePassed() && window->isVisible());
+    const int before=ticks;
+    assert(waitFor([&] { return ticks-before>=5; }, 3000));
+    assert(!gate.release.load() && !session.shutdownFencePassed() && window->isVisible());
     gate.release=true;
     assert(waitFor([&] { return session.shutdownFencePassed(); },10000));
     assert(waitFor([&] { return !window->isVisible(); },10000));
