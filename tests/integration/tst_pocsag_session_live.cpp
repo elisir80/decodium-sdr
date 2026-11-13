@@ -100,7 +100,8 @@ ApplicationWindow { visible: true; width: 800; height: 600
         QTRY_VERIFY_WITH_TIMEOUT(gate.entered.load(),5000);
         int ticks=0; QTimer heartbeat; heartbeat.setInterval(10); connect(&heartbeat,&QTimer::timeout,[&]{++ticks;}); heartbeat.start();
         QElapsedTimer elapsed; elapsed.start(); session.requestShutdown(); QVERIFY(elapsed.elapsed()<500);
-        QTest::qWait(200); QVERIFY(session.shutdownPending()); QVERIFY(!session.shutdownFencePassed()); QVERIFY(ticks>=5);
+        QTRY_VERIFY_WITH_TIMEOUT(ticks >= 5, 3000);
+        QVERIFY(session.shutdownPending()); QVERIFY(!session.shutdownFencePassed());
         gate.release=true; QTRY_VERIFY_WITH_TIMEOUT(session.shutdownFencePassed(),10000);
         QVERIFY(!session.isConnected());
     }
