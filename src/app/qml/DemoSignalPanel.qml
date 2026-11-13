@@ -94,6 +94,6 @@ PanelFrame {
         Label { text: qsTr("Ampiezza impulso") }
         TextField { id: impulse; Layout.fillWidth: true; validator: DoubleValidator { bottom: 0; top: 1; notation: DoubleValidator.StandardNotation; locale: "C" } }
     }
-    Text { text: root.errorText; visible: text.length > 0; color: "#e36b6b"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+    Text { text: root.errorText; visible: text.length > 0; color: Theme.demoSignalError; wrapMode: Text.Wrap; Layout.fillWidth: true }
     DsdrButton { objectName: "syntheticApply"; text: qsTr("Applica / Ripeti"); onClicked: root.apply() }
 }

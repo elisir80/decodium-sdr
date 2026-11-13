@@ -85,9 +85,9 @@ Dialog {
                             onPaint: {
                                 const ctx = getContext("2d")
                                 ctx.clearRect(0, 0, width, height)
-                                ctx.fillStyle = "#0a111a"; ctx.fillRect(0, 0, width, height)
+                                ctx.fillStyle = Theme.iqAnalysisBackground; ctx.fillRect(0, 0, width, height)
                                 if (!bins.length) return
-                                ctx.strokeStyle = "#63cbe3"; ctx.lineWidth = 1
+                                ctx.strokeStyle = Theme.iqAnalysisTrace; ctx.lineWidth = 1
                                 ctx.beginPath()
                                 const columns = Math.max(1, Math.floor(width))
                                 for (let x = 0; x < columns; ++x) {

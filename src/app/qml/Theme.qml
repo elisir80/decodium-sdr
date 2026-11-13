@@ -27,6 +27,9 @@ QtObject {
     readonly property color success: "#81C784"
     readonly property color warning: "#FFB34D"
     readonly property color danger: "#E57373"
+    readonly property color demoSignalError: "#e36b6b"
+    readonly property color iqAnalysisBackground: "#0a111a"
+    readonly property color iqAnalysisTrace: "#63cbe3"
     readonly property color transmit: "#FF5252"
 
     // ── Spettro ──────────────────────────────────────────────────────────
