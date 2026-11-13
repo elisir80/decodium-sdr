@@ -81,8 +81,10 @@ SdrppServerMockServer::SdrppServerMockServer(QObject *parent)
                 QByteArray &pending = m_pending[socket];
                 pending.append(socket->readAll());
                 while (pending.size() >= static_cast<int>(kHeaderSize)) {
-                    const quint32 type = qFromLittleEndian<quint32>(pending.constData());
-                    const quint32 size = qFromLittleEndian<quint32>(pending.constData() + 4);
+                    char header[8];
+                    std::memcpy(header, pending.constData(), sizeof(header));
+                    const quint32 type = qFromLittleEndian<quint32>(header);
+                    const quint32 size = qFromLittleEndian<quint32>(header + 4);
                     if (size < kHeaderSize || size > 1'000'000 || pending.size() < size)
                         return;
                     const QByteArray body = pending.mid(static_cast<int>(kHeaderSize),
@@ -119,7 +121,9 @@ void SdrppServerMockServer::handlePacket(QTcpSocket *socket, quint32 type, const
 {
     if (type != kPacketCommand || body.size() < static_cast<int>(kCommandHeaderSize))
         return;
-    const quint32 command = qFromLittleEndian<quint32>(body.constData());
+    char commandBytes[4];
+    std::memcpy(commandBytes, body.constData(), sizeof(commandBytes));
+    const quint32 command = qFromLittleEndian<quint32>(commandBytes);
     const QByteArray payload = body.mid(static_cast<int>(kCommandHeaderSize));
     if (command == kCommandGetUi) {
         sendPacket(socket, kPacketCommandAck, body.left(static_cast<int>(kCommandHeaderSize)));
