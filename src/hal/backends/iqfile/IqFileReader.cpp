@@ -78,23 +78,25 @@ bool IqFileReader::parseHeader(QFile &file, RecordingInfo &info, qint64 &dataOff
         const qint64 chunkStart = file.pos();
 
         if (std::memcmp(header, "ds64", 4) == 0) {
-            QByteArray body = file.read(std::min<quint32>(declared, 28));
-            if (body.size() >= 16)
-                ds64DataBytes = readU64(body.constData() + 8);
+            char body[28]{};
+            const qint64 size = file.read(body, std::min<quint32>(declared, sizeof(body)));
+            if (size >= 16)
+                ds64DataBytes = readU64(body + 8);
         } else if (std::memcmp(header, "fmt ", 4) == 0) {
-            QByteArray body = file.read(std::min<quint32>(declared, 40));
-            if (body.size() < 16)
+            char body[40]{};
+            const qint64 size = file.read(body, std::min<quint32>(declared, sizeof(body)));
+            if (size < 16)
                 return fail(QObject::tr("Chunk fmt incompleto."));
 
-            quint16 tag = readU16(body.constData());
-            channels = readU16(body.constData() + 2);
-            info.sampleRate = readU32(body.constData() + 4);
-            const quint16 bits = readU16(body.constData() + 14);
+            quint16 tag = readU16(body);
+            channels = readU16(body + 2);
+            info.sampleRate = readU32(body + 4);
+            const quint16 bits = readU16(body + 14);
 
             // WAVE_FORMAT_EXTENSIBLE incapsula il formato vero nel GUID; ne
             // bastano i primi due byte, che replicano il tag classico.
-            if (tag == kFormatExtensible && body.size() >= 26)
-                tag = readU16(body.constData() + 24);
+            if (tag == kFormatExtensible && size >= 26)
+                tag = readU16(body + 24);
 
             if (tag == kFormatIeeeFloat && bits == 32) {
                 info.format = SampleFormat::Float32;
