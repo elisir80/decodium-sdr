@@ -12,13 +12,15 @@ bool NavtexController::enabled() const { return m_receiver && m_receiver->enable
 void NavtexController::setEnabled(bool v) { if(!m_receiver || enabled()==v) return; m_receiver->setEnabled(v); poll(); emit changed(); }
 int NavtexController::selectedChannel() const { return m_receiver?m_receiver->selectedChannel():-1; }
 void NavtexController::selectChannel(int id) {
-    if(!m_receiver) return; bool found=false;
+    if (!m_receiver) return;
+    bool found = false;
     for(const auto& e:m_channels) if(e.toMap().value("id").toInt()==id) found=true;
     const int next=found?id:-1; if(next==selectedChannel()) return;
     m_receiver->selectChannel(next); poll(); emit changed();
 }
 void NavtexController::setChannels(const QVariantList& c) {
-    if(m_channels==c) return; m_channels=c; bool found=false;
+    if (m_channels == c) return;
+    m_channels = c; bool found = false;
     for(const auto& e:c) if(e.toMap().value("id").toInt()==selectedChannel()) found=true;
     if(!found && m_receiver) m_receiver->selectChannel(-1);
     emit channelsChanged(); emit changed();
@@ -36,7 +38,8 @@ QString NavtexController::status() const {
 qulonglong NavtexController::droppedBlocks() const { return m_receiver?m_receiver->stats().droppedBlocks:m_blocks; }
 qulonglong NavtexController::droppedMessages() const { return m_receiver?m_receiver->droppedMessages():m_dropped; }
 void NavtexController::poll() {
-    if(!m_receiver) return; bool dirty=false;
+    if (!m_receiver) return;
+    bool dirty = false;
     auto g=m_receiver->generation(); if(g!=m_generation) { m_generation=g; clear(); dirty=true; }
     NavtexReceiver::Message m; unsigned accepted=0;
     for(int i=0;i<32;++i) {

@@ -13,7 +13,8 @@ void AcarsReceiver::start() { if(m_running.load()) return; discontinuity(); m_as
 void AcarsReceiver::stop() noexcept { if(!m_running.exchange(false)) return; discontinuity(); m_async.stop(false); }
 void AcarsReceiver::discontinuity() noexcept { m_generation.fetch_add(1); }
 void AcarsReceiver::setEnabled(bool v) noexcept {
-    if(m_enabled.load()==v) return; m_updating.store(true); discontinuity(); m_enabled.store(v); discontinuity(); m_updating.store(false);
+    if (m_enabled.load() == v) return;
+    m_updating.store(true); discontinuity(); m_enabled.store(v); discontinuity(); m_updating.store(false);
 }
 void AcarsReceiver::setSource(bool p,double rate,double offset) noexcept {
     if(m_present.load()==p && m_rate.load()==rate && m_offset.load()==offset) return;
