@@ -78,7 +78,8 @@ int main() {
     std::vector<float> silence(144000,0); q.processAudio(silence.data(),silence.size());
     check(!quiet.empty(),"silence windows"); for (auto r:quiet) check(!r.valid,"silence invalid");
     q.reset(); quiet.clear(); std::mt19937 rng(19); std::normal_distribution<float> noise(0,0.05);
-    for (auto& x:silence) x=noise(rng); q.processAudio(silence.data(),silence.size());
+    for (auto& x : silence) x = noise(rng);
+    q.processAudio(silence.data(), silence.size());
     for (auto r:quiet) check(!r.valid,"noise invalid");
     for(unsigned seed=0;seed<12;++seed) {
         q.reset(); quiet.clear(); std::mt19937 noiseRng(seed);
