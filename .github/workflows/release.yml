@@ -479,8 +479,7 @@ jobs:
           cp -R "$APP" dmgroot/
           ln -s /Applications dmgroot/Applications
 
-          hdiutil create -volname "DECODIUM SDR" -srcfolder dmgroot \
-            -ov -format UDZO "${{ matrix.artifact }}"
+          bash scripts/create-macos-dmg.sh dmgroot "${{ matrix.artifact }}"
 
           # Il DMG non è firmato né notarizzato: serve un Developer ID, che è
           # un passo amministrativo, non tecnico. Fino ad allora macOS
