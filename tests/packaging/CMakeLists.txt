@@ -17,3 +17,10 @@ add_test(NAME tst_onair_install_notices
         -DDSDR_APPLE=${APPLE}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tst_onair_install_notices.cmake)
 set_tests_properties(tst_onair_install_notices PROPERTIES RUN_SERIAL TRUE TIMEOUT 30)
+
+find_program(DSDR_TEST_BASH bash)
+if(DSDR_TEST_BASH)
+    add_test(NAME tst_windows_package_dependencies
+        COMMAND ${DSDR_TEST_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/test_windows_dependencies.sh ${CMAKE_SOURCE_DIR})
+    set_tests_properties(tst_windows_package_dependencies PROPERTIES TIMEOUT 30)
+endif()

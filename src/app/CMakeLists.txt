@@ -452,16 +452,16 @@ if(DSDR_BUNDLE_HAMLIB)
         # `applicationDirPath()` lo trova prima del PATH di sistema.
         install(PROGRAMS "${DSDR_RIGCTLD_EXECUTABLE}" DESTINATION bin)
         if(WIN32)
-            # Il bridge Hamlib distribuisce anche libusb, ma Soapy e RTL-SDR
-            # ne usano già una dal runtime MSYS2. Copiarle entrambe nello
-            # staging rende ambiguo il grafo di dipendenze di CMake e può
-            # perfino far scegliere una DLL diversa a rigctld. Installiamo
-            # soltanto Hamlib: il resolver qui sotto aggiunge l'unica
-            # libusb-1.0.dll comune all'intero pacchetto.
+            # Without Soapy there is no MSYS2 libusb to resolve. Bundle the
+            # libusb shipped beside the pinned Hamlib runtime in that case.
             get_filename_component(DSDR_RIGCTLD_DIRECTORY
                                    "${DSDR_RIGCTLD_EXECUTABLE}" DIRECTORY)
             set(DSDR_WINDOWS_HAMLIB_DLLS)
-            foreach(dsdr_hamlib_dll libhamlib-4.dll)
+            set(dsdr_hamlib_runtime_names libhamlib-4.dll)
+            if(NOT DSDR_BACKEND_SOAPY)
+                list(APPEND dsdr_hamlib_runtime_names libusb-1.0.dll)
+            endif()
+            foreach(dsdr_hamlib_dll IN LISTS dsdr_hamlib_runtime_names)
                 set(dsdr_hamlib_dll_path
                     "${DSDR_RIGCTLD_DIRECTORY}/${dsdr_hamlib_dll}")
                 if(NOT EXISTS "${dsdr_hamlib_dll_path}")

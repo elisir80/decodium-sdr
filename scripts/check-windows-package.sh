@@ -41,7 +41,7 @@ SYSTEM_DLLS="
 advapi32 authz avrt bcrypt cfgmgr32 comctl32 comdlg32 crypt32 cryptsp d2d1
 d3d9 d3d11 d3d12 dbghelp dcomp dnsapi dsound dwmapi dwrite dxgi dxva2 evr
 gdi32 hid imm32 iphlpapi kernel32 ksuser mf mfplat mfreadwrite mfuuid mpr
-msvcrt ncrypt netapi32 normaliz ntdll ole32 oleacc oleaut32 opengl32 pdh
+mscms msvcrt ncrypt netapi32 normaliz ntdll ole32 oleacc oleaut32 opengl32 pdh
 powrprof propsys psapi rpcrt4 secur32 setupapi shcore shell32 shlwapi
 synchronization uiautomationcore urlmon user32 userenv usp10 uxtheme version
 win32u windowscodecs winhttp wininet winmm winspool wintrust ws2_32 wsock32
@@ -66,7 +66,7 @@ lower() { tr 'A-Z' 'a-z'; }
 # Tutte le DLL del pacchetto. Windows cerca le dipendenze nella directory
 # dell'eseguibile, quindi è bin/ che conta; le altre si elencano lo stesso,
 # perché una DLL fuori posto è un difetto diverso ma pur sempre un difetto.
-present=$(find "$ROOT" -type f -iname "*.dll" -printf "%f\n" | lower | sort -u)
+present=$(find "$ROOT" -type f -iname "*.dll" -exec basename {} \; | lower | sort -u)
 
 missing_report=""
 exit_code=0
