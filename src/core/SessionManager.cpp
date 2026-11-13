@@ -4,6 +4,8 @@
 #include "audio/AudioRouter.h"
 #include "audio/NetworkAudioSink.h"
 #include "core/DspEngine.h"
+#include "core/AprsReceiver.h"
+#include "core/AisReceiver.h"
 #include "core/TxEngine.h"
 #include "core/BandConditions.h"
 #include "core/TxProfiles.h"
@@ -31,6 +33,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 Q_LOGGING_CATEGORY(dsdrCore, "dsdr.core")
 
@@ -141,7 +144,15 @@ bool demodModeFromRigctl(const QString &value, DemodMode &mode)
 
 } // namespace
 
-SessionManager::SessionManager(QObject *parent)
+SessionManager::SessionManager(QObject *parent, std::unique_ptr<AisReceiver> injectedAis,
+                               std::unique_ptr<PocsagReceiver> injectedPocsag,
+                               std::unique_ptr<AcarsReceiver> injectedAcars,
+                               std::unique_ptr<VorAsyncReceiver> injectedVor,
+                               std::unique_ptr<SelcalReceiver> injectedSelcal,
+                               std::unique_ptr<DscReceiver> injectedDsc,
+                               std::unique_ptr<NavtexReceiver> injectedNavtex,
+                               std::unique_ptr<AdsbReceiver> injectedAdsb,
+                               std::unique_ptr<AprsReceiver> injectedAprs)
     : QObject(parent)
     , m_audio(new audio::AudioRouter(this))
     , m_scanTimer(this)
@@ -156,7 +167,209 @@ SessionManager::SessionManager(QObject *parent)
     // Il DSP vive su un thread proprio per tutta la durata della sessione:
     // crearlo e distruggerlo a ogni connessione moltiplicherebbe le occasioni
     // di sbagliare la sincronizzazione.
-    m_engine = new DspEngine;
+    auto adsbReceiver = injectedAdsb ? std::move(injectedAdsb) : std::make_unique<AdsbReceiver>();
+    auto aprsReceiver = injectedAprs ? std::move(injectedAprs) : std::make_unique<AprsReceiver>();
+    m_engine = new DspEngine(nullptr, {}, adsbReceiver.get(), aprsReceiver.get());
+    m_adsb = new AdsbController(m_engine->adsbReceiver(), this);
+    auto aisReceiver = injectedAis ? std::move(injectedAis) : std::make_unique<AisReceiver>();
+    m_aisReceiver = aisReceiver.get();
+    DecoderShutdown::Resources aisResources;
+    aisResources.push_back(DecoderShutdown::own(std::move(aprsReceiver)));
+    aisResources.push_back(DecoderShutdown::own(std::move(adsbReceiver)));
+    aisResources.push_back(DecoderShutdown::own(std::move(aisReceiver)));
+    auto pocsagReceiver = injectedPocsag ? std::move(injectedPocsag) : std::make_unique<PocsagReceiver>();
+    m_pocsagReceiver = pocsagReceiver.get();
+    aisResources.push_back(DecoderShutdown::own(std::move(pocsagReceiver)));
+    auto acarsReceiver = injectedAcars ? std::move(injectedAcars) : std::make_unique<AcarsReceiver>();
+    m_acarsReceiver = acarsReceiver.get();
+    aisResources.push_back(DecoderShutdown::own(std::move(acarsReceiver)));
+    auto vorReceiver=injectedVor ? std::move(injectedVor) : std::make_unique<VorAsyncReceiver>();
+    m_vorReceiver=vorReceiver.get();
+    aisResources.push_back(DecoderShutdown::own(std::move(vorReceiver)));
+    auto selcalReceiver=injectedSelcal ? std::move(injectedSelcal) : std::make_unique<SelcalReceiver>();
+    m_selcalReceiver=selcalReceiver.get();
+    aisResources.push_back(DecoderShutdown::own(std::move(selcalReceiver)));
+    auto dscReceiver=injectedDsc ? std::move(injectedDsc) : std::make_unique<DscReceiver>();
+    m_dscReceiver=dscReceiver.get();
+    aisResources.push_back(DecoderShutdown::own(std::move(dscReceiver)));
+    auto navtexReceiver=injectedNavtex ? std::move(injectedNavtex) : std::make_unique<NavtexReceiver>();
+    m_navtexReceiver=navtexReceiver.get();
+    aisResources.push_back(DecoderShutdown::own(std::move(navtexReceiver)));
+    m_aisShutdown = std::make_unique<DecoderShutdown>(std::move(aisResources));
+    m_aisReceiver->start();
+    m_engine->attachAisReceiver(m_aisReceiver);
+    m_ais = new AisController(m_aisReceiver, this);
+    m_pocsagReceiver->startManaged();
+    m_engine->attachPocsagReceiver(m_pocsagReceiver);
+    m_pocsag = new PocsagController(m_pocsagReceiver, this);
+    m_acarsReceiver->start();
+    m_engine->attachAcarsReceiver(m_acarsReceiver);
+    m_acars = new AcarsController(m_acarsReceiver, this);
+    m_vorReceiver->configure(VorAsyncReceiver::Input::FilteredIq,48000);
+    m_vorReceiver->start();
+    m_engine->attachVorReceiver(m_vorReceiver);
+    m_vor=new VorController(m_vorReceiver,this);
+    m_selcalReceiver->start(); m_engine->attachSelcalReceiver(m_selcalReceiver);
+    m_selcal=new SelcalController(m_selcalReceiver,this);
+    m_dscReceiver->start(); m_engine->attachDscReceiver(m_dscReceiver);
+    m_dsc=new DscController(m_dscReceiver,this);
+    m_navtexReceiver->start(); m_engine->attachNavtexReceiver(m_navtexReceiver);
+    m_navtex=new NavtexController(m_navtexReceiver,this);
+    const auto refreshVorSource=[this] {
+        if(!m_vor || !m_vorReceiver || m_shutdownPending) return;
+        const double rate=m_sampleRate, offset=double(m_vor->frequencyHz()-m_centerFrequency);
+        const bool validRate=std::isfinite(rate) && rate>=VorEngineTap::MinInputRate && rate<=VorEngineTap::MaxInputRate &&
+            std::abs(rate-std::round(rate))<0.01;
+        const bool valid=m_connected && m_capabilities.clientDemod() && m_vor->input()==1 && m_vor->frequencyHz()>0 &&
+            validRate && std::abs(offset)+15000<rate/2;
+        m_engine->setVorConfiguration(m_vor->enabled() && valid,m_vor->frequencyHz());
+        m_vor->setActive(m_vor->enabled() && valid);
+    };
+    connect(m_vor,&VorController::configurationRequested,this,[refreshVorSource](bool,int) { refreshVorSource(); });
+    connect(this,&SessionManager::connectionChanged,this,refreshVorSource);
+    connect(this,&SessionManager::sampleRateChanged,this,refreshVorSource);
+    connect(this,&SessionManager::centerFrequencyChanged,this,refreshVorSource);
+    refreshVorSource();
+    const auto refreshAcarsSource = [this] {
+        if (!m_acars || !m_acarsReceiver || m_shutdownPending) return;
+        const bool present=m_connected && m_capabilities.clientDemod() && m_acars->frequencyHz()>0;
+        m_acarsReceiver->setSource(present,m_sampleRate,double(m_acars->frequencyHz()-m_centerFrequency));
+        m_acars->poll();
+    };
+    connect(m_acars,&AcarsController::frequencyChanged,this,refreshAcarsSource);
+    connect(this,&SessionManager::connectionChanged,this,refreshAcarsSource);
+    connect(this,&SessionManager::sampleRateChanged,this,refreshAcarsSource);
+    connect(this,&SessionManager::centerFrequencyChanged,this,refreshAcarsSource);
+    refreshAcarsSource();
+    const auto refreshPocsagSource = [this] {
+        if (!m_pocsag || !m_pocsagReceiver || m_shutdownPending) return;
+        const double rate=m_sampleRate;
+        const bool present=m_connected && m_capabilities.clientDemod() && m_pocsag->frequencyHz()>0 && std::isfinite(rate) && rate>0 && rate<=2000000;
+        const auto sampleRate=present ? unsigned(std::lround(rate)) : 0u;
+        const double offset=double(m_pocsag->frequencyHz()-m_centerFrequency);
+        m_pocsagReceiver->configureManaged(sampleRate,unsigned(m_pocsag->baud()),offset);
+        m_pocsagReceiver->setManagedEnabled(m_pocsag->enabled());
+    };
+    connect(m_pocsag, &PocsagController::configurationRequested, this, [refreshPocsagSource](int, qint64) { refreshPocsagSource(); });
+    connect(m_pocsag, &PocsagController::enabledRequested, this, [refreshPocsagSource](bool) { refreshPocsagSource(); });
+    connect(this, &SessionManager::connectionChanged, this, refreshPocsagSource);
+    connect(this, &SessionManager::sampleRateChanged, this, refreshPocsagSource);
+    connect(this, &SessionManager::centerFrequencyChanged, this, refreshPocsagSource);
+    auto *pocsagStatusTimer=new QTimer(this);
+    pocsagStatusTimer->setInterval(100);
+    connect(pocsagStatusTimer,&QTimer::timeout,this,[this] {
+        if (m_pocsag && m_pocsagReceiver)
+            m_pocsag->setActive(m_pocsagReceiver->managedStatus()==PocsagReceiver::ManagedStatus::Active);
+    });
+    pocsagStatusTimer->start();
+    refreshPocsagSource();
+    m_aisShutdownTimer = new QTimer(this);
+    m_aisShutdownTimer->setInterval(20);
+    connect(m_aisShutdownTimer, &QTimer::timeout, this, &SessionManager::finishAisShutdownIfReady);
+    const auto refreshAisSource = [this] {
+        if (!m_ais || !m_aisReceiver || m_shutdownPending) return;
+        const qint64 frequency = m_ais->channel() == 0 ? 161975000 : 162025000;
+        m_engine->setAisFrequency(frequency);
+        const double inputRate = m_sampleRate;
+        const bool validRate = std::isfinite(inputRate) && inputRate >= 48000 && inputRate <= 2400000;
+        const unsigned roundedRate = validRate ? unsigned(std::lround(inputRate)) : 0;
+        const unsigned factor = validRate ? std::max(1u, roundedRate / 48000) : 1;
+        const double outputRate = validRate ? double(roundedRate) / factor : 0;
+        const bool inBand = validRate && std::abs(double(frequency-m_centerFrequency)) <= inputRate/2-15000;
+        m_aisReceiver->setSource(m_connected && m_capabilities.clientDemod(), outputRate, 0, inBand);
+        m_ais->poll();
+    };
+    connect(m_ais, &AisController::channelChanged, this, refreshAisSource);
+    connect(this, &SessionManager::connectionChanged, this, refreshAisSource);
+    connect(this, &SessionManager::sampleRateChanged, this, refreshAisSource);
+    connect(this, &SessionManager::centerFrequencyChanged, this, refreshAisSource);
+    refreshAisSource();
+    // The engine owns the receiver; the UI controller is destroyed first.
+    m_aprsReceiver = m_engine->aprsReceiver();
+    m_aprs = new AprsController(m_aprsReceiver, this);
+    const auto refreshAprsChannels = [this] {
+        if (!m_aprs) return;
+        QVariantList channels;
+        for (int row = 0; row < m_channels.rowCount(); ++row) {
+            const auto *entry = m_channels.at(row);
+            if (!entry || entry->settings.mode != DemodMode::Nfm) continue;
+            channels.push_back(QVariantMap{{QStringLiteral("id"), int(entry->id)},
+                                           {QStringLiteral("label"), entry->label}});
+        }
+        m_aprs->setChannels(channels);
+        const int selected = m_aprs->selectedChannel();
+        if (selected >= 0) {
+            const int row = m_channels.indexOf(ChannelId(selected));
+            const auto *entry = row >= 0 ? m_channels.at(row) : nullptr;
+            m_aprsReceiver->setChannelState(selected,
+                m_connected && m_capabilities.clientDemod() && entry,
+                entry && entry->settings.mode == DemodMode::Nfm, kInternalAudioRate);
+        }
+    };
+    connect(m_aprs, &AprsController::changed, this, refreshAprsChannels);
+    connect(this, &SessionManager::connectionChanged, this, refreshAprsChannels);
+    connect(&m_channels, &QAbstractItemModel::rowsInserted, this, refreshAprsChannels);
+    connect(&m_channels, &QAbstractItemModel::rowsRemoved, this, refreshAprsChannels);
+    connect(&m_channels, &QAbstractItemModel::modelReset, this, refreshAprsChannels);
+    connect(&m_channels, &QAbstractItemModel::dataChanged, this, refreshAprsChannels);
+    refreshAprsChannels();
+    const auto refreshSelcalChannels=[this] {
+        if(!m_selcal) return;
+        QVariantList channels;
+        for(int row=0;row<m_channels.rowCount();++row) {
+            const auto *entry=m_channels.at(row); if(!entry) continue;
+            const auto mode=entry->settings.mode;
+            if(mode!=DemodMode::Am && mode!=DemodMode::Sam && mode!=DemodMode::Usb && mode!=DemodMode::Lsb) continue;
+            channels.push_back(QVariantMap{{QStringLiteral("id"),int(entry->id)},{QStringLiteral("label"),entry->label}});
+        }
+        m_selcal->setChannels(channels);
+        m_selcal->setSourcePresent(m_connected && m_capabilities.clientDemod() && m_selcal->selectedChannel()>=0);
+    };
+    connect(m_selcal,&SelcalController::changed,this,refreshSelcalChannels);
+    connect(this,&SessionManager::connectionChanged,this,refreshSelcalChannels);
+    connect(&m_channels,&QAbstractItemModel::rowsInserted,this,refreshSelcalChannels);
+    connect(&m_channels,&QAbstractItemModel::rowsRemoved,this,refreshSelcalChannels);
+    connect(&m_channels,&QAbstractItemModel::modelReset,this,refreshSelcalChannels);
+    connect(&m_channels,&QAbstractItemModel::dataChanged,this,refreshSelcalChannels);
+    refreshSelcalChannels();
+    const auto refreshDscChannels=[this] {
+        if(!m_dsc) return;
+        QVariantList channels;
+        for(int row=0;row<m_channels.rowCount();++row) {
+            const auto* entry=m_channels.at(row); if(!entry) continue;
+            const auto mode=entry->settings.mode;
+            if(mode!=DemodMode::Usb && mode!=DemodMode::Lsb) continue;
+            channels.push_back(QVariantMap{{QStringLiteral("id"),int(entry->id)},{QStringLiteral("label"),entry->label}});
+        }
+        m_dsc->setChannels(channels);
+        m_dsc->setSourcePresent(m_connected && m_capabilities.clientDemod() && m_dsc->selectedChannel()>=0);
+    };
+    connect(m_dsc,&DscController::changed,this,refreshDscChannels);
+    connect(this,&SessionManager::connectionChanged,this,refreshDscChannels);
+    connect(&m_channels,&QAbstractItemModel::rowsInserted,this,refreshDscChannels);
+    connect(&m_channels,&QAbstractItemModel::rowsRemoved,this,refreshDscChannels);
+    connect(&m_channels,&QAbstractItemModel::modelReset,this,refreshDscChannels);
+    connect(&m_channels,&QAbstractItemModel::dataChanged,this,refreshDscChannels);
+    refreshDscChannels();
+    const auto refreshNavtexChannels=[this] {
+        if(!m_navtex) return;
+        QVariantList channels;
+        for(int row=0;row<m_channels.rowCount();++row) {
+            const auto* entry=m_channels.at(row); if(!entry) continue;
+            const auto mode=entry->settings.mode;
+            if(mode!=DemodMode::Usb && mode!=DemodMode::Lsb) continue;
+            channels.push_back(QVariantMap{{QStringLiteral("id"),int(entry->id)},{QStringLiteral("label"),entry->label}});
+        }
+        m_navtex->setChannels(channels);
+        m_navtex->setSourcePresent(m_connected && m_capabilities.clientDemod() && m_navtex->selectedChannel()>=0);
+    };
+    connect(m_navtex,&NavtexController::changed,this,refreshNavtexChannels);
+    connect(this,&SessionManager::connectionChanged,this,refreshNavtexChannels);
+    connect(&m_channels,&QAbstractItemModel::rowsInserted,this,refreshNavtexChannels);
+    connect(&m_channels,&QAbstractItemModel::rowsRemoved,this,refreshNavtexChannels);
+    connect(&m_channels,&QAbstractItemModel::modelReset,this,refreshNavtexChannels);
+    connect(&m_channels,&QAbstractItemModel::dataChanged,this,refreshNavtexChannels);
+    refreshNavtexChannels();
     m_dspThread = new QThread(this);
     m_dspThread->setObjectName(QStringLiteral("dsdr-dsp"));
     m_engine->moveToThread(m_dspThread);
@@ -288,17 +501,48 @@ SessionManager::SessionManager(QObject *parent)
                 if (!m_scanning || m_scanRow < 0)
                     return;
                 const ChannelEntry *entry = m_channels.at(m_scanRow);
+                if (m_priorityScan && entry && entry->id == id
+                    && entry->frequencyHz == m_scanFrequency
+                    && m_scanClock.elapsed() - m_scanTunedAt >= m_scanTimer.interval() / 2
+                    && signalDb >= m_scanThresholdDb) {
+                    if (m_scanProbe)
+                        m_scanProbeSawSignal = true;
+                    else {
+                        m_scanHolding = true;
+                        m_scanLastStrongAt = m_scanClock.elapsed();
+                        const QString state = m_scanFrequency == m_scanPriority
+                            ? tr("Ascolto prioritario") : tr("Ascolto segnale");
+                        if (m_priorityScanState != state) {
+                            m_priorityScanState = state;
+                            emit priorityScanStateChanged();
+                        }
+                    }
+                }
                 if (!entry || entry->id != id || signalDb < m_scanThresholdDb
                     || entry->frequencyHz != m_scanFrequency
+                    || (m_priorityScan && m_scanClock.elapsed() - m_scanTunedAt
+                                                < m_scanTimer.interval() / 2)
                     || m_scanLastHit == m_scanFrequency)
                     return;
 
                 QVariantMap result;
                 result.insert(QStringLiteral("frequencyHz"), m_scanFrequency);
                 result.insert(QStringLiteral("signalDb"), signalDb);
-                m_scanResults.append(result);
+                bool alreadyRecorded = false;
+                if (m_priorityScan) {
+                    for (const QVariant &item : std::as_const(m_scanResults)) {
+                        if (item.toMap().value(QStringLiteral("frequencyHz")).toLongLong()
+                            == m_scanFrequency) {
+                            alreadyRecorded = true;
+                            break;
+                        }
+                    }
+                }
+                if (!alreadyRecorded)
+                    m_scanResults.append(result);
                 m_scanLastHit = m_scanFrequency;
-                emit scanResultsChanged();
+                if (!alreadyRecorded)
+                    emit scanResultsChanged();
                 qCInfo(dsdrCore) << "scanner: segnale a" << m_scanFrequency
                                  << "Hz" << signalDb << "dBFS";
             });
@@ -514,8 +758,206 @@ SessionManager::SessionManager(QObject *parent)
     startRigctl();
 }
 
+void SessionManager::requestShutdown()
+{
+    if (m_shutdownPending) return;
+    m_shutdownPending = true;
+    emit shutdownStateChanged();
+    // Keep the backend and its rings alive until both producers have fenced.
+    if (m_backend && m_backend->ptt()) {
+        m_backend->setPtt(false);
+        if (m_backend->ptt()) {
+            // No source or service has been detached yet: restore interaction
+            // so the operator can resolve the failure and retry safely.
+            m_shutdownPending = false;
+            setStatus(tr("Impossibile rilasciare il PTT: chiusura annullata, riprova."));
+            emit shutdownStateChanged();
+            return;
+        }
+    }
+    emit shutdownCommitted();
+    if (m_aprs) m_aprs->detach();
+    if (m_adsb) m_adsb->detach();
+    if (m_aisReceiver) m_aisReceiver->setEnabled(false);
+    if (m_ais) m_ais->detach();
+    if (m_pocsagReceiver) m_pocsagReceiver->setManagedEnabled(false);
+    if (m_pocsag) m_pocsag->detach();
+    if (m_acarsReceiver) m_acarsReceiver->setEnabled(false);
+    if (m_acars) m_acars->detach();
+    if (m_vor) m_vor->detach();
+    if (m_selcalReceiver) m_selcalReceiver->setEnabled(false);
+    if (m_selcal) m_selcal->detach();
+    if (m_dscReceiver) m_dscReceiver->setEnabled(false);
+    if (m_dsc) m_dsc->detach();
+    if (m_navtexReceiver) m_navtexReceiver->setEnabled(false);
+    if (m_navtex) m_navtex->detach();
+    if (m_engine) m_engine->setVorConfiguration(false,0);
+    if (m_aisShutdown) m_aisShutdown->request();
+    stopScan();
+    stopRigctl();
+    if (m_engine) m_engine->clearSource();
+    m_shutdownDspFenced = !m_engine;
+    m_shutdownTxFenced = !m_tx;
+    if (m_engine) {
+        connect(m_engine, &DspEngine::shutdownFenceReached, this, [this] {
+            m_shutdownDspFenced = true;
+            if (m_aisShutdown && !m_aisUsersFenced) { m_aisShutdown->acknowledgeUsersQuiescent(); m_aisUsersFenced = true; }
+            finishShutdownFences();
+        }, Qt::QueuedConnection);
+        auto *engine = m_engine;
+        QMetaObject::invokeMethod(engine, [engine] { engine->detachAisTap(); engine->detachVorTap(); emit engine->shutdownFenceReached(); }, Qt::QueuedConnection);
+    }
+    if (m_tx) {
+        connect(m_tx, &TxEngine::shutdownFenceReached, this, [this] {
+            m_shutdownTxFenced = true;
+            finishShutdownFences();
+        }, Qt::QueuedConnection);
+        auto *tx = m_tx;
+        QMetaObject::invokeMethod(tx, [tx] { tx->detach(); emit tx->shutdownFenceReached(); }, Qt::QueuedConnection);
+    }
+    if (!m_engine && m_aisShutdown && !m_aisUsersFenced) { m_aisShutdown->acknowledgeUsersQuiescent(); m_aisUsersFenced = true; }
+    finishShutdownFences();
+}
+void SessionManager::refreshBackendShutdown()
+{
+    if (!m_backendShutdown) return;
+    m_shutdownBackendMessage = m_backendShutdown->statusText();
+    m_shutdownBackendRetryAllowed = m_backendShutdown->retryAllowed();
+    if (m_backendShutdown->ready()) { m_shutdownBackendDone = true; finishAisShutdownIfReady(); }
+    emit shutdownStateChanged();
+}
+void SessionManager::retryBackendShutdown()
+{
+    if (!m_shutdownPending || !m_shutdownBackendRetryAllowed) return;
+    m_shutdownBackendRetryAllowed = false;
+    if (m_backendShutdown && m_backendShutdown->retryAllowed()) {
+        m_backendShutdown->retry();
+        refreshBackendShutdown();
+        return;
+    }
+    if (m_backend && m_backend->capabilities().auditedAsyncShutdownTransfer) {
+        finishShutdownFences();
+        return;
+    }
+    // Unaudited backend fallback remains synchronous on the GUI thread.
+    if (m_backend && m_backend->ptt()) m_backend->setPtt(false);
+    if (m_backend && !m_backend->ptt() && m_backend->isOpen()) m_backend->close();
+    if (m_backend && (m_backend->ptt() || m_backend->isOpen())) {
+        m_shutdownBackendMessage = tr("Radio ancora attiva. Verifica e riprova.");
+        m_shutdownBackendRetryAllowed = true;
+    } else {
+        m_shutdownBackendDone = true;
+        finishAisShutdownIfReady();
+    }
+    emit shutdownStateChanged();
+}
+void SessionManager::finishShutdownFences()
+{
+    if (!m_shutdownPending || m_shutdownFencePassed || !m_shutdownDspFenced || !m_shutdownTxFenced) return;
+    if (m_shutdownBackendDone) { finishAisShutdownIfReady(); return; }
+    if (m_backendShutdown && !m_backend) return; // asynchronous close still owns backend
+    if (!m_backend || !m_backend->capabilities().auditedAsyncShutdownTransfer) {
+        // Unaudited backends keep their existing synchronous shutdown path.
+        disconnectDevice();
+        if (m_backend && (m_backend->ptt() || m_backend->isOpen())) {
+            m_shutdownBackendMessage = tr("Radio ancora attiva. Verifica e riprova.");
+            m_shutdownBackendRetryAllowed = true;
+            emit shutdownStateChanged();
+            return;
+        }
+        m_shutdownBackendDone = true;
+        finishAisShutdownIfReady();
+        return;
+    }
+    // Stop GUI-owned audio/recorders and detach rings, but retain the backend
+    // until the audited worker has closed and destroyed it in its own thread.
+    m_deferBackendClose = true;
+    disconnectDevice();
+    m_deferBackendClose = false;
+    if (!m_backendShutdown) {
+        m_backendShutdown = new BackendShutdownViewModel(this);
+        connect(m_backendShutdown, &BackendShutdownViewModel::changed,
+                this, &SessionManager::refreshBackendShutdown);
+    }
+    auto *backend = m_backend;
+    QObject::disconnect(backend, nullptr, this, nullptr);
+    QObject::disconnect(backend, nullptr, m_engine, nullptr);
+    m_backend = nullptr;
+    const auto result = m_backendShutdown->beginForAuditedBackend(
+        backend, BackendShutdown::ChildPolicy::IndividuallyAuditedTree);
+    if (result != BackendShutdown::BeginResult::Accepted) {
+        // The helper leaves ownership and parent unchanged when it rejects.
+        m_backend = backend;
+        m_shutdownBackendMessage = tr("Impossibile trasferire la radio per la chiusura. Riprova.");
+        m_shutdownBackendRetryAllowed = true;
+        emit shutdownStateChanged();
+        return;
+    }
+    refreshBackendShutdown();
+}
+
+void SessionManager::finishAisShutdownIfReady()
+{
+    if (!m_shutdownPending || !m_shutdownBackendDone || !m_aisUsersFenced) return;
+    if (m_aisShutdown && !m_aisBackendFenced) {
+        // Backend has stopped; no direct IQ callback can still dereference AIS.
+        if (m_engine) m_engine->clearAisReceiver();
+        if (m_engine) m_engine->attachPocsagReceiver(nullptr);
+        if (m_engine) m_engine->attachAcarsReceiver(nullptr);
+        if (m_engine) m_engine->clearVorReceiver();
+        if (m_engine) m_engine->attachSelcalReceiver(nullptr);
+        if (m_engine) m_engine->attachDscReceiver(nullptr);
+        if (m_engine) m_engine->attachNavtexReceiver(nullptr);
+        if (m_engine) m_engine->clearAdsbReceiver();
+        if (m_engine) m_engine->replaceExternalAprsAfterFence();
+        m_aprsReceiver = nullptr;
+        m_aisReceiver = nullptr;
+        m_pocsagReceiver = nullptr;
+        m_acarsReceiver = nullptr;
+        m_vorReceiver = nullptr;
+        m_selcalReceiver = nullptr;
+        m_dscReceiver = nullptr;
+        m_navtexReceiver = nullptr;
+        m_aisShutdown->acknowledgeBackendStopped(); m_aisBackendFenced = true;
+    }
+    if (m_aisShutdown && !m_aisShutdown->readyToExit()) {
+        if (!m_aisShutdownTimer->isActive()) m_aisShutdownTimer->start();
+        return;
+    }
+    m_aisShutdownTimer->stop();
+    if (!m_shutdownFencePassed) { m_shutdownFencePassed = true; emit shutdownStateChanged(); }
+}
+
+void SessionManager::setExternalShutdownPending(bool pending)
+{
+    if (m_externalShutdownPending == pending) return;
+    m_externalShutdownPending = pending;
+    emit shutdownStateChanged();
+}
+
 SessionManager::~SessionManager()
 {
+    // In the normal UI path requestShutdown has already fenced AIS. A direct
+    // destructor is a safety fallback and may wait for existing DSP workers.
+    if (m_ais) m_ais->detach();
+    if (m_pocsag) m_pocsag->detach();
+    delete m_pocsag; m_pocsag = nullptr;
+    if (m_acars) m_acars->detach();
+    delete m_acars; m_acars = nullptr;
+    if (m_vor) m_vor->detach();
+    delete m_vor; m_vor = nullptr;
+    if (m_selcal) m_selcal->detach();
+    delete m_selcal; m_selcal = nullptr;
+    if (m_dsc) m_dsc->detach();
+    delete m_dsc; m_dsc = nullptr;
+    if (m_navtex) m_navtex->detach();
+    delete m_navtex; m_navtex = nullptr;
+    delete m_ais; m_ais = nullptr;
+    delete m_aprs;
+    m_aprs = nullptr;
+    m_aprsReceiver = nullptr;
+    delete m_adsb;
+    m_adsb = nullptr;
     // L'ultima cosa che si è regolata resta. Senza questo, chi passa mezz'ora
     // a sistemare la propria voce e poi chiude il programma la ritrova com'era
     // prima — e il profilo, che dovrebbe essere una memoria, diventa una tassa.
@@ -542,6 +984,16 @@ SessionManager::~SessionManager()
         m_dspThread->quit();
         m_dspThread->wait();
     }
+    // Engine and backend are now quiescent in this destructor fallback.
+    if (m_aisShutdown && !m_aisBackendFenced) {
+        m_aisShutdown->request(); m_aisShutdown->acknowledgeUsersQuiescent();
+        m_aisShutdown->acknowledgeBackendStopped(); m_aisBackendFenced = true;
+    }
+    m_aisReceiver = nullptr;
+    m_pocsagReceiver = nullptr;
+    m_acarsReceiver = nullptr;
+    m_vorReceiver = nullptr;
+    m_selcalReceiver = nullptr;
 }
 
 QVariantList SessionManager::availableBackends() const
@@ -1264,6 +1716,7 @@ void SessionManager::teardownBackend()
 
 void SessionManager::selectBackend(const QString &backendId)
 {
+    if (m_shutdownPending) return;
     if (m_backendId == backendId && m_backend)
         return;
 
@@ -1297,14 +1750,14 @@ void SessionManager::selectBackend(const QString &backendId)
                      << "sample rates:" << caps.sampleRates;
 
     connect(m_backend, &hal::IRadioBackend::deviceFound, this,
-            [this](const hal::DeviceDescriptor &device) {
+            [this](const hal::DeviceDescriptor &device) { if (m_shutdownPending) return;
                 qCDebug(dsdrCore) << "device trovato:" << device.displayName
                                   << "id:" << device.deviceId
                                   << "backend:" << device.backendId;
                 m_devices.addDevice(device);
             });
 
-    connect(m_backend, &hal::IRadioBackend::discoveryFinished, this, [this] {
+    connect(m_backend, &hal::IRadioBackend::discoveryFinished, this, [this] { if (m_shutdownPending) return;
         qCInfo(dsdrCore) << "discovery terminata, device:" << m_devices.rowCount();
         setDiscovering(false);
         setStatus(m_devices.rowCount() > 0
@@ -1313,18 +1766,20 @@ void SessionManager::selectBackend(const QString &backendId)
     });
 
     connect(m_backend, &hal::IRadioBackend::capabilitiesChanged, this,
-            [this] { m_capabilities.setCapabilities(m_backend->capabilities()); });
+            [this] { if (m_shutdownPending) return; m_capabilities.setCapabilities(m_backend->capabilities()); });
 
     connect(m_backend, &hal::IRadioBackend::errorOccurred, this, &SessionManager::onBackendError);
 
-    connect(m_backend, &hal::IRadioBackend::pttChanged, this, [this](bool transmit) {
+    connect(m_backend, &hal::IRadioBackend::pttChanged, this, [this](bool transmit) { if (m_shutdownPending) return;
+        if (transmit && m_priorityScan)
+            stopScan();
         if (m_transmitting == transmit)
             return;
         m_transmitting = transmit;
         emit transmittingChanged();
     });
 
-    connect(m_backend, &hal::IRadioBackend::centerFrequencyChanged, this, [this](qint64 hz) {
+    connect(m_backend, &hal::IRadioBackend::centerFrequencyChanged, this, [this](qint64 hz) { if (m_shutdownPending) return;
         if (m_centerFrequency == hz)
             return;
         m_centerFrequency = hz;
@@ -1353,6 +1808,7 @@ void SessionManager::selectBackend(const QString &backendId)
     // connessione. Il DSP deve seguire il rate effettivo, non restare su
     // quello provvisorio della schermata di discovery.
     connect(m_backend, &hal::IRadioBackend::sampleRateChanged, this, [this](double rate) {
+        if (m_shutdownPending) return;
         if (!(rate > 0.0) || qFuzzyCompare(m_sampleRate, rate))
             return;
         m_sampleRate = rate;
@@ -1371,7 +1827,7 @@ void SessionManager::selectBackend(const QString &backendId)
     });
 
     connect(m_backend, &hal::IRadioBackend::receiverStateChanged, this,
-            [this](qint64 frequencyHz, DemodMode mode) {
+            [this](qint64 frequencyHz, DemodMode mode) { if (m_shutdownPending) return;
                 // Il centro viene notificato anche separatamente. Qui si
                 // allinea il modo, che e' parte della posizione operativa
                 // del VFO e determina sia la catena DSP sia il lato IF.
@@ -1405,7 +1861,7 @@ void SessionManager::selectBackend(const QString &backendId)
     // torna lo stesso; ricavarla evita di dover aggiungere un campo che
     // nessuno riempirebbe.
     connect(m_backend, &hal::IRadioBackend::meterUpdate, this,
-            [this](const hal::MeterFrame &meters) {
+            [this](const hal::MeterFrame &meters) { if (m_shutdownPending) return;
                 const double swr = meters.swr >= 1.0 ? meters.swr : 1.0;
                 const double forward = meters.powerWatt >= 0.0 ? meters.powerWatt : 0.0;
                 const double rho = (swr - 1.0) / (swr + 1.0);
@@ -1454,6 +1910,7 @@ void SessionManager::selectBackend(const QString &backendId)
 
 void SessionManager::onBackendError(const hal::BackendError &error)
 {
+    if (m_shutdownPending) return;
     qCWarning(dsdrCore) << "backend error:" << error.message << error.detail;
     setStatus(error.message);
     emit errorReported(error.message, error.fatal);
@@ -1515,6 +1972,7 @@ void SessionManager::startDiscovery()
 
 void SessionManager::connectToDevice(int deviceRow)
 {
+    if (m_shutdownPending) return;
     if (!m_backend)
         return;
 
@@ -1671,7 +2129,7 @@ void SessionManager::disconnectDevice()
             if (const ChannelEntry *entry = m_channels.at(row))
                 m_backend->destroyRxChannel(entry->id);
         }
-        m_backend->close();
+        if (!m_deferBackendClose) m_backend->close();
     }
 
     if (m_engine) {
@@ -1700,6 +2158,7 @@ bool SessionManager::startScan(qint64 startHz, qint64 endHz, qint64 stepHz, int 
         return false;
 
     stopScan();
+    m_priorityScan = false;
     m_scanRow = m_channels.currentIndex();
     if (m_scanRow < 0)
         m_scanRow = 0;
@@ -1721,12 +2180,49 @@ bool SessionManager::startScan(qint64 startHz, qint64 endHz, qint64 stepHz, int 
     return true;
 }
 
+qint64 SessionManager::currentChannelFrequency() const
+{
+    const auto *entry = m_channels.at(m_channels.currentIndex());
+    return entry ? entry->frequencyHz : 0;
+}
+
+bool SessionManager::startPriorityScan(qint64 startHz, qint64 endHz, qint64 stepHz,
+                                       qint64 priorityHz, int dwellMs, double thresholdDb)
+{
+    if (m_transmitting || startHz <= 0 || endHz <= 0 || priorityHz <= 0 || stepHz <= 0
+        || !std::isfinite(thresholdDb) || thresholdDb < -140.0 || thresholdDb > 0.0)
+        return false;
+    const qint64 minimum = m_capabilities.minFrequency();
+    const qint64 maximum = m_capabilities.maxFrequency();
+    if (maximum > minimum
+        && (startHz < minimum || startHz > maximum || endHz < minimum || endHz > maximum
+            || priorityHz < minimum || priorityHz > maximum))
+        return false;
+    if (!startScan(startHz, endHz, stepHz, dwellMs))
+        return false;
+    m_priorityScan = true;
+    m_scanStart = std::min(startHz, endHz);
+    m_scanPriority = priorityHz;
+    m_scanThresholdDb = thresholdDb;
+    m_scanProbe = false;
+    m_scanHolding = false;
+    m_scanClock.start();
+    m_scanTunedAt = m_scanLastStrongAt = m_scanLastProbeAt = 0;
+    m_priorityScanState = tr("Scansione");
+    emit priorityScanStateChanged();
+    emit scanningChanged();
+    return true;
+}
+
 void SessionManager::stopScan()
 {
     if (!m_scanning && !m_scanTimer.isActive())
         return;
     m_scanTimer.stop();
     m_scanning = false;
+    m_priorityScan = false;
+    m_priorityScanState.clear();
+    emit priorityScanStateChanged();
     m_scanRow = -1;
     emit scanningChanged();
     qCInfo(dsdrCore) << "scanner arrestato, risultati:" << m_scanResults.size();
@@ -1736,6 +2232,61 @@ void SessionManager::advanceScan()
 {
     if (!m_scanning)
         return;
+
+    if (m_priorityScan) {
+        if (!m_channels.at(m_scanRow)) {
+            stopScan();
+            return;
+        }
+        const qint64 now = m_scanClock.elapsed();
+        const auto tune = [this, now](qint64 hz) {
+            m_scanFrequency = hz;
+            m_scanLastHit = -1;
+            m_scanTunedAt = now;
+            m_scanInternalTune = true;
+            setChannelFrequency(m_scanRow, hz);
+            m_scanInternalTune = false;
+        };
+        const auto state = [this](const QString &value) {
+            if (m_priorityScanState != value) {
+                m_priorityScanState = value;
+                emit priorityScanStateChanged();
+            }
+        };
+        if (m_scanProbe) {
+            m_scanProbe = false;
+            if (m_scanProbeSawSignal) {
+                m_scanHolding = true;
+                m_scanLastStrongAt = now;
+                state(tr("Ascolto prioritario"));
+            } else {
+                m_scanHolding = m_scanResumeHolding;
+                m_scanLastStrongAt = now;
+                tune(m_scanResumeFrequency);
+                state(m_scanHolding ? tr("Ascolto segnale") : tr("Scansione"));
+            }
+            return;
+        }
+        if (m_scanFrequency != m_scanPriority && now - m_scanLastProbeAt >= 2000) {
+            m_scanResumeFrequency = m_scanFrequency;
+            m_scanResumeHolding = m_scanHolding;
+            m_scanProbe = true;
+            m_scanProbeSawSignal = false;
+            m_scanLastProbeAt = now;
+            tune(m_scanPriority);
+            state(tr("Controllo priorità"));
+            return;
+        }
+        if (m_scanHolding && now - m_scanLastStrongAt < 1000)
+            return;
+        m_scanHolding = false;
+        state(tr("Scansione"));
+        const qint64 next = m_scanFrequency >= m_scanStart && m_scanFrequency <= m_scanEnd
+                            && m_scanStep <= m_scanEnd - m_scanFrequency
+            ? m_scanFrequency + m_scanStep : m_scanStart;
+        tune(next);
+        return;
+    }
 
     const qint64 next = m_scanFrequency + m_scanStep;
     if (next > m_scanEnd) {
@@ -2105,6 +2656,11 @@ void SessionManager::removeChannel(int row)
     if (!entry)
         return;
 
+    if (m_scanning && row == m_scanRow)
+        stopScan();
+    else if (m_scanning && row < m_scanRow)
+        --m_scanRow;
+
     const ChannelId id = entry->id;
     if (m_backend)
         m_backend->destroyRxChannel(id);
@@ -2161,6 +2717,8 @@ void SessionManager::setChannelFrequency(int row, qint64 hz)
     ChannelEntry *entry = m_channels.mutableAt(row);
     if (!entry || entry->frequencyHz == hz)
         return;
+    if (m_priorityScan && row == m_scanRow && !m_scanInternalTune)
+        stopScan();
 
     // Come il tuner di SDR++, quando un VFO viene portato vicino al bordo
     // della banda IQ spostiamo il centro del device per non lasciare il
@@ -3198,6 +3756,7 @@ void SessionManager::setChannelSquelch(int row, bool enabled, double thresholdDb
 
 void SessionManager::setPtt(bool transmit)
 {
+    if (m_shutdownPending && transmit) return;
     if (!m_backend)
         return;
     if (transmit && !m_capabilities.canTransmit()) {
@@ -3206,6 +3765,8 @@ void SessionManager::setPtt(bool transmit)
     }
 
     if (transmit) {
+        if (m_priorityScan)
+            stopScan();
         pushTxConfig();
         // Il microfono si apre solo mentre si trasmette. Tenerlo aperto
         // sempre farebbe comparire l'icona di registrazione del sistema per

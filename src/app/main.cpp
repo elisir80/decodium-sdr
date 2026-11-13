@@ -3,6 +3,9 @@
 
 #include "app/SessionSingleton.h"
 #include "core/SessionManager.h"
+#ifdef DSDR_VDL2_EXPERIMENT
+#include "core/Vdl2AppManager.h"
+#endif
 
 #include <QCommandLineParser>
 #include <QDir>
@@ -13,6 +16,7 @@
 #include <QIcon>
 #include <QLoggingCategory>
 #include <QQmlApplicationEngine>
+#include <QQmlContext>
 #include <QQuickStyle>
 #include <QSet>
 #include <QSettings>
@@ -220,6 +224,12 @@ int main(int argc, char *argv[])
         + QStringLiteral(DSDR_VERSION_NAME) + QStringLiteral("»"));
     QGuiApplication::setOrganizationName(QStringLiteral("DECODIUM"));
     QGuiApplication::setOrganizationDomain(QStringLiteral("decodium.it"));
+    // Explicit test override: do not touch a user's native settings in smoke tests.
+    const QString testSettingsDir = qEnvironmentVariable("DSDR_TEST_SETTINGS_DIR");
+    if (!testSettingsDir.isEmpty() && qEnvironmentVariableIntValue("DSDR_TEST_SILENT_AUDIO") == 1) {
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, testSettingsDir);
+    }
     repairInvalidSMeterCalibration();
 
     // La finestra e la barra delle applicazioni. Su Windows e macOS l'icona
@@ -301,6 +311,9 @@ int main(int argc, char *argv[])
             << "auto-connect" << parser.isSet(autoConnectOption);
 
     dsdr::core::SessionManager session;
+#ifdef DSDR_VDL2_EXPERIMENT
+    dsdr::core::Vdl2AppManager vdl2Manager(&session);
+#endif
     dsdr::app::SessionSingleton::instance = &session;
 
     if (startupFrequencyHz > 0 || !startupMode.isEmpty()) {
@@ -373,6 +386,11 @@ int main(int argc, char *argv[])
     }
 
     QQmlApplicationEngine engine;
+#ifdef DSDR_VDL2_EXPERIMENT
+    engine.rootContext()->setContextProperty(QStringLiteral("vdl2Manager"), &vdl2Manager);
+#else
+    engine.rootContext()->setContextProperty(QStringLiteral("vdl2Manager"), static_cast<QObject *>(nullptr));
+#endif
 
     // La lingua va scelta prima di caricare il QML: altrimenti la prima
     // schermata comparirebbe nella lingua sorgente e cambierebbe subito dopo.
@@ -387,5 +405,17 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty())
         return -1;
 
+    // Smoke-only automatic window close, enabled explicitly in silent tests.
+    const int testCloseMs = qEnvironmentVariableIntValue("DSDR_TEST_AUTO_CLOSE_MS");
+    if (testCloseMs > 0 && !testSettingsDir.isEmpty()
+        && qEnvironmentVariableIntValue("DSDR_TEST_SILENT_AUDIO") == 1) {
+        QObject::connect(&session, &dsdr::core::SessionManager::shutdownStateChanged, &app, [&session] {
+            if (session.shutdownFencePassed()) qInfo() << "test: shutdown fences passed";
+        });
+        QObject *root = engine.rootObjects().constFirst();
+        QTimer::singleShot(testCloseMs, root, [root] {
+            QMetaObject::invokeMethod(root, "close", Qt::QueuedConnection);
+        });
+    }
     return app.exec();
 }

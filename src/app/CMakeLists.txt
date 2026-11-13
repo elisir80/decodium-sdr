@@ -69,6 +69,7 @@ set(DSDR_QML_FILES
     qml/LevelBar.qml
     qml/ChannelStrip.qml
     qml/ChannelCard.qml
+    qml/ChannelQuickSelector.qml
     qml/RdsPanel.qml
     qml/DiscoveryPane.qml
     qml/PanelFrame.qml
@@ -79,6 +80,19 @@ set(DSDR_QML_FILES
     qml/NetTcpDevicePanel.qml
     qml/ColibriDevicePanel.qml
     qml/AudiorigPanel.qml
+    qml/IqAnalysisDialog.qml
+    qml/BackendShutdownDialog.qml
+    qml/AdsbDialog.qml
+    qml/AprsDialog.qml
+    qml/AisDialog.qml
+    qml/Vdl2Dialog.qml
+    qml/PocsagDialog.qml
+    qml/AcarsDialog.qml
+    qml/VorDialog.qml
+    qml/SelcalDialog.qml
+    qml/DscDialog.qml
+    qml/NavtexDialog.qml
+    qml/DemoSignalPanel.qml
     qml/IqFileDevicePanel.qml
 )
 
@@ -236,6 +250,17 @@ qt_add_resources(dsdr_app "dsdr_appicon"
     FILES "${DSDR_ICON_DIR}/it.decodium.sdr.png")
 
 target_link_libraries(dsdr_app PRIVATE dsdr_qml dsdr_qmlplugin)
+if(DSDR_BUILD_VDL2_PROTOCOL_EXPERIMENT)
+    target_compile_definitions(dsdr_app PRIVATE DSDR_VDL2_EXPERIMENT=1)
+    find_package(Threads REQUIRED)
+    target_link_libraries(dsdr_app PRIVATE dsdr_vdl2_async Threads::Threads ${CMAKE_DL_LIBS})
+    if(UNIX)
+        target_link_libraries(dsdr_app PRIVATE m)
+    endif()
+    if(WIN32)
+        target_link_libraries(dsdr_app PRIVATE ws2_32 userenv bcrypt ntdll)
+    endif()
+endif()
 
 dsdr_apply_target_defaults(dsdr_app)
 
@@ -270,6 +295,23 @@ install(TARGETS dsdr_app
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
 )
+
+# Retain the OnAir attribution terms in every distributed package.
+if(APPLE)
+    install(FILES "${CMAKE_SOURCE_DIR}/docs/decoders/acars-onair/ADDITIONAL-TERMS.md"
+                  "${CMAKE_SOURCE_DIR}/docs/decoders/acars-onair/NOTICE.md"
+                  "${CMAKE_SOURCE_DIR}/docs/decoders/acars-onair/THIRD_PARTY.md"
+            DESTINATION "decodium-sdr.app/Contents/Resources/OnAir" COMPONENT OnAirTerms)
+    install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/THIRD_PARTY_LICENSES"
+            DESTINATION "decodium-sdr.app/Contents/Resources/licenses" COMPONENT OnAirTerms)
+else()
+    install(FILES "${CMAKE_SOURCE_DIR}/docs/decoders/acars-onair/ADDITIONAL-TERMS.md"
+                  "${CMAKE_SOURCE_DIR}/docs/decoders/acars-onair/NOTICE.md"
+                  "${CMAKE_SOURCE_DIR}/docs/decoders/acars-onair/THIRD_PARTY.md"
+            DESTINATION "share/decodium-sdr/OnAir" COMPONENT OnAirTerms)
+    install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/THIRD_PARTY_LICENSES"
+            DESTINATION "share/decodium-sdr/licenses" COMPONENT OnAirTerms)
+endif()
 
 # Niente MACOS_BUNDLE_POST_BUILD: farebbe girare macdeployqt sul bundle appena
 # linkato, dove i plugin QML non sono ancora stati installati, e riempirebbe il

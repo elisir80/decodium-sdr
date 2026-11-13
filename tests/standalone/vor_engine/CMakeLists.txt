@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(vor_engine_test LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(vor_sources ../../../src/core/VorEngineTap.cpp ../../../src/core/VorAsyncReceiver.cpp ../../../src/core/AsyncIqDecoder.cpp ../../../src/dsp/VorReceiver.cpp ../../../src/dsp/VorIdentDecoder.cpp ../../../src/dsp/DecimatorChain.cpp ../../../src/dsp/FirDecimator.cpp ../../../src/dsp/FirDesign.cpp)
+add_executable(vor_engine_test test.cpp ${vor_sources})
+target_include_directories(vor_engine_test PRIVATE ../../../src)
+add_executable(vor_high_rate_test test_high_rate.cpp ${vor_sources})
+target_include_directories(vor_high_rate_test PRIVATE ../../../src)

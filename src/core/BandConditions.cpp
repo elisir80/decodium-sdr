@@ -92,8 +92,9 @@ BandConditions::~BandConditions()
 
 QString BandConditions::storagePath()
 {
-    const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString testDataDirectory = qEnvironmentVariable("DSDR_TEST_APPDATA_DIR");
+    const QString dir = testDataDirectory.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : testDataDirectory;
     return QDir(dir).filePath(QStringLiteral("condizioni.dat"));
 }
 

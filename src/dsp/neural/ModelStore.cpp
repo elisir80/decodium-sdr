@@ -19,8 +19,10 @@ constexpr qint64 kMinimumBytes = 64 * 1024;
 ModelStore::ModelStore(QObject *parent)
     : QAbstractListModel(parent)
 {
-    m_directory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                + QStringLiteral("/models");
+    const QString testDataDirectory = qEnvironmentVariable("DSDR_TEST_APPDATA_DIR");
+    const QString appData = testDataDirectory.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : testDataDirectory;
+    m_directory = QDir(appData).filePath(QStringLiteral("models"));
     refresh();
 }
 

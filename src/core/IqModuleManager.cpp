@@ -70,9 +70,11 @@ bool IqModuleManager::isModuleFile(const QString &path)
 QStringList IqModuleManager::standardDirectories()
 {
     const QDir appDir(QCoreApplication::applicationDirPath());
+    const QString testDataDirectory = qEnvironmentVariable("DSDR_TEST_APPDATA_DIR");
+    const QString dataDirectory = testDataDirectory.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) : testDataDirectory;
     return {appDir.absoluteFilePath(QStringLiteral("../PlugIns/DecodiumSdr")),
-            QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-                + QStringLiteral("/modules")};
+            QDir(dataDirectory).filePath(QStringLiteral("modules"))};
 }
 
 QStringList IqModuleManager::directories() const

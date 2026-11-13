@@ -516,6 +516,13 @@ Rectangle {
                 }
             }
 
+            ChannelQuickSelector {
+                Layout.fillWidth: true
+                channels: Session.channels
+                selectedIndex: Session.channels.currentIndex
+                onSelected: (row) => Session.channels.currentIndex = row
+            }
+
             // Un Repeater e non una ListView: dentro una colonna che scorre
             // già, una seconda area scorrevole si contende il gesto, e il
             // primo giro di rotellina finisce sempre in quella sbagliata.

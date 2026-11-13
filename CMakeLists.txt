@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(decodium-sdr
-    VERSION 1.2.6
+    VERSION 1.2.7
     DESCRIPTION "DECODIUM SDR — client SDR universale dell'ecosistema DECODIUM"
     HOMEPAGE_URL "https://decodium.it"
     # Il C serve a RNNoise, che è l'unico codice C del progetto: senza,
@@ -45,6 +45,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(DsdrOptions)
+if(DSDR_BUILD_VDL2_PROTOCOL_EXPERIMENT)
+    include(DsdrVdl2Protocol)
+endif()
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core Gui Network Qml Quick QuickControls2 Multimedia Concurrent

@@ -229,6 +229,7 @@ bool ChannelProcessor::configureForMode()
         return false;
 
     m_stereoAudio.assign(m_demodulated.size() * 2, 0.0f);
+    m_nfmPreGain.assign(maxAudioFrames(kMaxBlockFrames), 0.0f);
 
     m_configured = true;
     redesignFilter();
@@ -709,6 +710,7 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
                                               float *monoOut,
                                               float *stereoOut) noexcept
 {
+    m_nfmPreGainFrames = 0;
     if (!m_configured || n == 0)
         return 0;
 
@@ -937,6 +939,8 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
                     m_demodulated.data(), decimated, m_stereoAudio.data());
                 const float gain = m_settings.muted ? 0.0f : m_settings.volume;
                 for (std::size_t i = 0; i < audioProduced; ++i) {
+                    if ((m_settings.mode == DemodMode::Nfm || m_settings.mode == DemodMode::Am || m_settings.mode == DemodMode::Sam || m_settings.mode == DemodMode::Usb || m_settings.mode == DemodMode::Lsb) && m_nfmPreGainFrames < m_nfmPreGain.size())
+                        m_nfmPreGain[m_nfmPreGainFrames++] = m_stereoAudio[i];
                     const float value = std::clamp(m_stereoAudio[i] * gain,
                                                    -1.0f, 1.0f);
                     stereoOut[(produced + i) * 2] = value;
@@ -979,6 +983,8 @@ std::size_t ChannelProcessor::processInternal(const Complex *iq, std::size_t n,
                                               m_deemphasisLeft);
                 m_squelchGain = stepSquelchGain(m_squelchGain, squelchTarget);
                 audio[i] *= m_squelchGain;
+                if ((m_settings.mode == DemodMode::Nfm || m_settings.mode == DemodMode::Am || m_settings.mode == DemodMode::Sam || m_settings.mode == DemodMode::Usb || m_settings.mode == DemodMode::Lsb) && stereoOut && m_nfmPreGainFrames < m_nfmPreGain.size())
+                    m_nfmPreGain[m_nfmPreGainFrames++] = audio[i];
                 audio[i] = std::clamp(audio[i] * gain, -1.0f, 1.0f);
                 if (stereoOut) {
                     stereoOut[(produced + i) * 2] = audio[i];

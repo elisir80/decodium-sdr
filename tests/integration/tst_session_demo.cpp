@@ -31,6 +31,9 @@ private slots:
     void channelLimitMatchesCapabilities();
     void switchingBackendCancelsStaleDiscovery();
     void scannerCompletesAndPublishesState();
+    void priorityScannerComparesSilentAndActiveSignals();
+    void priorityScannerDistinguishesDemoSignalFromNoise();
+    void priorityScannerStopsForManualTuningAndRemoval();
     void rigctlTunesAndChangesMode();
     void changingChannelModeKeepsAudioAlive();
     void disconnectStopsEverything();
@@ -264,6 +267,78 @@ void TestSessionDemo::scannerCompletesAndPublishesState()
     QVERIFY2(waitFor([&] { return !session.isScanning(); }, 2000),
              "lo scanner non ha completato la banda richiesta");
     QVERIFY(session.scanResults().size() <= 2);
+}
+
+void TestSessionDemo::priorityScannerComparesSilentAndActiveSignals()
+{
+    SessionManager session;
+    QVERIFY(connectSession(session));
+    constexpr qint64 first = 7'100'000;
+    constexpr qint64 second = 7'105'000;
+    constexpr qint64 priority = 7'120'000;
+    const auto frequency = [&] { return session.channels()->at(0)->frequencyHz; };
+
+    // A: una soglia irraggiungibile lascia avanzare la scansione e, dopo il
+    // controllo prioritario, riprende la frequenza precedente.
+    QVERIFY(session.startPriorityScan(first, second, 5000, priority, 200, 0));
+    QVERIFY(waitFor([&] { return frequency() == second; }, 1500));
+    QVERIFY(waitFor([&] { return frequency() == priority; }, 3500));
+    QVERIFY(waitFor([&] { return frequency() != priority; }, 1200));
+    QVERIFY(session.priorityScanning());
+    session.stopScan();
+
+    // B: con la soglia sotto il rumore demo il segnale ferma la scansione;
+    // il controllo trova attiva la priorità e vi rimane in ascolto.
+    QVERIFY(session.startPriorityScan(first, second, 5000, priority, 200, -140));
+    QVERIFY(waitFor([&] { return session.priorityScanState() == QStringLiteral("Ascolto segnale"); }, 2500));
+    QVERIFY(waitFor([&] { return frequency() == priority
+                                  && session.priorityScanState() == QStringLiteral("Ascolto prioritario"); }, 4000));
+    QTest::qWait(500);
+    QCOMPARE(frequency(), priority);
+    session.stopScan();
+    QVERIFY(!session.isScanning());
+}
+
+void TestSessionDemo::priorityScannerStopsForManualTuningAndRemoval()
+{
+    SessionManager session;
+    QVERIFY(connectSession(session));
+    QVERIFY(!session.startPriorityScan(7'100'000, 7'105'000, 5000, 0));
+    QVERIFY(session.startPriorityScan(7'100'000, 7'105'000, 5000, 7'120'000, 200, 0));
+    session.setChannelFrequency(0, 7'130'000);
+    QVERIFY(!session.isScanning());
+    QCOMPARE(session.channels()->at(0)->frequencyHz, 7'130'000);
+    QVERIFY(session.startPriorityScan(7'100'000, 7'105'000, 5000, 7'120'000, 200, 0));
+    session.removeChannel(0);
+    QVERIFY(!session.isScanning());
+}
+
+void TestSessionDemo::priorityScannerDistinguishesDemoSignalFromNoise()
+{
+    SessionManager session;
+    QVERIFY(connectSession(session));
+    constexpr qint64 strong = 7'100'000;
+    constexpr qint64 quiet = 7'120'000;
+    const auto frequency = [&] { return session.channels()->at(0)->frequencyHz; };
+
+    // A: il segnale demo a 7.100 MHz resta in ascolto; il controllo della
+    // frequenza silenziosa non deve strappargli la priorità.
+    QVERIFY(session.startPriorityScan(strong, strong + 5000, 5000, quiet, 350, -75));
+    QVERIFY(waitFor([&] { return frequency() == strong
+                                  && session.priorityScanState() == QStringLiteral("Ascolto segnale"); }, 2500));
+    QVERIFY(waitFor([&] { return frequency() == quiet; }, 4000));
+    QVERIFY(waitFor([&] { return frequency() == strong
+                                  && session.priorityScanState() == QStringLiteral("Ascolto segnale"); }, 1500));
+    session.stopScan();
+
+    // B: invertendo le frequenze, il segnale demo sopra soglia sulla priorità
+    // deve interrompere la scansione della zona di rumore.
+    QVERIFY(session.startPriorityScan(quiet, quiet + 5000, 5000, strong, 350, -75));
+    QVERIFY(waitFor([&] { return frequency() == strong
+                                  && session.priorityScanState() == QStringLiteral("Ascolto prioritario"); }, 4500));
+    QTest::qWait(500);
+    QCOMPARE(frequency(), strong);
+    session.stopScan();
 }
 
 void TestSessionDemo::changingChannelModeKeepsAudioAlive()

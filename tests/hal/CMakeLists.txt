@@ -136,3 +136,9 @@ if(DSDR_BACKEND_FLEX_PROBE)
         SOURCES tst_flex_protocol.cpp
         LIBRARIES dsdr::hal)
 endif()
+
+if(DSDR_BACKEND_DEMO)
+    dsdr_add_test(tst_demo_signal
+        SOURCES tst_demo_signal.cpp
+        LIBRARIES dsdr::hal)
+endif()

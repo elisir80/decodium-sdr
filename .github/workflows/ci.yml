@@ -16,6 +16,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  decoder-sanitizers:
+    name: Decoder sanitizers (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: APRS, AIS, POCSAG and ACARS A/B with ASan and UBSan
+        env:
+          DSDR_TEST_SILENT_AUDIO: '1'
+          CXX: clang++
+        run: sh scripts/test-decoder-sanitizers.sh
+
   # ── Regole architetturali verificabili meccanicamente ─────────────────────
   # Girano per prime e in pochi secondi: se il seam è stato violato non ha
   # senso spendere venti minuti di build su tre piattaforme.
@@ -208,8 +219,42 @@ jobs:
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
-          QSG_RHI_BACKEND: null
-        run: ctest --test-dir build --output-on-failure --timeout 180
+          QSG_RHI_BACKEND: 'null'
+          DSDR_TEST_SILENT_AUDIO: '1'
+        # Several integration tests use the same local rigctl port.
+        run: ctest --test-dir build --output-on-failure --timeout 180 -j1
+
+      # Keep the optional VDL2 build separate from the default configuration.
+      # MSYS2 uses the GNU ABI, so its Rust library must use the matching target.
+      - name: Rust per VDL2 sperimentale
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || '' }}
+
+      - name: Configura VDL2 sperimentale
+        run: |
+          VDL2_RUST_TARGET=""
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            VDL2_RUST_TARGET="-DDSDR_VDL2_RUST_TARGET=x86_64-pc-windows-gnu"
+          fi
+          cmake -S . -B build-vdl2 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDSDR_BUILD_VDL2_PROTOCOL_EXPERIMENT=ON \
+            $VDL2_RUST_TARGET
+
+      - name: Compila VDL2 sperimentale
+        run: >-
+          cmake --build build-vdl2 --parallel 2 --target dsdr_app
+          tst_vdl2_protocol_abi tst_vdl2_frame_adapter tst_vdl2_burst_adapter
+          tst_vdl2_message_model tst_vdl2_shutdown tst_vdl2_lifecycle
+          tst_vdl2_session_binding tst_vdl2_app_manager tst_vdl2_main_qml
+
+      - name: Test VDL2 sperimentale
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+          DSDR_TEST_SILENT_AUDIO: '1'
+        run: ctest --test-dir build-vdl2 --output-on-failure --timeout 180 -j1 -R '^tst_vdl2_'
 
       - name: Diagnostica in caso di fallimento
         if: failure()

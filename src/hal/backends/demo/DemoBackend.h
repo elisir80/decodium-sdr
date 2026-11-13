@@ -15,6 +15,7 @@
 #include <memory>
 
 class QThread;
+class QSettings;
 
 namespace dsdr::hal::demo {
 
@@ -101,6 +102,8 @@ private:
     QThread *m_thread = nullptr;
     QPointer<DemoWorker> m_worker;
     quint64 m_sequence = 0;
+    QVariantMap m_syntheticConfig;
+    std::unique_ptr<QSettings> m_settings;
 };
 
 } // namespace dsdr::hal::demo

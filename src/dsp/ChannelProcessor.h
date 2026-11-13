@@ -181,6 +181,14 @@ public:
     std::size_t processStereo(const Complex *iq, std::size_t n,
                               float *outInterleaved) noexcept;
 
+    // Last NFM block before the user volume/mute control. Valid until the
+    // next process call; squelch and other selected channel processing apply.
+    const float *lastNfmPreGain() const noexcept { return m_nfmPreGain.data(); }
+    std::size_t lastNfmPreGainFrames() const noexcept { return m_nfmPreGainFrames; }
+    // Mono pre-gain audio for NFM, AM and SSB data taps; independent of mute.
+    const float *lastMonoPreGain() const noexcept { return m_nfmPreGain.data(); }
+    std::size_t lastMonoPreGainFrames() const noexcept { return m_nfmPreGainFrames; }
+
     std::size_t maxAudioFrames(std::size_t inputFrames) const noexcept
     {
         const std::size_t channelFrames = m_chain.maxOutput(inputFrames);
@@ -326,6 +334,8 @@ private:
     std::vector<Complex> m_filtered;
     std::vector<Complex> m_filterTaps;
     std::vector<float> m_demodulated;
+    std::vector<float> m_nfmPreGain;
+    std::size_t m_nfmPreGainFrames = 0;
     std::vector<float> m_audioFilterTaps;
     std::vector<float> m_audioFilterDelay;
     std::vector<float> m_resampleBuffer;

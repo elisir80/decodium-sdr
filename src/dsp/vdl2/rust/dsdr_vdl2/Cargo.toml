@@ -1,0 +1,12 @@
+[package]
+name = "dsdr_vdl2"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+[lib]
+name = "dsdr_vdl2"
+crate-type = ["staticlib"]
+[dependencies]
+onair_vdl2 = { path = "../onair_vdl2" }

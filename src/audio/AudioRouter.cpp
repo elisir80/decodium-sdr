@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "audio/AudioRouter.h"
+#include "audio/OutputGain.h"
 
 #include <QAudioDevice>
 #include <QAudioSink>
@@ -336,7 +337,10 @@ void AudioRouter::applyVolume()
         return;
     // Curva percettiva: il cursore lineare diventa una variazione udibile
     // uniforme invece di concentrare tutto nell'ultimo quarto di corsa.
-    const float gain = m_muted ? 0.0f : m_volume * m_volume;
+    // Test sessions can force the physical output silent without changing
+    // the user's saved volume or the logical value exercised by tests.
+    const bool testSilent = qEnvironmentVariableIntValue("DSDR_TEST_SILENT_AUDIO") == 1;
+    const float gain = outputGain(m_volume, m_muted, testSilent);
     m_source->setGain(gain);
 }
 

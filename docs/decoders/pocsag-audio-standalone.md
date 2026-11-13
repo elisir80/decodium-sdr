@@ -1,0 +1,14 @@
+# POCSAG discriminator audio experiment
+
+`src/dsp/PocsagAudioDecoder.{h,cpp}` feeds `PocsagDecoder` with hard decisions recovered from **already FM-discriminated, DC-coupled baseband audio**: two voltage levels proportional to instantaneous frequency. It is a level slicer and transition-based symbol timing loop, not an IQ FM demodulator, not an audio-tone AFSK receiver, and not connected to the application. The discriminator must be supplied by the caller. A conventional speaker audio path with a high-pass filter, de-emphasis, squelch, clipping, or strong gain changes may not work. Neither radio tuning nor channel filtering is implemented here.
+
+Configure 512, 1200 or 2400 baud explicitly and at least eight samples per symbol (maximum input rate 384 kHz). The DC estimator handles limited residual discriminator offset; the loop adjusts symbol phase on detected transitions, but does not estimate baud rate. Input chunks may have arbitrary length. Reset on discontinuity, retune or source change, and before restarting a burst after loss of samples. Configuration and processing are synchronous and not thread-safe; run on a worker and marshal callbacks to the UI. Invalid configuration disables processing. Non-finite input resets the state. See `pocsag-standalone.md` for BCH, parity, possible undetected errors, and message limits. This is not a CRC, and neither BCH nor this audio path authenticates content.
+
+## Repeatable verification
+
+```sh
+DSDR_TEST_SILENT_AUDIO=1 TMPDIR=/Volumes/Projects/decodium-sdr/build c++ -std=c++17 -O2 -Wall -Wextra -Werror -Isrc src/dsp/PocsagDecoder.cpp src/dsp/PocsagAudioDecoder.cpp tests/standalone/pocsag/test_audio.cpp -o build/pocsag-audio-test
+DSDR_TEST_SILENT_AUDIO=1 ./build/pocsag-audio-test
+```
+
+The test generates deterministic 48 kHz discriminator-level samples from synthetic POCSAG bitstreams. The signal levels are +/-1, followed by a simple first-order low-pass; it tests DC offsets -0.35/0/+0.35, Gaussian sample noise standard deviation 0/0.15, both polarities, three baud rates and chunks of 1, 257 or all samples (108 runs). It checks the complete expected text, RIC, function and zero corrected bits. Six additional runs test +/-0.1% clock error with 0.10 noise and +0.25 offset; controls include three seconds of noise alone for each baud, a wrong-baud case, invalid configuration, and reset mid-message. These offsets are normalized discriminator levels, not measured hertz; the noise parameter is not calibrated RF SNR. Fixed seed and synthetic traffic provide repeatability, not independent proof of over-the-air reception or sensitivity. The input has no actual FM discriminator, analog channel, clock-rate sweep, multipath or real captures. The exact sync and BCH limitations remain; no OnAir parity, UI responsiveness, hardware, or live signal operation is claimed.

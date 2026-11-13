@@ -17,5 +17,5 @@ dsdr_apply_target_defaults(tst_qml_components)
 
 add_test(NAME tst_qml_components COMMAND tst_qml_components)
 set_tests_properties(tst_qml_components PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1"
     TIMEOUT 120)

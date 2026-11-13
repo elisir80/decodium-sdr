@@ -4,6 +4,7 @@
 #include "hal/backends/demo/DemoWorker.h"
 
 #include <QThread>
+#include <QSettings>
 #include <QTimer>
 
 #include <algorithm>
@@ -26,7 +27,14 @@ DemoBackend::DemoBackend(QObject *parent)
     : IRadioBackend(parent)
     , m_iqRing(std::make_unique<SampleRing>(kIqRingFloats))
     , m_txRing(std::make_unique<SampleRing>(kIqRingFloats))
+    // Include settings in the QObject tree so an audited affinity transfer
+    // moves it together with the backend before asynchronous shutdown.
+    , m_settings(std::make_unique<QSettings>(this))
 {
+    QString error;
+    const auto saved = m_settings->value(QStringLiteral("demo/syntheticSignal")).toMap();
+    if (!ConfigurableSignal::validate(saved, m_syntheticConfig, error))
+        m_syntheticConfig = ConfigurableSignal::defaults();
 }
 
 DemoBackend::~DemoBackend()
@@ -71,7 +79,9 @@ BackendCapabilities DemoBackend::capabilities() const
     caps.maxRxChannels = kMaxRxChannels;
     caps.coherentRx = true; // coerenza simulata: i canali nascono dallo stesso IQ
     caps.maxPanadapters = 4;
-    caps.tx = TxSupport::Ptt;
+    caps.tx = m_syntheticConfig.value(QStringLiteral("enabled")).toBool()
+        ? TxSupport::None : TxSupport::Ptt;
+    caps.nativePanels = {QStringLiteral("DemoSignalPanel")};
 
     caps.demod = DspLocation::Client;
     caps.spectrum = DspLocation::Client;
@@ -92,6 +102,7 @@ BackendCapabilities DemoBackend::capabilities() const
     caps.remoteCapable = false;
     caps.multiClient = false;
     caps.supportsRecording = true;
+    caps.auditedAsyncShutdownTransfer = true;
 
     return caps;
 }
@@ -210,6 +221,7 @@ void DemoBackend::restartWorker()
 
     auto *worker = new DemoWorker(m_iqRing.get(), m_txRing.get());
     worker->configure(m_sampleRate, m_centerHz, bandPlanFor(m_device));
+    worker->setSyntheticConfig(m_syntheticConfig);
 
     m_thread = new QThread(this);
     m_thread->setObjectName(QStringLiteral("dsdr-demo-ingest"));
@@ -388,6 +400,10 @@ double DemoBackend::setGainReduction(double db)
 
 void DemoBackend::setPtt(bool transmit)
 {
+    if (transmit && m_syntheticConfig.value(QStringLiteral("enabled")).toBool()) {
+        reportError(BackendError::Unsupported, tr("Il generatore sintetico è solo RX."));
+        return;
+    }
     if (m_ptt == transmit)
         return;
     m_ptt = transmit;
@@ -429,6 +445,26 @@ SampleRing *DemoBackend::spectrumStream(PanId pan) const
 
 QVariant DemoBackend::nativeCommand(const QString &command, const QVariantMap &args)
 {
+    if (command == QLatin1String("demo.synthetic.status"))
+        return m_syntheticConfig;
+    if (command == QLatin1String("demo.synthetic.apply")) {
+        QVariantMap candidate;
+        QString error;
+        if (!ConfigurableSignal::validate(args, candidate, error))
+            return QVariantMap{{QStringLiteral("ok"), false}, {QStringLiteral("error"), error}};
+        if (m_ptt && candidate.value(QStringLiteral("enabled")).toBool())
+            return QVariantMap{{QStringLiteral("ok"), false}, {QStringLiteral("error"), tr("Disattiva prima la trasmissione demo.")}};
+        m_syntheticConfig = candidate;
+        m_settings->setValue(QStringLiteral("demo/syntheticSignal"), candidate);
+        if (m_worker) {
+            const QVariantMap config = candidate;
+            QMetaObject::invokeMethod(m_worker, [worker = m_worker, config] {
+                if (worker) worker->setSyntheticConfig(config);
+            }, Qt::QueuedConnection);
+        }
+        emit capabilitiesChanged();
+        return QVariantMap{{QStringLiteral("ok"), true}};
+    }
     if (command == QLatin1String("demo.setNoiseFloorDb")) {
         // Comando dimostrativo: mostra la forma della valvola di sfogo senza
         // che il core ne sappia nulla (§4.1).

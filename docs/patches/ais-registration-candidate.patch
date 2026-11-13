@@ -1,0 +1,92 @@
+--- a/src/dsp/CMakeLists.txt
++++ b/src/dsp/CMakeLists.txt
+@@ -70,6 +70,10 @@
+     AdsbDecoder.cpp
+     AprsAfskDecoder.h
+     AprsAfskDecoder.cpp
++    AisDecoder.h
++    AisDecoder.cpp
++    AisIqFrontend.h
++    AisIqFrontend.cpp
+     Demodulator.h
+     Demodulator.cpp
+     Modulator.h
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -17,6 +17,13 @@
+     AprsReceiver.cpp
+     AprsController.h
+     AprsController.cpp
++    AisReceiver.h
++    AisReceiver.cpp
++    AisController.h
++    AisController.cpp
++    AisEngineTap.h
++    AisEngineTap.cpp
++    AisIqGapFence.h
+     PocsagReceiver.h
+     PocsagReceiver.cpp
+     PocsagController.h
+--- a/src/app/CMakeLists.txt
++++ b/src/app/CMakeLists.txt
+@@ -84,6 +84,7 @@
+     qml/BackendShutdownDialog.qml
+     qml/AdsbDialog.qml
+     qml/AprsDialog.qml
++    qml/AisDialog.qml
+     qml/PocsagDialog.qml
+     qml/DemoSignalPanel.qml
+     qml/IqFileDevicePanel.qml
+--- a/tests/integration/CMakeLists.txt
++++ b/tests/integration/CMakeLists.txt
+@@ -136,3 +136,50 @@
+ dsdr_apply_target_defaults(tst_pocsag_ui)
+ add_test(NAME tst_pocsag_ui COMMAND tst_pocsag_ui)
+ set_tests_properties(tst_pocsag_ui PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1;QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
++
++# AIS frontend, conservative input-loss fence and asynchronous receiver.
++add_executable(tst_ais_frontend ../standalone/ais_stage/tst_ais_frontend.cpp)
++target_link_libraries(tst_ais_frontend PRIVATE dsdr::dsp)
++dsdr_apply_target_defaults(tst_ais_frontend)
++add_test(NAME tst_ais_frontend COMMAND tst_ais_frontend)
++set_tests_properties(tst_ais_frontend PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 30)
++
++add_executable(tst_ais_gap_fence ../standalone/ais_stage/tst_ais_gap_fence.cpp)
++target_include_directories(tst_ais_gap_fence PRIVATE "${CMAKE_SOURCE_DIR}/tests/standalone")
++target_link_libraries(tst_ais_gap_fence PRIVATE dsdr::core)
++dsdr_apply_target_defaults(tst_ais_gap_fence)
++add_test(NAME tst_ais_gap_fence COMMAND tst_ais_gap_fence)
++set_tests_properties(tst_ais_gap_fence PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 30)
++
++add_executable(tst_ais_receiver ../standalone/tst_ais_receiver.cpp)
++target_include_directories(tst_ais_receiver PRIVATE "${CMAKE_SOURCE_DIR}/tests/standalone")
++target_link_libraries(tst_ais_receiver PRIVATE dsdr::core)
++dsdr_apply_target_defaults(tst_ais_receiver)
++add_test(NAME tst_ais_receiver COMMAND tst_ais_receiver)
++set_tests_properties(tst_ais_receiver PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 30)
++
++# Synthetic IQ -> AIS frontend/tap -> asynchronous decoder -> real dialog.
++dsdr_add_test(tst_ais_end_to_end
++    SOURCES ../standalone/ais_stage/tst_ais_end_to_end.cpp
++    LIBRARIES dsdr::core Qt6::Gui Qt6::Qml Qt6::Quick)
++target_include_directories(tst_ais_end_to_end PRIVATE "${CMAKE_SOURCE_DIR}/tests/standalone")
++target_compile_definitions(tst_ais_end_to_end PRIVATE DSDR_AIS_QML_DIR="${CMAKE_SOURCE_DIR}/src/app/qml")
++set_tests_properties(tst_ais_end_to_end PROPERTIES
++    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 30)
++
++# Test-only module exercises the existing DspEngine filtered-IQ module ABI.
++add_library(dsdr_ais_engine_probe MODULE
++    ../standalone/ais_stage/ais_engine_probe.cpp
++    ../../src/core/AsyncIqDecoder.cpp ../../src/core/AisReceiver.cpp ../../src/dsp/AisDecoder.cpp)
++target_include_directories(dsdr_ais_engine_probe PRIVATE "${CMAKE_SOURCE_DIR}/src")
++target_link_libraries(dsdr_ais_engine_probe PRIVATE Qt6::Core)
++set_target_properties(dsdr_ais_engine_probe PROPERTIES PREFIX "")
++dsdr_add_test(tst_ais_real_engine
++    SOURCES ../standalone/ais_stage/tst_ais_real_engine.cpp
++    LIBRARIES dsdr::core)
++target_include_directories(tst_ais_real_engine PRIVATE "${CMAKE_SOURCE_DIR}/tests/standalone")
++target_compile_definitions(tst_ais_real_engine PRIVATE
++    DSDR_AIS_PROBE_PATH="$<TARGET_FILE:dsdr_ais_engine_probe>")
++add_dependencies(tst_ais_real_engine dsdr_ais_engine_probe)
++set_tests_properties(tst_ais_real_engine PROPERTIES
++    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DSDR_TEST_SILENT_AUDIO=1" TIMEOUT 60)

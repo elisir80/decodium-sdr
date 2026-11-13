@@ -120,6 +120,11 @@ public:
     /// discontinuità senza aggiungere un contatore separato.
     std::uint64_t totalWritten() const noexcept { return m_write.load(std::memory_order_acquire); }
 
+    /// Posizione assoluta del prossimo elemento da leggere nella stessa epoca
+    /// del buffer. Reset() avvia una nuova epoca e richiede entrambi i lati
+    /// fermi; clear() e discard() avanzano questa posizione.
+    std::uint64_t totalRead() const noexcept { return m_read.load(std::memory_order_acquire); }
+
 private:
     std::unique_ptr<T[]> m_buffer;
     std::size_t m_capacity = 0;

@@ -15,6 +15,10 @@ endif()
 add_library(dsdr_dsp STATIC
     DspTypes.h
     DspTypes.cpp
+    navtex/NavtexProtocol.h
+    navtex/NavtexProtocol.cpp
+    navtex/NavtexAudioDecoder.h
+    navtex/NavtexAudioDecoder.cpp
     SpscRing.h
     Nco.h
     FftwPlanning.h
@@ -66,6 +70,14 @@ add_library(dsdr_dsp STATIC
     neural/ModelStore.cpp
     neural/NeuralNrStage.h
     neural/NeuralNrStage.cpp
+    AdsbDecoder.h
+    AdsbDecoder.cpp
+    AprsAfskDecoder.h
+    AprsAfskDecoder.cpp
+    AisDecoder.h
+    AisDecoder.cpp
+    AisIqFrontend.h
+    AisIqFrontend.cpp
     Demodulator.h
     Demodulator.cpp
     Modulator.h

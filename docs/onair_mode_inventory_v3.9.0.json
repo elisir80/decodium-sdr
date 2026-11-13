@@ -1,0 +1,1441 @@
+{
+  "source": "https://github.com/adswill/OnAir/blob/v3.9.0/MODES.md",
+  "source_commit": "15a2907f02f7486fc64b8e439a1645eb7373171f",
+  "declared_modes": 333,
+  "groups": [
+    {
+      "name": "TV",
+      "expected": 17,
+      "modes": [
+        {
+          "name": "DVB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "TV (auto)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ATSC",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ATSC 3.0",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ISDB-T",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ISDB-TSB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DVB-S/S2",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Internet TV (IPTV)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "TV sat beacon decoder",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DTMB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ISDB-S (BS)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DVB-SH",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DVB-C2",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DVB-C",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Analog TV",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FPV video (analog)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MAC",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Broadcast Radio",
+      "expected": 7,
+      "modes": [
+        {
+          "name": "DAB / DAB+",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FM",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DRM",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HD Radio",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "AM broadcast",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "AM stereo (C-QUAM)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CDR",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Aviation",
+      "expected": 27,
+      "modes": [
+        {
+          "name": "ADS-B",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Mode S uplink",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Mode A/C",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ACARS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "VDL2",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "VDL4",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "VDL3",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HFDL",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Airband",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "VOR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ILS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NDB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Drone Remote ID",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "SELCAL (aircraft tone call)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "UAT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FANET",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "OGN tracker",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GBAS VDB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LDACS (structure)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "AeroMACS (structure)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ADS-L",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FLARM",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DJI drones",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DME",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "eLoran / Loran-C",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ASTERIX",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ELT 121.5 MHz",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Maritime",
+      "expected": 8,
+      "modes": [
+        {
+          "name": "AIS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "VDES",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NAVTEX",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DSC",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Weather fax",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Marine VHF",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ATIS (inland waterways)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Marine radar (detect)",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Satellite & Navigation",
+      "expected": 55,
+      "modes": [
+        {
+          "name": "GNSS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DGPS beacon",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Inmarsat-C",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Inmarsat Aero",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Iridium",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Meteor-M LRPT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GOES HRIT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Elektro-L",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GK-2A LRIT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GK-2A HRIT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FY-4 LRIT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FY-4A HRIT-II/III",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FY-2 S-VISSR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "COSPAS-SARSAT 406 MHz",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Argos",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NOAA APT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NOAA DSB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Elektro-L RDAS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Arktika-M RDAS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Arktika-M GGAK",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Geoscan",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Lucky-7",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Spino",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Erminaz",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Orbcomm",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "QO-100",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CubeSat telemetry",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "AX100 Mode 5",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "AX100 Mode 6",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "USP",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NGHam",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "U482C",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "BEESAT / Mobitex",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Globalstar",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GOES DCS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Meteosat HRDCP",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Zombie satellites",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "What satellite is this?",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "UHF SATCOM skimmer",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Fleet Broadcast (UHF SATCOM)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Thuraya GMR-1 channels",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Starlink detector",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "OneWeb detector",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "TDRS carriers",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Tiangong / Shenzhou carriers",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Tsikada / Parus",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Gonets",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Tiantong signalling",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Space station",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NavIC",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "SBAS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LoRa satellites",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "PSK demodulator (experimental)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Inmarsat (all carriers)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Inmarsat BGAN",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Two-way Radio",
+      "expected": 21,
+      "modes": [
+        {
+          "name": "DMR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Digital voice (auto)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NXDN",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "P25",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "P25 Phase 2",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "dPMR / PMR446",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CB radio",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FRS / GMRS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "PMR446 analog",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MDC-1200",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Wireless mic finder",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Tone decoders (CTCSS, DCS, DTMF, selcall)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "TETRA",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "TETRAPOL",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MPT1327 trunking",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LTR trunking",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Motorola Type II",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "TETRA DMO",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "OpenSky identifier",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "EDACS trunking",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Voice inversion scrambler",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Cellular & Rail",
+      "expected": 10,
+      "modes": [
+        {
+          "name": "End of train (AAR EOT/HOT)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Cell towers",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "5G NR cells",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NB-IoT cells",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GSM-R",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LBJ",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "UMTS cells",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CDMA2000 cells",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "TD-SCDMA cells",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "EBICab / Eurobalise (needs a user test)",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Pagers",
+      "expected": 4,
+      "modes": [
+        {
+          "name": "ERMES paging",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "POCSAG",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FLEX",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Multitone Paging",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "IoT & Sensors",
+      "expected": 38,
+      "modes": [
+        {
+          "name": "DSRC road toll (EN 12253)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "802.11p V2X (ITS-G5, DSRC)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "C-V2X (structure)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ISM sensors",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Sub-GHz sensors",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LoRaWAN",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Meshtastic",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MeshCore",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Bluetooth LE",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "BLE tracker detector",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Zigbee / 802.15.4",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Thread",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Wi-Fi HaLow (802.11ah)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ANT+ sensors",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DECT cordless phones",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Wi-SUN FAN",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Wireless M-Bus (meters)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NFC / RFID 13.56 MHz",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Z-Wave",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Bluetooth Classic",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LoRa (raw)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Sigfox",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Wi-Fi networks",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LoRaWAN (all channels)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Reticulum (RNode)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ExpressLRS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MAVLink (SiK radio)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FrSky RC (D8 / D16)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FlySky RC (AFHDS / 2A)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Futaba RC (S-FHSS)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Spektrum RC (DSM2 / DSMX)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "wfb-ng / OpenHD",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "New Packet Radio (NPR-70)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "WINMOR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "mioty",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DECT NR+",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "nRF24L01 (needs a user test)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Flipper Zero Sub-GHz chat",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Weather & Science",
+      "expected": 51,
+      "modes": [
+        {
+          "name": "HRPT / AHRPT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NOAA HRPT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NOAA GAC",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Meteor HRPT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "AWS L-band",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MSG Raw Data",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HimawariCast",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GeoNetCast",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GOES GRB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GOES GVAR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GOES CDA",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GOES MDL",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GK-2A UHRIT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GK-2A CDAS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "S-band CCSDS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "JPSS HRD (NPP, NOAA-20)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "JPSS HRD (NOAA-21)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "EOS DB (Aqua, Aura)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "EOS DB (Terra)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MetOp X-band dump",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MetOp-SG DDB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Landsat 8/9 X-band",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Landsat 8/9 S-band",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Proba S-band dump",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Proba-V X-band dump",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GCOM-W1",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "GCOM-C1",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "STEREO high rate",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Oceansat-2 DB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Oceansat-3 L-band",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Saral L-band",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Oceansat-3 X-band dump",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Saral X-band dump",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Kanopus-V",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DMSP RTD",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FY-3 AHRPT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FY-3 MPT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Weather radar (detect)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Sferics (lightning)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Lightning position (network)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "SuperSID (VLF)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Riometer",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Pulsar folding",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "NOAA Weather Radio SAME",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Radiosonde",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Time signals",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "e-Czas (225 kHz, Poland)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Meteor scatter",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Ionospheric sounders",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Radio astronomy",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "SSDV pictures",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Amateur - Digital",
+      "expected": 42,
+      "modes": [
+        {
+          "name": "QRSS grabber",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DFCW grabber",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FSK441",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "JT6M",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Schumann resonance monitor",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Whistler and tweek detector",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Moon echo (EME) test",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Radio Jove",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "e-CALLISTO solar bursts",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Aurora / Es / TEP beacons",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ISCAT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "PI4",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Throb",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FT8",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FT4",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FT2",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "WSPR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "JT65",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "JT9",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Q65",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FST4",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MSK144",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "JT4",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "PSK31",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MT63",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "FSQ",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "IFKP",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "SITOR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ARDOP",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "JS8Call",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "RTTY",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CW",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "SSTV",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HamDRM",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Olivia",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Contestia",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MFSK",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "THOR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "DominoEX",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CP16",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Hellschreiber",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ROS (HF)",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Amateur - Voice & Packet",
+      "expected": 9,
+      "modes": [
+        {
+          "name": "FreeDV",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "M17",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "D-STAR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Yaesu Fusion",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "APRS (AFSK)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "LoRa APRS",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MeshCom",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Ham FM repeaters",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HF packet 300 Bd",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "HF Utility",
+      "expected": 32,
+      "modes": [
+        {
+          "name": "PACTOR-II",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "PACTOR-III",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "PACTOR-IV",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "MIL-STD-188-110 serial",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "STANAG 4285",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "STANAG 4539",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "3G-ALE",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Link 11 CLEW",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "STANAG 4481 FSK",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ARQ-E",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "ARQ-N",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "AUTOSPEC",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "SPREAD",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "G-TOR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "EFR teleswitch",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Piccolo Mk VI",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Coquelet-8",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Datawell Buoy HF Link",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CODAR / HF ocean radar",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Shortwave",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HF ALE",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HF waveform ID",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HF beacons",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "PACTOR-I (experimental)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "HFGCS / HF voice",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CIS-36-50 / 50-50 (BEE)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CIS-14",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CIS-12 (MS5)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CIS-36 (MFSK)",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CIS OFDM HDR",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CIS-128",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "CIS-3000",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "General & Tools",
+      "expected": 4,
+      "modes": [
+        {
+          "name": "Signal workbench",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "General receiver",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Spectrum explorer",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "Spectrum analyser",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Plugins",
+      "expected": 1,
+      "modes": [
+        {
+          "name": "Plugins",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Kris custom modes",
+      "expected": 6,
+      "modes": [
+        {
+          "name": "KAAL",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "KAVB",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "KAIT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "KAPP",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "KAFT",
+          "coverage": "not_assessed"
+        },
+        {
+          "name": "KAWS",
+          "coverage": "not_assessed"
+        }
+      ]
+    },
+    {
+      "name": "Custom Modes",
+      "expected": 1,
+      "modes": [
+        {
+          "name": "Mode Builder",
+          "coverage": "not_assessed"
+        }
+      ]
+    }
+  ]
+}

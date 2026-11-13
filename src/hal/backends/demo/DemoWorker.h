@@ -8,6 +8,7 @@
 
 #include "dsp/DspTypes.h"
 #include "hal/backends/demo/SyntheticBand.h"
+#include "hal/backends/demo/ConfigurableSignal.h"
 
 #include <QElapsedTimer>
 #include <QObject>
@@ -46,6 +47,7 @@ public slots:
     void stop();
     void setCenterFrequency(qint64 hz);
     void setTransmitting(bool transmitting);
+    void setSyntheticConfig(const QVariantMap &config);
 
     /// Attenuazione applicata al segnale generato, in dB.
     ///
@@ -67,6 +69,9 @@ private:
     dsp::SpscRing<float> *m_txRing = nullptr;
     QTimer *m_timer = nullptr;
     SyntheticBand m_band;
+    ConfigurableSignal m_synthetic;
+    QVariantMap m_syntheticConfig;
+    bool m_syntheticEnabled = false;
     QElapsedTimer m_clock;
 
     std::vector<dsp::Complex> m_block;

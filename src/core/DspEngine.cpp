@@ -8,6 +8,10 @@
 #include <QThread>
 
 #include <algorithm>
+#include <thread>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
 #include <cmath>
 
 Q_LOGGING_CATEGORY(dsdrDsp, "dsdr.dsp")
@@ -17,6 +21,53 @@ namespace dsdr::core {
 using dsp::Complex;
 
 namespace {
+
+// Owns retiring APRS receivers until their workers have actually stopped.
+// The reaper is joined at process exit; it is not an application/backend
+// shutdown barrier and must eventually be coordinated with DecoderShutdown.
+class AprsReaper {
+public:
+    AprsReaper() : m_thread([this] { run(); }) {}
+    ~AprsReaper() {
+        { std::lock_guard<std::mutex> lock(m_mutex); m_stopping = true; }
+        m_ready.notify_one();
+        m_thread.join();
+    }
+    void retire(std::unique_ptr<AprsReceiver> receiver) {
+        { std::lock_guard<std::mutex> lock(m_mutex); m_queue.push_back(std::move(receiver)); }
+        m_ready.notify_one();
+    }
+private:
+    void run() {
+        for (;;) {
+            std::unique_ptr<AprsReceiver> receiver;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_ready.wait(lock, [this] { return m_stopping || !m_queue.empty(); });
+                if (m_queue.empty() && m_stopping) return;
+                receiver = std::move(m_queue.front()); m_queue.pop_front();
+            }
+            receiver.reset(); // joins the APRS worker outside the lock
+        }
+    }
+    std::mutex m_mutex;
+    std::condition_variable m_ready;
+    std::deque<std::unique_ptr<AprsReceiver>> m_queue;
+    bool m_stopping = false;
+    std::thread m_thread;
+};
+AprsReaper &aprsReaper() { static AprsReaper reaper; return reaper; }
+class AprsSourceChange {
+public:
+    AprsSourceChange(std::atomic<unsigned> &changes, AprsReceiver &receiver)
+        : m_changes(changes), m_receiver(receiver) {
+        m_changes.fetch_add(1); m_receiver.discontinuity();
+    }
+    ~AprsSourceChange() { m_receiver.discontinuity(); m_changes.fetch_sub(1); }
+private:
+    std::atomic<unsigned> &m_changes;
+    AprsReceiver &m_receiver;
+};
 
 /// ~1.3 s di audio stereo a 48 kHz: assorbe una pausa lunga della scheda audio senza
 /// far crescere la latenza percepita, che resta governata dal buffer del sink.
@@ -86,16 +137,22 @@ std::size_t historyFramesFor(double sampleRate)
 
 } // namespace
 
-DspEngine::DspEngine(QObject *parent)
+DspEngine::DspEngine(QObject *parent, std::unique_ptr<AprsReceiver> aprs, AdsbReceiver *externalAdsb, AprsReceiver *externalAprs)
     : QObject(parent)
     , m_audioRing(std::make_unique<dsp::SpscRing<float>>(kAudioRingFloats))
     , m_spectrum(new SpectrumFeed(this))
     , m_audioSpectrum(new SpectrumFeed(this))
 {
+    if (!externalAdsb) { m_ownedAdsb=std::make_unique<AdsbReceiver>(); externalAdsb=m_ownedAdsb.get(); }
+    m_adsbReceiver.store(externalAdsb,std::memory_order_release);
     m_interleaved.resize(kProcessBlock * 2);
     m_iq.resize(kProcessBlock);
     m_mix.resize(kProcessBlock * kAudioChannels);
     m_moduleIq.resize(kProcessBlock * 2);
+    (void)aprsReaper(); // start the owned reaper before the receiver
+    if (!externalAprs) { m_ownedAprs = aprs ? std::move(aprs) : std::make_unique<AprsReceiver>(); externalAprs = m_ownedAprs.get(); }
+    m_aprsReceiver = externalAprs;
+    m_aprsReceiver->start();
     m_uptime.start();
 }
 
@@ -109,11 +166,47 @@ struct DspEngine::LoadedIqModule
 DspEngine::~DspEngine()
 {
     unloadIqModules();
+    // The producer is quiescent. The owned reaper keeps the receiver alive
+    // through its worker join; the reaper itself is joined at process exit.
+    if (m_ownedAprs) aprsReaper().retire(std::move(m_ownedAprs));
+}
+
+void DspEngine::replaceExternalAprsAfterFence()
+{
+    Q_ASSERT(!m_ownedAprs);
+    m_ownedAprs = std::make_unique<AprsReceiver>();
+    m_aprsReceiver = m_ownedAprs.get();
+}
+
+void DspEngine::attachAisReceiver(AisReceiver *receiver)
+{
+    m_aisReceiver.store(receiver);
+    m_aisTap = receiver ? std::make_unique<AisEngineTap>(*receiver) : nullptr;
+    m_aisConfiguredRevision = 0; m_aisConfigured = false;
+}
+void DspEngine::detachAisTap() noexcept { m_aisTap.reset(); m_aisConfigured = false; }
+void DspEngine::attachVorReceiver(VorAsyncReceiver *receiver) {
+    m_vorReceiver.store(receiver); m_vorTap=receiver ? std::make_unique<VorEngineTap>(*receiver) : nullptr;
+    m_vorConfiguredRevision=0; m_vorConfigured=false;
+}
+void DspEngine::detachVorTap() noexcept { m_vorTap.reset(); m_vorConfigured=false; }
+void DspEngine::setVorConfiguration(bool enabled,qint64 hz) noexcept {
+    if(m_vorEnabled.load()==enabled && m_vorFrequency.load()==hz) return;
+    if(auto *receiver=m_vorReceiver.load()) receiver->invalidateResults();
+    m_vorEnabled.store(enabled); m_vorFrequency.store(hz); m_vorRevision.fetch_add(1);
+    if(auto *receiver=m_vorReceiver.load()) receiver->invalidateResults();
+}
+void DspEngine::setAisFrequency(qint64 hz) noexcept
+{
+    if (m_aisFrequency.exchange(hz) == hz) return;
+    if (auto *receiver=m_aisReceiver.load()) receiver->discontinuity();
+    m_aisRevision.fetch_add(1);
 }
 
 void DspEngine::setSource(dsp::SpscRing<float> *ring, double sampleRate,
                           qint64 centerFrequencyHz, bool waitForInitialChannel)
 {
+    AprsSourceChange change(m_aprsSourceChanges, *m_aprsReceiver);
     m_sourceIsAudio.store(false, std::memory_order_release);
     attachSource(ring, sampleRate, centerFrequencyHz, waitForInitialChannel);
 }
@@ -121,16 +214,29 @@ void DspEngine::setSource(dsp::SpscRing<float> *ring, double sampleRate,
 void DspEngine::attachSource(dsp::SpscRing<float> *ring, double sampleRate,
                              qint64 centerFrequencyHz, bool waitForInitialChannel)
 {
+    if(auto* tap=m_rawIqTap.load(std::memory_order_acquire)) tap->invalidateResults();
+    if (auto *receiver=m_pocsagReceiver.load()) receiver->invalidateResults();
+    if (auto *receiver=m_acarsReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_selcalReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_dscReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_navtexReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_vorReceiver.load()) receiver->invalidateResults();
+    m_vorRevision.fetch_add(1);
+    if (auto *receiver=m_aisReceiver.load()) receiver->discontinuity();
+    m_aisRevision.fetch_add(1);
+    if(auto *adsb=adsbReceiver()) adsb->setSource(ring != nullptr, m_sourceIsAudio.load(std::memory_order_acquire), sampleRate, centerFrequencyHz);
     m_waitingForInitialChannel.store(waitForInitialChannel, std::memory_order_release);
     m_sourceRate.store(sampleRate, std::memory_order_release);
     m_centerHz.store(centerFrequencyHz, std::memory_order_release);
     m_source.store(ring, std::memory_order_release);
+    m_sourceEpoch.fetch_add(1, std::memory_order_release);
     m_needsReconfigure.store(true, std::memory_order_release);
 }
 
 void DspEngine::setAudioSource(dsp::SpscRing<float> *ring, double sampleRate,
                                qint64 centerFrequencyHz, bool waitForInitialChannel)
 {
+    AprsSourceChange change(m_aprsSourceChanges, *m_aprsReceiver);
     m_sourceIsAudio.store(true, std::memory_order_release);
     attachSource(ring, sampleRate, centerFrequencyHz, waitForInitialChannel);
 }
@@ -148,8 +254,21 @@ void DspEngine::setAudioSideband(int sideband)
 
 void DspEngine::clearSource()
 {
+    AprsSourceChange change(m_aprsSourceChanges, *m_aprsReceiver);
+    if(auto* tap=m_rawIqTap.load(std::memory_order_acquire)) tap->invalidateResults();
+    if (auto *receiver=m_pocsagReceiver.load()) receiver->invalidateResults();
+    if (auto *receiver=m_acarsReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_selcalReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_dscReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_navtexReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_vorReceiver.load()) receiver->invalidateResults();
+    m_vorRevision.fetch_add(1);
+    if (auto *receiver=m_aisReceiver.load()) receiver->discontinuity();
+    m_aisRevision.fetch_add(1);
+    if(auto *adsb=adsbReceiver()) adsb->setSource(false, false, 0, 0);
     m_waitingForInitialChannel.store(true, std::memory_order_release);
     m_source.store(nullptr, std::memory_order_release);
+    m_sourceEpoch.fetch_add(1, std::memory_order_release);
     m_sourceIsAudio.store(false, std::memory_order_release);
     m_audioRing->clear();
 
@@ -162,6 +281,18 @@ void DspEngine::clearSource()
 
 void DspEngine::setCenterFrequency(qint64 hz)
 {
+    AprsSourceChange change(m_aprsSourceChanges, *m_aprsReceiver);
+    if(auto* tap=m_rawIqTap.load(std::memory_order_acquire)) tap->invalidateResults();
+    if (auto *receiver=m_pocsagReceiver.load()) receiver->invalidateResults();
+    if (auto *receiver=m_acarsReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_selcalReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_dscReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_navtexReceiver.load()) receiver->discontinuity();
+    if (auto *receiver=m_vorReceiver.load()) receiver->invalidateResults();
+    m_vorRevision.fetch_add(1);
+    if(auto *adsb=adsbReceiver()) adsb->setCenter(hz);
+    if (auto *receiver=m_aisReceiver.load()) receiver->discontinuity();
+    m_aisRevision.fetch_add(1);
     if (m_centerHz.exchange(hz, std::memory_order_acq_rel) == hz)
         return;
 
@@ -175,7 +306,12 @@ void DspEngine::setReplayDelaySeconds(double seconds)
 {
     const double rate = m_sourceRate.load(std::memory_order_acquire);
     if (!(rate > 0.0) || !(seconds > 0.0)) {
-        m_replayDelayFrames.store(0, std::memory_order_release);
+        if (m_replayDelayFrames.exchange(0, std::memory_order_acq_rel) != 0) {
+            m_aprsReceiver->discontinuity();
+            if(auto *receiver=m_selcalReceiver.load()) receiver->discontinuity();
+            if(auto *receiver=m_dscReceiver.load()) receiver->discontinuity();
+            if(auto *receiver=m_navtexReceiver.load()) receiver->discontinuity();
+        }
         return;
     }
 
@@ -185,7 +321,13 @@ void DspEngine::setReplayDelaySeconds(double seconds)
     // un numero inventato, e su un pannello un istante basta a essere letto.
     const std::size_t wanted = static_cast<std::size_t>(seconds * rate);
     const std::size_t available = m_historyFrames.load(std::memory_order_acquire);
-    m_replayDelayFrames.store(std::min(wanted, available), std::memory_order_release);
+    const auto next = std::min(wanted, available);
+    if (m_replayDelayFrames.exchange(next, std::memory_order_acq_rel) != next) {
+        m_aprsReceiver->discontinuity();
+        if(auto *receiver=m_selcalReceiver.load()) receiver->discontinuity();
+        if(auto *receiver=m_dscReceiver.load()) receiver->discontinuity();
+        if(auto *receiver=m_navtexReceiver.load()) receiver->discontinuity();
+    }
 }
 
 double DspEngine::replayDelaySeconds() const
@@ -535,6 +677,14 @@ void DspEngine::updateChannel(ChannelId id, const dsp::ChannelSettings &settings
     if (it == m_channels.end())
         return;
 
+    if (settings != it->second.settings && int(id) == m_aprsReceiver->selectedChannel())
+        m_aprsReceiver->discontinuity();
+    if (auto *receiver=m_selcalReceiver.load())
+        if (settings != it->second.settings && int(id)==receiver->selectedChannel()) receiver->discontinuity();
+    if (auto *receiver=m_dscReceiver.load())
+        if (settings != it->second.settings && int(id)==receiver->selectedChannel()) receiver->discontinuity();
+    if (auto *receiver=m_navtexReceiver.load())
+        if (settings != it->second.settings && int(id)==receiver->selectedChannel()) receiver->discontinuity();
     const bool tuningChanged = settings.offsetHz != it->second.settings.offsetHz
         || settings.mode != it->second.settings.mode
         || settings.fmRds != it->second.settings.fmRds
@@ -562,6 +712,10 @@ void DspEngine::updateChannel(ChannelId id, const dsp::ChannelSettings &settings
 
 void DspEngine::removeChannel(ChannelId id)
 {
+    if (int(id) == m_aprsReceiver->selectedChannel()) m_aprsReceiver->discontinuity();
+    if (auto *receiver=m_selcalReceiver.load()) if(int(id)==receiver->selectedChannel()) receiver->discontinuity();
+    if (auto *receiver=m_dscReceiver.load()) if(int(id)==receiver->selectedChannel()) receiver->discontinuity();
+    if (auto *receiver=m_navtexReceiver.load()) if(int(id)==receiver->selectedChannel()) receiver->discontinuity();
     m_channels.erase(id);
 }
 
@@ -581,8 +735,20 @@ void DspEngine::onAudioFrameReady(const hal::AudioFrame &frame)
 
 void DspEngine::onIqFrameReady(const hal::IqFrame &frame)
 {
-    if (frame.droppedFrames > 0)
+    if (frame.droppedFrames > 0) {
+        if(auto* tap=m_rawIqTap.load(std::memory_order_acquire)) tap->invalidateResults();
+        // Invalidate already queued decoder work immediately, even while the
+        // DSP thread is still processing an older dispatch.
+        m_aprsReceiver->discontinuity();
+        if (auto *receiver=m_pocsagReceiver.load()) receiver->invalidateResults();
+        if (auto *receiver=m_acarsReceiver.load()) receiver->discontinuity();
+        if (auto *receiver=m_selcalReceiver.load()) receiver->discontinuity();
+        if (auto *receiver=m_dscReceiver.load()) receiver->discontinuity();
+        if (auto *receiver=m_navtexReceiver.load()) receiver->discontinuity();
+        if (auto *receiver=m_vorReceiver.load()) receiver->invalidateResults();
+        if (auto *receiver=m_aisReceiver.load()) receiver->discontinuity();
         m_pendingDroppedFrames.fetch_add(frame.droppedFrames, std::memory_order_relaxed);
+    }
 
     if (QThread::currentThread() == thread())
         processAvailable();
@@ -767,15 +933,72 @@ void DspEngine::analyzeAudio(std::size_t frames)
 
 void DspEngine::processAvailable()
 {
+    // Source and generation are snapshotted together before reading the ring.
+    // A later control change invalidates every block in this dispatch.
+    const auto aprsChanges = m_aprsSourceChanges.load();
+    const auto aprsSnapshot = m_aprsReceiver->generation();
+    auto *aisReceiver = m_aisReceiver.load();
+    auto *pocsagReceiver = m_pocsagReceiver.load();
+    auto *acarsReceiver = m_acarsReceiver.load();
+    auto *selcalReceiver = m_selcalReceiver.load();
+    const auto selcalSnapshot=selcalReceiver ? selcalReceiver->generation() : 0;
+    auto *dscReceiver = m_dscReceiver.load();
+    const auto dscSnapshot=dscReceiver ? dscReceiver->generation() : 0;
+    auto *navtexReceiver = m_navtexReceiver.load();
+    const auto navtexSnapshot=navtexReceiver ? navtexReceiver->generation() : 0;
+    auto *vorReceiver = m_vorReceiver.load();
+    const auto vorSnapshot=vorReceiver ? vorReceiver->generation() : 0;
+    const auto acarsSnapshot = acarsReceiver ? acarsReceiver->generation() : 0;
+    const auto pocsagSnapshot = pocsagReceiver ? pocsagReceiver->generation() : 0;
+    const auto aisSnapshot = aisReceiver ? aisReceiver->generation() : 0;
     dsp::SpscRing<float> *source = m_source.load(std::memory_order_acquire);
+    const auto aprsGeneration = (aprsChanges || m_aprsSourceChanges.load() ||
+                                 aprsSnapshot != m_aprsReceiver->generation()) ? 0 : aprsSnapshot;
+    const auto aisGeneration = (aprsChanges || m_aprsSourceChanges.load() || !aisReceiver ||
+                                aisSnapshot != aisReceiver->generation()) ? 0 : aisSnapshot;
+    const auto pocsagGeneration = (aprsChanges || m_aprsSourceChanges.load() || !pocsagReceiver ||
+                                   pocsagSnapshot != pocsagReceiver->generation()) ? 0 : pocsagSnapshot;
+    const auto acarsGeneration = (aprsChanges || m_aprsSourceChanges.load() || !acarsReceiver ||
+                                  acarsSnapshot != acarsReceiver->generation()) ? 0 : acarsSnapshot;
+    const auto selcalGeneration=(aprsChanges || m_aprsSourceChanges.load() || !selcalReceiver ||
+                                 selcalSnapshot!=selcalReceiver->generation()) ? 0 : selcalSnapshot;
+    const auto dscGeneration=(aprsChanges || m_aprsSourceChanges.load() || !dscReceiver ||
+                              dscSnapshot!=dscReceiver->generation()) ? 0 : dscSnapshot;
+    const auto navtexGeneration=(aprsChanges || m_aprsSourceChanges.load() || !navtexReceiver ||
+                                 navtexSnapshot!=navtexReceiver->generation()) ? 0 : navtexSnapshot;
+    const auto vorGeneration=(aprsChanges || m_aprsSourceChanges.load() || !vorReceiver ||
+                              vorSnapshot!=vorReceiver->generation()) ? 0 : vorSnapshot;
+    const auto sourceEpoch = m_sourceEpoch.load(std::memory_order_acquire);
+    auto* rawTap=m_rawIqTap.load(std::memory_order_acquire);
+    if(rawTap && m_rawIqTapEpoch!=sourceEpoch) { rawTap->discontinuity(); m_rawIqTapEpoch=sourceEpoch; }
     if (!source)
         return;
 
     if (m_waitingForInitialChannel.load(std::memory_order_acquire))
         return;
 
+    // A newly attached source starts a new ring-position epoch. Reconfiguring
+    // the same source must not by itself erase an outstanding loss fence.
+    if (m_aprsFenceEpoch != sourceEpoch) {
+        m_aprsUnsafeUntil = 0;
+        m_aprsFenceEpoch = sourceEpoch;
+    }
     const quint64 dropped = m_pendingDroppedFrames.exchange(0, std::memory_order_acq_rel);
     if (dropped > 0) {
+        if(rawTap) rawTap->discontinuity();
+        if(auto *adsb=adsbReceiver()) adsb->discontinuity();
+        m_aprsReceiver->discontinuity();
+        if (pocsagReceiver) pocsagReceiver->invalidateResults();
+        if (acarsReceiver) acarsReceiver->discontinuity();
+        if (selcalReceiver) selcalReceiver->discontinuity();
+        if (dscReceiver) dscReceiver->discontinuity();
+        if (navtexReceiver) navtexReceiver->discontinuity();
+        if (vorReceiver) vorReceiver->invalidateResults();
+        if (aisReceiver) aisReceiver->discontinuity();
+        // The loss position is not supplied. Conservatively discard APRS
+        // input buffered up to this snapshot, including a crossing block;
+        // other audio and DSP consumers continue to receive those samples.
+        m_aprsUnsafeUntil = std::max(m_aprsUnsafeUntil, source->totalWritten());
         m_totalDropped += dropped;
         // In overrun sostenuto il segnale arriverebbe a ogni frame: la UI ne
         // ricaverebbe solo un flusso di re-layout della barra di stato.
@@ -788,8 +1011,23 @@ void DspEngine::processAvailable()
 
     if (m_needsReconfigure.load(std::memory_order_acquire))
         reconfigure();
+    const auto vorRevision=m_vorRevision.load();
+    if(m_vorTap && vorRevision!=m_vorConfiguredRevision) {
+        const double rate=m_sourceRate.load(), offset=double(m_vorFrequency.load()-m_centerHz.load());
+        m_vorConfigured=m_vorEnabled.load() && std::isfinite(rate) && rate>=VorEngineTap::MinInputRate && rate<=VorEngineTap::MaxInputRate &&
+            m_vorTap->configure(unsigned(std::lround(rate)),offset);
+        m_vorConfiguredRevision=vorRevision;
+    }
     if (m_activeRate <= 0.0)
         return;
+    const auto aisRevision = m_aisRevision.load();
+    if (m_aisTap && aisRevision != m_aisConfiguredRevision) {
+        const auto rate = m_sourceRate.load();
+        const auto offset = double(m_aisFrequency.load() - m_centerHz.load());
+        m_aisConfigured = std::isfinite(rate) && rate >= 48000 && rate <= 2400000 &&
+                          m_aisTap->configure(static_cast<unsigned>(std::lround(rate)), offset);
+        m_aisConfiguredRevision = aisRevision;
+    }
 
     // La banda sotto osservazione è cambiata mentre eravamo altrove: la storia
     // raccolta finora non descrive più questo pezzo di spettro.
@@ -813,6 +1051,7 @@ void DspEngine::processAvailable()
             break;
 
         const std::size_t frames = std::min(availableFrames, kProcessBlock);
+        const auto firstInput = source->totalRead();
         std::size_t count = 0;
         if (audioSource) {
             count = source->read(m_mono.data(), frames);
@@ -825,6 +1064,43 @@ void DspEngine::processAvailable()
             if (count == 0)
                 break;
         }
+
+        // AIS uses live raw IQ before replay/blanking; suppress the entire
+        // block if it touches the same conservative source-loss fence as APRS.
+        if(!audioSource && rawTap && aprsGeneration && firstInput>=m_aprsUnsafeUntil)
+            rawTap->process(m_interleaved.data(),count,m_sourceRate.load(),m_centerHz.load());
+        if (!audioSource && m_aisTap && m_aisConfigured && firstInput >= m_aprsUnsafeUntil && aisGeneration)
+            m_aisTap->process(reinterpret_cast<const Complex *>(m_interleaved.data()), count, aisGeneration);
+        // Live interleaved IQ; do not alias float storage as std::complex.
+        // The absolute ring fence is in floats; crossing blocks are discarded.
+        if (!audioSource && pocsagReceiver && pocsagGeneration && firstInput >= m_aprsUnsafeUntil) {
+            for (std::size_t at=0; at<count; at+=m_pocsagIq.size()) {
+                const auto n=std::min(m_pocsagIq.size(), count-at);
+                for (std::size_t i=0;i<n;++i)
+                    m_pocsagIq[i] = {m_interleaved[2*(at+i)], m_interleaved[2*(at+i)+1]};
+                if (pocsagReceiver->submitForGeneration(m_pocsagIq.data(),n,pocsagGeneration)
+                    != AsyncIqDecoder::SubmitResult::Accepted) break;
+            }
+        }
+        if (!audioSource && acarsReceiver && acarsGeneration && firstInput >= m_aprsUnsafeUntil) {
+            for (std::size_t at=0; at<count; at+=m_pocsagIq.size()) {
+                const auto n=std::min(m_pocsagIq.size(), count-at);
+                for (std::size_t i=0;i<n;++i)
+                    m_pocsagIq[i] = {m_interleaved[2*(at+i)], m_interleaved[2*(at+i)+1]};
+                if (acarsReceiver->submitForGeneration(m_pocsagIq.data(),n,acarsGeneration)
+                    != AsyncIqDecoder::SubmitResult::Accepted) break;
+            }
+        }
+        if (!audioSource && m_vorTap && m_vorConfigured && vorGeneration && firstInput >= m_aprsUnsafeUntil) {
+            for (std::size_t at=0;at<count;at+=m_pocsagIq.size()) {
+                const auto n=std::min(m_pocsagIq.size(),count-at);
+                for(std::size_t i=0;i<n;++i) m_pocsagIq[i]={m_interleaved[2*(at+i)],m_interleaved[2*(at+i)+1]};
+                m_vorTap->processForGeneration(m_pocsagIq.data(),n,vorGeneration);
+            }
+        }
+        // Live raw IQ, before history/replay and noise blanking.
+        if (!audioSource)
+            if(auto *adsb=adsbReceiver()) adsb->process(reinterpret_cast<const Complex *>(m_interleaved.data()), count);
 
         m_statsIqFrames += count;
         ++m_statsBlocks;
@@ -939,6 +1215,52 @@ void DspEngine::processAvailable()
                 channel.processor->processStereo(m_iq.data(), toProcess,
                                                  channel.audio.data());
             const std::size_t usable = std::min(produced, audioCapacity);
+            const auto mode=channel.settings.mode;
+            if (!audioSource && m_replayDelayFrames.load()==0 && firstInput>=m_aprsUnsafeUntil && dscReceiver && dscGeneration &&
+                dscReceiver->enabled() && int(channelId)==dscReceiver->selectedChannel() &&
+                (mode==DemodMode::Usb || mode==DemodMode::Lsb)) {
+                const auto length=std::min(usable,channel.processor->lastMonoPreGainFrames());
+                const auto *mono=channel.processor->lastMonoPreGain();
+                for(std::size_t at=0;at<length;at+=m_aprsStereo.size()) {
+                    const auto n=std::min(m_aprsStereo.size(),length-at);
+                    for(std::size_t i=0;i<n;++i) m_aprsStereo[i]={mono[at+i],0};
+                    if(dscReceiver->submitForGeneration(m_aprsStereo.data(),n,dscGeneration)!=AsyncIqDecoder::SubmitResult::Accepted) break;
+                }
+            }
+            if (!audioSource && m_replayDelayFrames.load()==0 && firstInput>=m_aprsUnsafeUntil && navtexReceiver && navtexGeneration &&
+                navtexReceiver->enabled() && int(channelId)==navtexReceiver->selectedChannel() &&
+                (mode==DemodMode::Usb || mode==DemodMode::Lsb)) {
+                const auto length=std::min(usable,channel.processor->lastMonoPreGainFrames());
+                const auto *mono=channel.processor->lastMonoPreGain();
+                for(std::size_t at=0;at<length;at+=m_aprsStereo.size()) {
+                    const auto n=std::min(m_aprsStereo.size(),length-at);
+                    for(std::size_t i=0;i<n;++i) m_aprsStereo[i]={mono[at+i],0};
+                    if(navtexReceiver->submitForGeneration(m_aprsStereo.data(),n,navtexGeneration)!=AsyncIqDecoder::SubmitResult::Accepted) break;
+                }
+            }
+            if (!audioSource && m_replayDelayFrames.load()==0 && firstInput>=m_aprsUnsafeUntil && selcalReceiver && selcalGeneration &&
+                selcalReceiver->enabled() && int(channelId)==selcalReceiver->selectedChannel() &&
+                (mode==DemodMode::Am || mode==DemodMode::Sam || mode==DemodMode::Usb || mode==DemodMode::Lsb)) {
+                const auto length=std::min(usable,channel.processor->lastMonoPreGainFrames());
+                const auto *mono=channel.processor->lastMonoPreGain();
+                for(std::size_t at=0;at<length;at+=m_aprsStereo.size()) {
+                    const auto n=std::min(m_aprsStereo.size(),length-at);
+                    for(std::size_t i=0;i<n;++i) m_aprsStereo[i]={mono[at+i],0};
+                    if(selcalReceiver->submitForGeneration(m_aprsStereo.data(),n,selcalGeneration)!=AsyncIqDecoder::SubmitResult::Accepted) break;
+                }
+            }
+            if (!audioSource && firstInput >= m_aprsUnsafeUntil && channel.settings.mode == DemodMode::Nfm &&
+                int(channelId) == m_aprsReceiver->selectedChannel() && m_aprsReceiver->enabled()) {
+                const auto count = std::min(usable, channel.processor->lastNfmPreGainFrames());
+                const auto *preGain = channel.processor->lastNfmPreGain();
+                for (std::size_t at = 0; at < count; at += m_aprsStereo.size()) {
+                    const auto n = std::min(m_aprsStereo.size(), count - at);
+                    for (std::size_t i = 0; i < n; ++i)
+                        m_aprsStereo[i] = Complex(preGain[at+i], preGain[at+i]);
+                    if (m_aprsReceiver->submitForGeneration(int(channelId), m_aprsStereo.data(), n, aprsGeneration)
+                        != AsyncIqDecoder::SubmitResult::Accepted) break;
+                }
+            }
             for (std::size_t i = 0; i < usable * kAudioChannels; ++i)
                 m_mix[i] += channel.audio[i];
             audioFrames = std::max(audioFrames, usable);

@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 3.21)
+project(dsc_standalone LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
+set(ONAIR_ROOT "/Volumes/Projects/OnAir-reference-3.9.0" CACHE PATH "OnAir reference")
+add_executable(dsc_worker_ui test_worker_ui.cpp AsyncDsc.cpp DscController.cpp DscController.h DscRx.cpp FskAudioRx.cpp
+  ${ONAIR_ROOT}/core/src/marine/marine_dsc.cpp ${ONAIR_ROOT}/core/src/marine/marine_mmsi.cpp ${ONAIR_ROOT}/core/src/marine/marine_dsp.cpp)
+target_include_directories(dsc_worker_ui PRIVATE ${ONAIR_ROOT}/core/include)
+target_compile_definitions(dsc_worker_ui PRIVATE DECT2_PORTABLE DSC_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_options(dsc_worker_ui PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(dsc_worker_ui PRIVATE -Wl,-dead_strip)
+target_link_libraries(dsc_worker_ui PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick)

@@ -247,6 +247,7 @@ public slots:
     void setPluginParameter(int index, double value);
 
 signals:
+    void shutdownFenceReached();
     /// La trasmissione non può partire, e perché. La UI lo mostra invece di
     /// lasciare l'operatore davanti a un PTT premuto che non trasmette.
     void refused(const QString &reason);

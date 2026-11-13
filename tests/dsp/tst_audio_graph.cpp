@@ -15,6 +15,7 @@
 // volta, in mezzo a un contest, e nessuno saprebbe leggerlo.
 
 #include "audio/AudioGraph.h"
+#include "audio/OutputGain.h"
 #include "dsp/SpscRing.h"
 
 #include <QTest>
@@ -26,6 +27,12 @@ class TestAudioGraph : public QObject
     Q_OBJECT
 
 private slots:
+    void testSilenceOverride()
+    {
+        QCOMPARE(outputGain(0.8f, false, true), 0.0f);
+        QVERIFY(outputGain(0.8f, false, false) > 0.0f);
+        QCOMPARE(outputGain(0.8f, true, false), 0.0f);
+    }
     void theRuleIsPureAndCheckable();
     void theNeuralOutputReachesTheEar();
     void theNeuralOutputIsRefusedEverywhereElse();

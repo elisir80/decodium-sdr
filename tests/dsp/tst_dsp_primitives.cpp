@@ -51,6 +51,7 @@ private slots:
     void ringRoundTrip();
     void ringWrapsAcrossBoundary();
     void ringReportsOverrunInsteadOfCorrupting();
+    void ringAbsolutePositions();
 
     // ── Progetto dei filtri ──────────────────────────────────────────────
 
@@ -74,6 +75,29 @@ private slots:
     void agcThresholdStopsNoiseAmplification();
     void agcAcceptsCustomTiming();
 };
+
+void TestDspPrimitives::ringAbsolutePositions()
+{
+    SpscRing<float> ring(8);
+    const float samples[] = {1,2,3,4,5,6,7,8,9,10};
+    float out[8]{};
+    QCOMPARE(ring.totalWritten(), std::uint64_t(0));
+    QCOMPARE(ring.totalRead(), std::uint64_t(0));
+    QCOMPARE(ring.write(samples, 10), std::size_t(8)); // failed tail is not counted
+    QCOMPARE(ring.totalWritten(), std::uint64_t(8));
+    QCOMPARE(ring.read(out, 5), std::size_t(5));
+    QCOMPARE(ring.totalRead(), std::uint64_t(5));
+    QCOMPARE(ring.write(samples, 5), std::size_t(5)); // physical wrap
+    QCOMPARE(ring.totalWritten(), std::uint64_t(13));
+    QCOMPARE(ring.discard(3), std::size_t(3));
+    QCOMPARE(ring.totalRead(), std::uint64_t(8));
+    ring.clear();
+    QCOMPARE(ring.totalRead(), std::uint64_t(13));
+    QCOMPARE(ring.available(), std::size_t(0));
+    ring.reset(8);
+    QCOMPARE(ring.totalWritten(), std::uint64_t(0));
+    QCOMPARE(ring.totalRead(), std::uint64_t(0));
+}
 
 void TestDspPrimitives::ringRoundTrip()
 {

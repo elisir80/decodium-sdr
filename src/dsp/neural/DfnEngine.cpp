@@ -73,8 +73,10 @@ QStringList DfnEngine::searchPaths()
     paths << QCoreApplication::applicationDirPath();
     // Poi dove uno la mette compilandola a mano.
     paths << QDir::current().absoluteFilePath(QStringLiteral("third_party/deepfilter"));
-    paths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-             + QStringLiteral("/lib");
+    const QString testDataDirectory = qEnvironmentVariable("DSDR_TEST_APPDATA_DIR");
+    const QString dataDirectory = testDataDirectory.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : testDataDirectory;
+    paths << QDir(dataDirectory).filePath(QStringLiteral("lib"));
     // E infine i percorsi di sistema, che QLibrary consulta da sé con il nome
     // nudo: la stringa vuota lascia decidere a lei.
     paths << QString();

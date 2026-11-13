@@ -1,0 +1,7 @@
+if(NOT TARGET tst_aprs_backlog)
+    qt_add_executable(tst_aprs_backlog "${CMAKE_SOURCE_DIR}/tests/standalone/aprs_gap/tst_aprs_backlog.cpp")
+    target_include_directories(tst_aprs_backlog PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(tst_aprs_backlog PRIVATE dsdr::core Qt6::Test)
+    add_test(NAME tst_aprs_backlog COMMAND tst_aprs_backlog)
+    set_tests_properties(tst_aprs_backlog PROPERTIES ENVIRONMENT "DSDR_TEST_SILENT_AUDIO=1;QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+endif()

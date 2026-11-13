@@ -67,7 +67,7 @@ PanelFrame {
             text: Session.scanning ? qsTr("■ Stop scanner") : qsTr("Scanner banda")
             checkable: true
             checked: Session.scanning
-            enabled: Session.connected && root.currentBand !== null
+            enabled: Session.scanning || (Session.connected && root.currentBand !== null)
             onClicked: {
                 if (Session.scanning) {
                     Session.stopScan()
@@ -88,6 +88,63 @@ PanelFrame {
             color: Theme.textSecondary
             Layout.fillWidth: true
         }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacingTight
+
+        TextField {
+            id: priorityFrequency
+            Layout.fillWidth: true
+            implicitHeight: Theme.controlHeight
+            enabled: !Session.scanning
+            placeholderText: qsTr("Priorità: frequenza corrente")
+            color: Theme.textPrimary
+            placeholderTextColor: Theme.textDisabled
+            font.pixelSize: Theme.fontSmall
+            selectByMouse: true
+        }
+        DsdrButton {
+            text: Session.priorityScanning ? qsTr("■ Stop priorità") : qsTr("Ascolto prioritario")
+            enabled: Session.priorityScanning || (!Session.scanning && Session.connected
+                                                  && root.currentBand !== null)
+            onClicked: {
+                if (Session.priorityScanning) {
+                    Session.stopScan()
+                    return
+                }
+                const hz = priorityFrequency.text.trim().length
+                         ? BandPlan.parseFrequency(priorityFrequency.text)
+                         : Session.currentChannelFrequency()
+                if (hz <= 0 || !root.reachable(hz)) {
+                    priorityError.visible = true
+                    return
+                }
+                priorityError.visible = false
+                const band = root.currentBand
+                const step = band.name === "FM 88–108" ? 100000
+                           : band.name === "6m" ? 25000 : 5000
+                if (!Session.startPriorityScan(band.start, band.end, step, hz, 350, -75))
+                    priorityError.visible = true
+            }
+        }
+    }
+    Text {
+        id: priorityError
+        visible: false
+        Layout.fillWidth: true
+        text: qsTr("Scansione non avviata: controlla frequenza prioritaria e copertura della banda.")
+        color: Theme.danger
+        font.pixelSize: Theme.fontSmall
+        wrapMode: Text.WordWrap
+    }
+    Text {
+        visible: Session.priorityScanning
+        Layout.fillWidth: true
+        text: Session.priorityScanState + qsTr(" · soglia −75 dBFS")
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontSmall
     }
 
     Flow {

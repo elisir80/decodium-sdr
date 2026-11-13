@@ -267,16 +267,23 @@ jobs:
           echo "RNNoise pronto: $(git rev-parse --short HEAD), modello verificato"
 
       # ── Build e installazione ───────────────────────────────────────────
+      - name: Rust per VDL2 sperimentale
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'windows' && 'x86_64-pc-windows-gnu' || '' }}
+
       - name: Compila
         run: |
           QT_DEPLOY_ARG=""
           HAMLIB_RIGCTLD_ARG=""
+          VDL2_RUST_TARGET=""
           if [ "${{ matrix.platform }}" = "macos" ]; then
             # Qt 6.11/macdeployqt has a broken CMake-generated QML plugin
             # symlink path on this runner; deploy the finished app explicitly.
             QT_DEPLOY_ARG="-DDSDR_QT_CMAKE_DEPLOY=OFF"
           fi
           if [ "${{ matrix.platform }}" = "windows" ]; then
+            VDL2_RUST_TARGET="-DDSDR_VDL2_RUST_TARGET=x86_64-pc-windows-gnu"
             # Il runtime Hamlib include DLL che non devono precedere quelle
             # della toolchain MSYS2 nel PATH. Lo consegniamo a CMake con un
             # parametro dedicato, dopo aver convertito il percorso in forma
@@ -295,6 +302,7 @@ jobs:
           # nessuna radio tradizionale — perché la riga che lo diceva era una
           # fra trecento e nessuno l'ha letta.
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DDSDR_BUILD_VDL2_PROTOCOL_EXPERIMENT=ON $VDL2_RUST_TARGET \
                 -DDSDR_STRICT_BACKENDS=ON -DDSDR_BUNDLE_HAMLIB=ON \
                 -DDSDR_BUNDLE_SOAPY=ON \
                 -DDSDR_SOAPY_BUNDLE_MODULES="librtlsdrSupport;libHackRFSupport" \
@@ -304,6 +312,7 @@ jobs:
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
+          DSDR_TEST_SILENT_AUDIO: '1'
         run: |
           # I runner ARM non avviano un server audio: senza un sink PulseAudio
           # i test di spettro, registrazione IQ e moduli ricevono zero frame.
@@ -337,6 +346,7 @@ jobs:
             PREFIX="$(cygpath -m "$PREFIX")"
           fi
           cmake --install build --prefix "$PREFIX"
+          bash scripts/check-onair-terms.sh "$PREFIX" "${{ matrix.platform }}"
 
           if [ "${{ matrix.platform }}" = "macos" ]; then
             macdeployqt "$PREFIX/decodium-sdr.app" \

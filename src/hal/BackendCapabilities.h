@@ -64,6 +64,8 @@ struct BackendCapabilities
     bool remoteCapable = false;   ///< già dietro rete (kiwi, nettcp, flex)
     bool multiClient = false;
     bool supportsRecording = true;
+    // Only set after this specific backend's Qt affinity has been audited.
+    bool auditedAsyncShutdownTransfer = false;
 
     // ── Suggerimenti per la UI ───────────────────────────────────────────
     QStringList nativePanels;     ///< componenti QML extra da caricare

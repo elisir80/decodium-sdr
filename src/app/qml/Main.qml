@@ -28,6 +28,7 @@ ApplicationWindow {
     minimumWidth: Math.min(720, availableWidth - 40)
     minimumHeight: Math.min(480, availableHeight - 40)
     visible: true
+    contentItem.enabled: !Session.shutdownPending
     color: Theme.background
     title: Session.connected
            ? qsTr("DECODIUM SDR — %1").arg(Session.deviceName)
@@ -44,8 +45,10 @@ ApplicationWindow {
 
     // ── Barra dei menu ───────────────────────────────────────────────────
     menuBar: MainMenu {
+        enabled: !Session.shutdownPending
         panadapter: scope.panadapterView
         panelsOnLeft: window.panelsOnLeft
+        onQuitRequested: window.close()
         onSourceRequested: {
             if (!Session.discovering)
                 Session.startDiscovery()
@@ -53,6 +56,18 @@ ApplicationWindow {
         }
         onAboutRequested: aboutPopup.open()
         onOperationsRequested: operationsPopup.open()
+        onIqAnalysisRequested: iqAnalysisPopup.open()
+        onAdsbRequested: adsbPopup.open()
+        onAprsRequested: aprsPopup.open()
+        onAisRequested: aisPopup.open()
+        onPocsagRequested: pocsagPopup.open()
+        onAcarsRequested: acarsPopup.open()
+        vdl2Available: typeof vdl2Manager !== "undefined" && vdl2Manager !== null
+        onVdl2Requested: vdl2Setup.open()
+        onVorRequested: vorPopup.open()
+        onSelcalRequested: selcalPopup.open()
+        onDscRequested: dscPopup.open()
+        onNavtexRequested: navtexPopup.open()
         onPanelSideToggled: window.panelsOnLeft = !window.panelsOnLeft
     }
 
@@ -357,6 +372,45 @@ ApplicationWindow {
     }
 
     // ── Selezione sorgente ───────────────────────────────────────────────
+    IqAnalysisDialog { id: iqAnalysisPopup }
+    AdsbDialog { id: adsbPopup; controller: Session.adsb }
+    AprsDialog { id: aprsPopup; controller: Session.aprs }
+    AisDialog { id: aisPopup; controller: Session.ais }
+    PocsagDialog { id: pocsagPopup; controller: Session.pocsag }
+    AcarsDialog { id: acarsPopup; controller: Session.acars }
+    Dialog {
+        id: vdl2Setup
+        objectName: "vdl2Setup"
+        anchors.centerIn: parent
+        modal: false
+        width: Math.min(600, window.width - 40)
+        title: qsTr("Ricezione VDL2 sperimentale")
+        standardButtons: Dialog.Close
+        contentItem: ColumnLayout {
+            spacing: 8
+            Text {
+                Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.textPrimary
+                text: qsTr("Un solo canale IQ. La frequenza deve rientrare nello spettro della sorgente. La ricezione reale non è ancora verificata. Per cambiare sorgente o frequenza, ferma e riavvia il decoder.")
+            }
+            TextField { id: vdl2Frequency; objectName: "vdl2Frequency"; Layout.fillWidth: true; text: "136975000"; placeholderText: qsTr("Frequenza in Hz"); validator: DoubleValidator { bottom: 1; decimals: 0; notation: DoubleValidator.StandardNotation } }
+            Text { objectName: "vdl2SetupStatus"; Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.textSecondary; text: typeof vdl2Manager !== "undefined" && vdl2Manager ? vdl2Manager.state : "" }
+            RowLayout {
+                Button { objectName: "vdl2Start"; text: qsTr("Avvia"); enabled: typeof vdl2Manager !== "undefined" && vdl2Manager && !vdl2Manager.busy && vdl2Frequency.acceptableInput; onClicked: vdl2Manager.startForFrequency(Number(vdl2Frequency.text)) }
+                Button { objectName: "vdl2Stop"; text: qsTr("Ferma"); enabled: typeof vdl2Manager !== "undefined" && vdl2Manager && vdl2Manager.busy; onClicked: vdl2Manager.stop() }
+                Button { objectName: "vdl2Show"; text: qsTr("Mostra trame"); enabled: typeof vdl2Manager !== "undefined" && vdl2Manager && vdl2Manager.controller; onClicked: { vdl2Setup.close(); vdl2Display.item.open() } }
+            }
+        }
+    }
+    Loader {
+        id: vdl2Display
+        active: typeof vdl2Manager !== "undefined" && vdl2Manager !== null && vdl2Manager.controller !== null
+        sourceComponent: Vdl2Dialog { controller: vdl2Manager.controller }
+    }
+    VorDialog { id: vorPopup; controller: Session.vor }
+    SelcalDialog { id: selcalPopup; controller: Session.selcal }
+    DscDialog { id: dscPopup; controller: Session.dsc }
+    NavtexDialog { id: navtexPopup; controller: Session.navtex }
+
     OperationsDialog {
         id: operationsPopup
     }
@@ -440,6 +494,12 @@ ApplicationWindow {
                 color: Theme.textDisabled
             }
 
+            Text {
+                text: "Based on OnAir by Kristijonas Adomaitis - https://on-air.dev"
+                font.pixelSize: Theme.fontSmall
+                color: Theme.textSecondary
+            }
+
             DsdrButton {
                 Layout.alignment: Qt.AlignRight
                 text: qsTr("Chiudi")
@@ -473,11 +533,24 @@ ApplicationWindow {
         y = Math.max(0, Math.min(y, availableHeight - height))
     }
 
-    onClosing: {
+    onClosing: function(close) {
+        if (!Session.shutdownFencePassed) {
+            close.accepted = false
+            Session.requestShutdown()
+            return
+        }
         windowGeometry.x = window.x
         windowGeometry.y = window.y
         windowGeometry.width = window.width
         windowGeometry.height = window.height
+    }
+
+    Connections {
+        target: Session
+        function onShutdownStateChanged() {
+            if (Session.shutdownFencePassed)
+                window.close()
+        }
     }
 
     // Se lo schermo cambia mentre l'applicazione è aperta — un monitor

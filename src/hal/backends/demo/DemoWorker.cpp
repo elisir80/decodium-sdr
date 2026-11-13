@@ -80,6 +80,13 @@ void DemoWorker::setTransmitting(bool transmitting)
     m_transmitting = transmitting;
 }
 
+void DemoWorker::setSyntheticConfig(const QVariantMap &config)
+{
+    m_syntheticConfig = config;
+    m_syntheticEnabled = config.value(QStringLiteral("enabled")).toBool();
+    m_synthetic.configure(m_sampleRate, config);
+}
+
 void DemoWorker::setGainReductionDb(double db)
 {
     m_gainScale = static_cast<float>(std::pow(10.0, -std::max(0.0, db) / 20.0));
@@ -131,6 +138,8 @@ void DemoWorker::tick()
             std::fill(m_block.begin() + static_cast<std::ptrdiff_t>(got),
                       m_block.begin() + static_cast<std::ptrdiff_t>(count),
                       dsp::Complex(0.0f, 0.0f));
+        } else if (m_syntheticEnabled) {
+            m_synthetic.generate(m_block.data(), count);
         } else {
             m_band.generate(m_block.data(), count);
         }

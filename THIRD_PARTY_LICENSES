@@ -4,12 +4,41 @@ DECODIUM SDR — dipendenze di terze parti
 Il progetto è distribuito sotto GPL-3.0-or-later. Ogni dipendenza elencata qui
 è stata verificata compatibile con quella licenza.
 
-Nessun **codice** di terze parti è vendorizzato in questo repository. Ciò che
-sta in `third_party/` arriva da monte a cura di chi compila, è escluso da git e
-resta della sua licenza originale: qui se ne dichiarano provenienza e termini.
+Il codice ACARS, SELCAL, NAVTEX e VDL2 sperimentale in `src/dsp/` è adattato da OnAir, come
+indicato sotto. Le dipendenze in `third_party/` arrivano invece da monte a
+cura di chi compila, sono escluse da git e mantengono la licenza originale.
 
 Un solo **dato** fa eccezione ed è versionato — le coste di Natural Earth, di
 pubblico dominio, diciannove kilobyte. La deroga è motivata dove è elencato.
+
+
+CODICE DI TERZE PARTI PRESENTE NEL REPOSITORY
+---------------------------------------------
+
+OnAir — decoder ACARS, SELCAL, NAVTEX e VDL2 sperimentali
+    Autori  : Kristijonas Adomaitis e contributori OnAir
+    Sito    : https://github.com/adswill/OnAir
+    Licenza : GPL-3.0-or-later, con i termini aggiuntivi conservati in
+              docs/decoders/acars-onair/ADDITIONAL-TERMS.md.
+              Gli avvisi originali OnAir NOTICE.md e THIRD_PARTY.md sono
+              conservati nella stessa cartella e inclusi nell'installazione.
+    Codice  : src/dsp/acars/acars_chan.h e acars_chan.cpp e
+              src/dsp/SelcalAudioDecoder.cpp e src/dsp/navtex/NavtexProtocol.*;
+              il protocollo NAVTEX deriva da OnAir 3.9.0 commit
+              15a2907f02f7486fc64b8e439a1645eb7373171f e conserva
+              l'indicazione della tabella CCIR 476 tratta da fldigi.
+              Il livello VDL2 in src/dsp/vdl2/rust/onair_vdl2 e onair_common
+              e l'header ABI provengono dallo stesso commit OnAir; il wrapper
+              dsdr_vdl2 e il workspace isolato sono nuovi.
+              Provenienza ACARS,
+              modifiche e commit di riferimento sono descritti in
+              docs/decoders/acars-onair/README.md.
+    Avviso  : Based on OnAir by Kristijonas Adomaitis - https://on-air.dev
+    Stato   : ACARS, SELCAL e NAVTEX sono integrati in via sperimentale;
+              il ricevitore VDL2 è collegato all'app solo nelle build che
+              abilitano esplicitamente DSDR_BUILD_VDL2_PROTOCOL_EXPERIMENT.
+              L'avviso è riportato nella finestra informazioni e i termini
+              sono inclusi dalle regole di installazione.
 
 
 COSTRUITE DAL SORGENTE, NON REDISTRIBUITE

@@ -1,0 +1,15 @@
+# VOR engine integration candidate — not applied
+
+The isolated `VorEngineTap` takes raw IQ before `DspEngine::processAvailable`'s channel processing, translates a configured offset to DC, low-pass filters and decimates 96/192/288/384 ksample/s to complex 48 ksample/s, then feeds `VorAsyncReceiver::FilteredIq`. The FIR is 193 taps, Blackman window, nominal 14 kHz cutoff. In this candidate it must be constructed, configured, reset and called exclusively on the producer/engine thread; the receiver must already be configured for filtered IQ at 48 kHz and running. This is an experimental front end; the filter rejection curve, transitions and system throughput are not measured.
+
+The existing `ChannelProcessor::lastBaseband()` is not a suitable universal VOR source: `configureForMode()` sets the non-wide-FM decimator passband to 8 kHz, below the 9960 Hz subcarrier. Normal output audio is post-demodulation/AGC/filtering and is not a guaranteed VOR composite. Source selection must therefore be explicit: raw IQ of a backend with a supported sample rate, known centre and a chosen VOR frequency offset. The current tap handles raw IQ only, not the audio-source backend, replay, other sample rates or live reconfiguration. The test synthesizes a beacon at +7 kHz in that input.
+
+The engine hookup is intentionally **not yet specified as a safe applicable change**. Before writing it, coordinate with the owner of DspEngine and prove these invariants: opt-in branch and explicit channel/tuning; suppress on audio source or incompatible rate; tune/source/reconnect/centre changes and dropped input invalidate results immediately and reset FIR/decoder before new samples; no stale queued block crosses generations; no producer accesses the tap during configure/detach/destruction; join happens off DSP and UI threads after producer and controller users are quiescent; stop never outlives its source or receiver. An IQ frame drop may be notified separately from already-buffered samples, so resetting at an assumed boundary alone is not sufficient proof. No DspEngine, SessionManager, Main or shared CMake changes are included in this candidate. The existing controller and dialog are not connected.
+
+`tests/standalone/vor_engine/test.cpp` runs a test harness of the proposed raw-IQ branch, **not DspEngine**. It checks no output with the tap uncalled and, on the same unmodified IQ input, successful decode with the branch called: three rates, three angles, +7 kHz offset, 317-sample chunks, a carrier-only negative and reset. The generated carrier has no noise or other station; this does not demonstrate channel rejection or real RF. It also does not test source changes during an active engine dispatch, actual engine audio equivalence, GUI wiring, shutdown ordering, or throughput. More work and real engine A/B tests are required before presenting this as application integration.
+
+```sh
+DSDR_TEST_SILENT_AUDIO=1 cmake -S tests/standalone/vor_engine -B build/vor-engine-check
+DSDR_TEST_SILENT_AUDIO=1 cmake --build build/vor-engine-check -j 4
+DSDR_TEST_SILENT_AUDIO=1 build/vor-engine-check/vor_engine_test
+```

@@ -3,6 +3,8 @@
 # RNF-06: ogni backend è compilabile/escludibile a build-time. Nessun backend
 # è dipendenza obbligatoria del core: il seam HAL resta l'unico contratto.
 
+option(DSDR_BUILD_VDL2_PROTOCOL_EXPERIMENT "Build the optional experimental VDL2 receiver and protocol" OFF)
+
 option(DSDR_BACKEND_DEMO    "Backend sintetico (RF-09) — sempre consigliato ON" ON)
 option(DSDR_BACKEND_SOAPY   "Backend SoapySDR (RF-01)"                          ON)
 option(DSDR_BACKEND_RTLSDR  "Backend RTL-SDR nativo (librtlsdr)"                ${APPLE})

@@ -9,3 +9,11 @@ add_test(
 set_tests_properties(tst_soapy_bundle_manifest PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     TIMEOUT 30)
+
+add_test(NAME tst_onair_install_notices
+    COMMAND ${CMAKE_COMMAND}
+        -DDSDR_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DDSDR_BINARY_DIR=${CMAKE_BINARY_DIR}
+        -DDSDR_APPLE=${APPLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tst_onair_install_notices.cmake)
+set_tests_properties(tst_onair_install_notices PROPERTIES RUN_SERIAL TRUE TIMEOUT 30)

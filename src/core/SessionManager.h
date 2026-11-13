@@ -15,6 +15,27 @@
 #include "core/ChannelModel.h"
 #include "core/DeviceListModel.h"
 #include "core/IqRecorder.h"
+#include "core/IqAnalysisLab.h"
+#include "core/AdsbController.h"
+#include "core/AdsbReceiver.h"
+#include "core/AprsController.h"
+#include "core/AprsReceiver.h"
+#include "core/AisController.h"
+#include "core/AisReceiver.h"
+#include "core/PocsagController.h"
+#include "core/PocsagReceiver.h"
+#include "core/AcarsController.h"
+#include "core/AcarsReceiver.h"
+#include "core/VorController.h"
+#include "core/VorAsyncReceiver.h"
+#include "core/SelcalController.h"
+#include "core/SelcalReceiver.h"
+#include "core/DscController.h"
+#include "core/DscReceiver.h"
+#include "core/NavtexController.h"
+#include "core/NavtexReceiver.h"
+#include "core/DecoderShutdown.h"
+#include "core/BackendShutdownViewModel.h"
 #include "core/IqModuleManager.h"
 #include "core/LanguageManager.h"
 #include "core/OperationScheduler.h"
@@ -25,6 +46,7 @@
 #include <QObject>
 #include <QVariantList>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QTcpServer>
 
 #include <vector>
@@ -50,6 +72,7 @@ class NeuralNrStage;
 namespace dsdr::core {
 
 class DspEngine;
+class AprsReceiver;
 class TxEngine;
 
 class TxProfiles;
@@ -191,6 +214,20 @@ class SessionManager : public QObject
     /// riga piatta proprio nei secondi in cui servirebbe di più.
     Q_PROPERTY(dsdr::core::SpectrumFeed *txSpectrum READ txSpectrum CONSTANT)
     Q_PROPERTY(dsdr::audio::AudioRouter *audio READ audio CONSTANT)
+    Q_PROPERTY(dsdr::core::IqAnalysisLab *iqAnalysis READ iqAnalysis CONSTANT)
+    Q_PROPERTY(QString shutdownBackendMessage READ shutdownBackendMessage NOTIFY shutdownStateChanged)
+    Q_PROPERTY(bool shutdownBackendRetryAllowed READ shutdownBackendRetryAllowed NOTIFY shutdownStateChanged)
+    Q_PROPERTY(bool shutdownPending READ shutdownPending NOTIFY shutdownStateChanged)
+    Q_PROPERTY(bool shutdownFencePassed READ shutdownFencePassed NOTIFY shutdownStateChanged)
+    Q_PROPERTY(dsdr::core::AdsbController *adsb READ adsb CONSTANT)
+    Q_PROPERTY(dsdr::core::AprsController *aprs READ aprs CONSTANT)
+    Q_PROPERTY(dsdr::core::AisController *ais READ ais CONSTANT)
+    Q_PROPERTY(dsdr::core::PocsagController *pocsag READ pocsag CONSTANT)
+    Q_PROPERTY(dsdr::core::AcarsController *acars READ acars CONSTANT)
+    Q_PROPERTY(dsdr::core::VorController *vor READ vor CONSTANT)
+    Q_PROPERTY(dsdr::core::SelcalController *selcal READ selcal CONSTANT)
+    Q_PROPERTY(dsdr::core::DscController *dsc READ dsc CONSTANT)
+    Q_PROPERTY(dsdr::core::NavtexController *navtex READ navtex CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *recorder READ recorder CONSTANT)
     Q_PROPERTY(dsdr::core::IqRecorder *audioRecorder READ audioRecorder CONSTANT)
     Q_PROPERTY(bool networkAudioActive READ networkAudioActive NOTIFY networkAudioChanged)
@@ -204,6 +241,8 @@ class SessionManager : public QObject
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(bool scanning READ isScanning NOTIFY scanningChanged)
     Q_PROPERTY(QVariantList scanResults READ scanResults NOTIFY scanResultsChanged)
+    Q_PROPERTY(bool priorityScanning READ priorityScanning NOTIFY scanningChanged)
+    Q_PROPERTY(QString priorityScanState READ priorityScanState NOTIFY priorityScanStateChanged)
 
     // ── Radio viste in rete ─────────────────────────────────────────────
     //
@@ -342,8 +381,28 @@ class SessionManager : public QObject
                    NOTIFY spectrumAveragingChanged)
 
 public:
-    explicit SessionManager(QObject *parent = nullptr);
+    explicit SessionManager(QObject *parent = nullptr, std::unique_ptr<AisReceiver> aisReceiver = {},
+                            std::unique_ptr<PocsagReceiver> pocsagReceiver = {},
+                            std::unique_ptr<AcarsReceiver> acarsReceiver = {},
+                            std::unique_ptr<VorAsyncReceiver> vorReceiver = {},
+                            std::unique_ptr<SelcalReceiver> selcalReceiver = {},
+                            std::unique_ptr<DscReceiver> dscReceiver = {},
+                            std::unique_ptr<NavtexReceiver> navtexReceiver = {},
+                            std::unique_ptr<AdsbReceiver> adsbReceiver = {},
+                            std::unique_ptr<AprsReceiver> aprsReceiver = {});
     ~SessionManager() override;
+    bool shutdownPending() const noexcept { return m_shutdownPending; }
+    bool shutdownFencePassed() const noexcept { return m_shutdownFencePassed && !m_externalShutdownPending; }
+    // External optional decoders must finish before the QML window can close.
+    bool coreShutdownFencePassed() const noexcept { return m_shutdownFencePassed; }
+    bool externalShutdownPending() const noexcept { return m_externalShutdownPending; }
+    // Optional IQ consumers are attached on the engine's own thread.
+    DspEngine *dspEngineForOptionalDecoder() const noexcept { return m_engine; }
+    void setExternalShutdownPending(bool pending);
+    Q_INVOKABLE void requestShutdown();
+    Q_INVOKABLE void retryBackendShutdown();
+    QString shutdownBackendMessage() const { return m_shutdownBackendMessage; }
+    bool shutdownBackendRetryAllowed() const noexcept { return m_shutdownBackendRetryAllowed; }
 
     QVariantList availableBackends() const;
     QString backendId() const { return m_backendId; }
@@ -518,6 +577,16 @@ public:
                                            bool trigger = true);
     SpectrumFeed *txSpectrum() const;
     audio::AudioRouter *audio() const { return m_audio; }
+    IqAnalysisLab *iqAnalysis() { return &m_iqAnalysis; }
+    AdsbController *adsb() const { return m_adsb; }
+    AprsController *aprs() const { return m_aprs; }
+    AisController *ais() const { return m_ais; }
+    PocsagController *pocsag() const { return m_pocsag; }
+    AcarsController *acars() const { return m_acars; }
+    VorController *vor() const { return m_vor; }
+    SelcalController *selcal() const { return m_selcal; }
+    DscController *dsc() const { return m_dsc; }
+    NavtexController *navtex() const { return m_navtex; }
     IqRecorder *recorder() { return &m_recorder; }
     IqRecorder *audioRecorder() { return &m_audioRecorder; }
     bool networkAudioActive() const { return m_networkAudio.isActive(); }
@@ -531,6 +600,9 @@ public:
     QString statusMessage() const { return m_statusMessage; }
     bool isScanning() const { return m_scanning; }
     QVariantList scanResults() const { return m_scanResults; }
+    bool priorityScanning() const { return m_scanning && m_priorityScan; }
+    QString priorityScanState() const { return m_priorityScanState; }
+    Q_INVOKABLE qint64 currentChannelFrequency() const;
     bool rigctlRunning() const { return m_rigctlServer.isListening(); }
     int rigctlPort() const { return m_rigctlServer.serverPort(); }
 
@@ -570,6 +642,9 @@ public:
     Q_INVOKABLE bool startScan(qint64 startHz, qint64 endHz, qint64 stepHz,
                                int dwellMs = 350);
     Q_INVOKABLE void stopScan();
+    Q_INVOKABLE bool startPriorityScan(qint64 startHz, qint64 endHz, qint64 stepHz,
+                                       qint64 priorityHz, int dwellMs = 350,
+                                       double thresholdDb = -75.0);
     Q_INVOKABLE bool startRigctl(int port = 4532);
     Q_INVOKABLE void stopRigctl();
 
@@ -801,6 +876,9 @@ public:
     Q_INVOKABLE QVariant nativeCommand(const QString &command, const QVariantMap &args);
 
 signals:
+    void shutdownStateChanged();
+    // Emitted only after PTT has been released and shutdown cannot be cancelled.
+    void shutdownCommitted();
     void iqModuleNamesChanged();
     void iqModuleCatalogChanged();
     void scheduledJobsChanged();
@@ -809,6 +887,7 @@ signals:
     void discoveringChanged();
     void scanningChanged();
     void scanResultsChanged();
+    void priorityScanStateChanged();
     void rigctlChanged();
     void transmittingChanged();
     void networkRadiosChanged();
@@ -842,6 +921,9 @@ private:
     void setStatus(const QString &message);
     void setDiscovering(bool discovering);
     void teardownBackend();
+    void finishShutdownFences();
+    void finishAisShutdownIfReady();
+    void refreshBackendShutdown();
     void pushChannelToEngine(int row);
 
     /// Riporta al motore TX il canale su cui si trasmette: offset dal
@@ -885,11 +967,41 @@ private:
     DeviceListModel m_devices;
     ChannelModel m_channels;
     CapabilitiesInfo m_capabilities;
+    IqAnalysisLab m_iqAnalysis;
+    AdsbController *m_adsb = nullptr;
+    AprsReceiver *m_aprsReceiver = nullptr;
+    AprsController *m_aprs = nullptr;
+    AisReceiver *m_aisReceiver = nullptr;
+    PocsagReceiver *m_pocsagReceiver = nullptr;
+    PocsagController *m_pocsag = nullptr;
+    AcarsReceiver *m_acarsReceiver = nullptr;
+    AcarsController *m_acars = nullptr;
+    VorAsyncReceiver *m_vorReceiver = nullptr;
+    VorController *m_vor = nullptr;
+    SelcalReceiver *m_selcalReceiver = nullptr;
+    SelcalController *m_selcal = nullptr;
+    DscReceiver *m_dscReceiver = nullptr;
+    DscController *m_dsc = nullptr;
+    NavtexReceiver *m_navtexReceiver = nullptr;
+    NavtexController *m_navtex = nullptr;
+    AisController *m_ais = nullptr;
+    std::unique_ptr<DecoderShutdown> m_aisShutdown;
+    QTimer *m_aisShutdownTimer = nullptr;
+    bool m_shutdownBackendDone = false, m_aisUsersFenced = false, m_aisBackendFenced = false;
     IqRecorder m_recorder;
     IqRecorder m_audioRecorder;
     audio::NetworkAudioSink m_networkAudio;
     LanguageManager m_language;
 
+    BackendShutdownViewModel *m_backendShutdown = nullptr;
+    QString m_shutdownBackendMessage;
+    bool m_shutdownBackendRetryAllowed = false;
+    bool m_deferBackendClose = false;
+    bool m_shutdownPending = false;
+    bool m_shutdownFencePassed = false;
+    bool m_externalShutdownPending = false;
+    bool m_shutdownDspFenced = false;
+    bool m_shutdownTxFenced = false;
     DspEngine *m_engine = nullptr;
     QThread *m_dspThread = nullptr;
     TxEngine *m_tx = nullptr;
@@ -983,6 +1095,20 @@ private:
     QVariantList m_iqModuleCatalog;
     IqModuleManager m_iqModules;
     bool m_scanning = false;
+    bool m_priorityScan = false;
+    bool m_scanInternalTune = false;
+    bool m_scanProbe = false;
+    bool m_scanHolding = false;
+    bool m_scanProbeSawSignal = false;
+    bool m_scanResumeHolding = false;
+    qint64 m_scanStart = 0;
+    qint64 m_scanPriority = 0;
+    qint64 m_scanResumeFrequency = 0;
+    qint64 m_scanTunedAt = 0;
+    qint64 m_scanLastStrongAt = 0;
+    qint64 m_scanLastProbeAt = 0;
+    QElapsedTimer m_scanClock;
+    QString m_priorityScanState;
     int m_scanRow = -1;
     qint64 m_scanFrequency = 0;
     qint64 m_scanEnd = 0;

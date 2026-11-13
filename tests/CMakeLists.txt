@@ -31,3 +31,17 @@ add_subdirectory(hal)
 add_subdirectory(integration)
 add_subdirectory(qml)
 add_subdirectory(packaging)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME tst_onair_mode_inventory
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/standalone/test_onair_mode_inventory.py)
+    find_program(DSDR_TEST_POSIX_SHELL NAMES sh)
+    if(DSDR_TEST_POSIX_SHELL)
+        add_test(NAME tst_onair_package_terms
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/standalone/test_onair_terms.py)
+        set_tests_properties(tst_onair_package_terms PROPERTIES
+            ENVIRONMENT "DSDR_TEST_BUILD_DIR=${PROJECT_BINARY_DIR};DSDR_TEST_SHELL=${DSDR_TEST_POSIX_SHELL}"
+            TIMEOUT 30)
+    endif()
+endif()

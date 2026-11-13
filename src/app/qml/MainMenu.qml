@@ -14,6 +14,7 @@ import DecodiumSdr
 
 MenuBar {
     id: root
+    objectName: "mainMenu"
 
     /// Il panadattatore, per i comandi di vista.
     required property PanadapterView panadapter
@@ -24,10 +25,32 @@ MenuBar {
 
     /// Aperture richieste alla finestra: il menu non sa dove vivano quei
     /// pannelli, si limita a chiederlo.
+    signal quitRequested()
     signal sourceRequested()
     signal aboutRequested()
     signal operationsRequested()
+    signal iqAnalysisRequested()
+    signal adsbRequested()
+    signal aprsRequested()
+    signal aisRequested()
+    signal pocsagRequested()
+    signal acarsRequested()
+    signal vdl2Requested()
+    property bool vdl2Available: false
+    signal vorRequested()
+    signal selcalRequested()
+    signal dscRequested()
+    signal navtexRequested()
     signal panelSideToggled()
+
+    // Popup is hosted in the window overlay, so retry remains accessible even
+    // while the menu and main content are disabled during shutdown.
+    property BackendShutdownDialog shutdownPrompt: BackendShutdownDialog {
+        visible: Session.shutdownPending && !Session.shutdownFencePassed
+        statusText: Session.shutdownBackendMessage || qsTr("Arresto della radio in corso.")
+        retryAllowed: Session.shutdownBackendRetryAllowed
+        onRetryRequested: Session.retryBackendShutdown()
+    }
 
     background: Rectangle {
         color: Theme.surface
@@ -122,7 +145,7 @@ MenuBar {
 
         MenuItem {
             text: qsTr("Esci")
-            onTriggered: Qt.quit()
+            onTriggered: root.quitRequested()
         }
     }
 
@@ -179,6 +202,63 @@ MenuBar {
         }
 
         MenuSeparator {}
+
+        MenuItem {
+            text: qsTr("Laboratorio registrazioni IQ…")
+            onTriggered: root.iqAnalysisRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione ADS-B sperimentale…")
+            onTriggered: root.adsbRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione APRS sperimentale…")
+            onTriggered: root.aprsRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione AIS sperimentale…")
+            onTriggered: root.aisRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione POCSAG sperimentale…")
+            onTriggered: root.pocsagRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione ACARS sperimentale…")
+            onTriggered: root.acarsRequested()
+        }
+
+        MenuItem {
+            objectName: "vdl2MenuItem"
+            enabled: root.vdl2Available
+            text: root.vdl2Available ? qsTr("Ricezione VDL2 sperimentale…") : qsTr("VDL2 non incluso in questa build")
+            onTriggered: root.vdl2Requested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione VOR sperimentale…")
+            onTriggered: root.vorRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione SELCAL sperimentale…")
+            onTriggered: root.selcalRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione DSC sperimentale…")
+            onTriggered: root.dscRequested()
+        }
+
+        MenuItem {
+            text: qsTr("Ricezione NAVTEX sperimentale…")
+            onTriggered: root.navtexRequested()
+        }
 
         MenuItem {
             text: qsTr("Scheduler e moduli IQ…")

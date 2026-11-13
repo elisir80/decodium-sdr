@@ -3,6 +3,8 @@
 
 set(DSDR_HAL_SOURCES
     HalLog.h
+    IqFileReader.h
+    backends/iqfile/IqFileReader.cpp
     Frames.h
     DeviceDescriptor.h
     BackendCapabilities.h
@@ -68,7 +70,6 @@ if(DSDR_BACKEND_IQFILE)
     # QFile. Il backend resta compilabile anche dove non c'è alcun hardware.
     list(APPEND DSDR_HAL_SOURCES
         backends/iqfile/IqFileReader.h
-        backends/iqfile/IqFileReader.cpp
         backends/iqfile/IqFileWorker.h
         backends/iqfile/IqFileWorker.cpp
         backends/iqfile/IqFileBackend.h

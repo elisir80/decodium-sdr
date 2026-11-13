@@ -10,8 +10,18 @@
 #pragma once
 
 #include "core/IqRecorder.h"
+#include "core/AdsbReceiver.h"
+#include "core/AprsReceiver.h"
+#include "core/AisEngineTap.h"
+#include "core/PocsagReceiver.h"
+#include "core/AcarsReceiver.h"
+#include "core/VorEngineTap.h"
+#include "core/SelcalReceiver.h"
+#include "core/DscReceiver.h"
+#include "core/NavtexReceiver.h"
 #include "audio/NetworkAudioSink.h"
 #include "core/IqModuleApi.h"
+#include "core/RawIqTap.h"
 #include "core/SpectrumFeed.h"
 #include "dsp/ChannelProcessor.h"
 #include "dsp/ComplexFir.h"
@@ -39,11 +49,46 @@ class DspEngine : public QObject
     Q_OBJECT
 
 public:
-    explicit DspEngine(QObject *parent = nullptr);
+    explicit DspEngine(QObject *parent = nullptr, std::unique_ptr<AprsReceiver> aprs = {}, AdsbReceiver *externalAdsb = nullptr, AprsReceiver *externalAprs = nullptr);
     ~DspEngine() override;
 
     /// Ring dell'audio mixato, letto dall'AudioRouter (consumatore unico).
     dsp::SpscRing<float> *audioRing() const noexcept { return m_audioRing.get(); }
+
+    AdsbReceiver *adsbReceiver() noexcept { return m_adsbReceiver.load(std::memory_order_acquire); }
+    // Only after all DSP and backend users have been fenced.
+    void clearAdsbReceiver() noexcept { m_adsbReceiver.store(nullptr, std::memory_order_release); }
+    AprsReceiver *aprsReceiver() noexcept { return m_aprsReceiver; }
+    // Only after DSP and backend producers are fenced. Keep an inert receiver
+    // for late engine teardown operations while the external worker is joined.
+    void replaceExternalAprsAfterFence();
+    // Attach before DSP/backend start; detach only after backend and DSP fence.
+    void attachPocsagReceiver(PocsagReceiver *receiver) noexcept { m_pocsagReceiver.store(receiver); }
+    void attachAcarsReceiver(AcarsReceiver *receiver) noexcept { m_acarsReceiver.store(receiver); }
+    void attachSelcalReceiver(SelcalReceiver *receiver) noexcept { m_selcalReceiver.store(receiver); }
+    void attachDscReceiver(DscReceiver *receiver) noexcept { m_dscReceiver.store(receiver); }
+    void attachNavtexReceiver(NavtexReceiver *receiver) noexcept { m_navtexReceiver.store(receiver); }
+    // Only change this pointer after the DSP/backend producer is fenced.
+    void attachRawIqTap(RawIqTap* tap) noexcept { m_rawIqTap.store(tap,std::memory_order_release); }
+    bool tryAttachRawIqTap(RawIqTap* tap) noexcept {
+        if(!tap) return false;
+        RawIqTap* empty=nullptr;
+        return m_rawIqTap.compare_exchange_strong(empty,tap,std::memory_order_acq_rel);
+    }
+    bool detachRawIqTap(RawIqTap* tap) noexcept {
+        return tap && m_rawIqTap.compare_exchange_strong(tap,nullptr,std::memory_order_acq_rel);
+    }
+    bool hasRawIqTap() const noexcept { return m_rawIqTap.load(std::memory_order_acquire)!=nullptr; }
+    PocsagReceiver *pocsagReceiver() noexcept { return m_pocsagReceiver.load(); }
+    // Attach before starting the DSP thread; detach tap on that thread during shutdown.
+    void attachAisReceiver(AisReceiver *receiver);
+    void detachAisTap() noexcept;
+    void clearAisReceiver() noexcept { m_aisReceiver.store(nullptr); }
+    void setAisFrequency(qint64 hz) noexcept;
+    void attachVorReceiver(VorAsyncReceiver *receiver);
+    void detachVorTap() noexcept;
+    void clearVorReceiver() noexcept { m_vorReceiver.store(nullptr); }
+    void setVorConfiguration(bool enabled,qint64 hz) noexcept;
 
     SpectrumFeed *spectrumFeed() const noexcept { return m_spectrum; }
 
@@ -194,6 +239,8 @@ public slots:
     void setFftSize(int size);
 
 signals:
+    // Marker delivered after earlier queued DSP work.
+    void shutdownFenceReached();
     /// Misure per la UI, aggregate: un'emissione per blocco, non per campione.
     void metersUpdated(dsdr::ChannelId id, float signalDb, float noiseFloorDb,
                        float snrDb, float audioLevelDb, float agcGainDb);
@@ -292,8 +339,11 @@ private:
     std::atomic<bool> m_sourceIsAudio{false};
     std::atomic<int> m_sideband{static_cast<int>(Sideband::Upper)};
     std::atomic<double> m_sourceRate{0.0};
+    std::atomic<RawIqTap*> m_rawIqTap{nullptr};
+    std::uint64_t m_rawIqTapEpoch=0;
     std::atomic<qint64> m_centerHz{0};
     std::atomic<bool> m_needsReconfigure{true};
+    std::atomic<std::uint64_t> m_sourceEpoch{0};
     std::atomic<IqRecorder *> m_recorder{nullptr};
     std::atomic<IqRecorder *> m_audioRecorder{nullptr};
     std::atomic<audio::NetworkAudioSink *> m_networkAudioSink{nullptr};
@@ -311,6 +361,8 @@ private:
     std::atomic<double> m_nbThreshold{4.0};
     std::atomic<float> m_nbActivity{0.0f};
 
+    std::unique_ptr<AdsbReceiver> m_ownedAdsb;
+    std::atomic<AdsbReceiver *> m_adsbReceiver{nullptr};
     double m_activeRate = 0.0;
     // Il produttore IQ/audio e il thread DSP sono diversi. Questa guardia
     // atomica coalesca le notifiche nel loro punto d'ingresso: limitare solo
@@ -318,6 +370,10 @@ private:
     // coda per addChannel, filtri o moduli IQ sulle macchine ARM lente.
     std::atomic_bool m_processEventPending{false};
     std::atomic<quint64> m_pendingDroppedFrames{0};
+    // DSP-thread-only absolute float position: APRS must ignore every block
+    // touching data buffered when an upstream IQ loss was observed.
+    std::uint64_t m_aprsUnsafeUntil = 0;
+    std::uint64_t m_aprsFenceEpoch = 0;
     // Una sorgente nuova parte senza canali mentre SessionManager completa la
     // connessione. I primi frame non vanno consumati in quel breve intervallo:
     // il loro spettro sarebbe calcolato, ma audio e moduli non esisterebbero
@@ -347,6 +403,29 @@ private:
 
     // unordered_map e non QHash: Channel possiede un ChannelProcessor via
     // unique_ptr ed è solo movable, mentre i contenitori Qt richiedono la copia.
+    std::atomic<AisReceiver *> m_aisReceiver{nullptr};
+    std::atomic<PocsagReceiver *> m_pocsagReceiver{nullptr};
+    std::atomic<AcarsReceiver *> m_acarsReceiver{nullptr};
+    std::atomic<SelcalReceiver *> m_selcalReceiver{nullptr};
+    std::atomic<DscReceiver *> m_dscReceiver{nullptr};
+    std::atomic<NavtexReceiver *> m_navtexReceiver{nullptr};
+    std::atomic<VorAsyncReceiver *> m_vorReceiver{nullptr};
+    std::unique_ptr<VorEngineTap> m_vorTap;
+    std::atomic<bool> m_vorEnabled{false};
+    std::atomic<qint64> m_vorFrequency{0};
+    std::atomic<std::uint64_t> m_vorRevision{1};
+    std::uint64_t m_vorConfiguredRevision=0;
+    bool m_vorConfigured=false;
+    std::array<dsp::Complex, 1024> m_pocsagIq{};
+    std::unique_ptr<AisEngineTap> m_aisTap;
+    std::atomic<qint64> m_aisFrequency{161975000};
+    std::atomic<std::uint64_t> m_aisRevision{1};
+    std::uint64_t m_aisConfiguredRevision = 0;
+    bool m_aisConfigured = false;
+    std::atomic<unsigned> m_aprsSourceChanges{0};
+    std::unique_ptr<AprsReceiver> m_ownedAprs;
+    AprsReceiver *m_aprsReceiver = nullptr;
+    std::array<dsp::Complex, 4096> m_aprsStereo{};
     std::unordered_map<ChannelId, Channel> m_channels;
 
     dsp::TimeShiftBuffer m_history;     ///< gli ultimi secondi di banda

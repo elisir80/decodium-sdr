@@ -1,0 +1,159 @@
+diff --git a/src/core/VorEngineTap.h b/src/core/VorEngineTap.h
+new file mode 100644
+--- /dev/null
++++ b/src/core/VorEngineTap.h
+@@ -0,0 +1,31 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "core/VorAsyncReceiver.h"
++#include <array>
++#include <complex>
++#include <cstddef>
++#include <cstdint>
++namespace dsdr::core {
++// Engine-thread only. The owner must quiesce the producer before detaching or
++// changing configuration and must keep the receiver alive until then.
++class VorEngineTap final {
++public:
++    explicit VorEngineTap(VorAsyncReceiver& receiver) : m_receiver(receiver) {}
++    // Raw complex input, integer 48 kHz multiples, at least 96 kHz. Tune is
++    // relative to source centre. Retains approximately +/- 12 kHz at output.
++    bool configure(unsigned inputRate, double tuneHz);
++    void reset() noexcept;
++    void process(const dsp::Complex* samples, std::size_t count) noexcept;
++    std::uint64_t submitted() const noexcept { return m_submitted; }
++private:
++    static constexpr std::size_t taps=193, chunk=512;
++    VorAsyncReceiver& m_receiver;
++    std::array<float,taps> m_coeff{};
++    std::array<std::complex<float>,taps> m_ring{};
++    std::array<std::complex<float>,chunk> m_output{};
++    unsigned m_rate=0,m_decimation=0,m_phase=0;
++    std::size_t m_pos=0,m_out=0;
++    double m_osc=0,m_step=0;
++    std::uint64_t m_submitted=0;
++};
++}
+diff --git a/src/core/VorEngineTap.cpp b/src/core/VorEngineTap.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/core/VorEngineTap.cpp
+@@ -0,0 +1,37 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "core/VorEngineTap.h"
++#include <cmath>
++namespace dsdr::core {
++namespace { constexpr double pi=3.14159265358979323846; }
++bool VorEngineTap::configure(unsigned rate,double tune) {
++    m_rate=0;
++    if(rate<96000 || rate>384000 || rate%48000 || !std::isfinite(tune) || std::abs(tune)+15000>=rate/2.) return false;
++    m_rate=rate; m_decimation=rate/48000; m_step=2*pi*tune/rate;
++    // Blackman FIR, 14 kHz cutoff; unity DC gain.
++    double sum=0;
++    for(std::size_t i=0;i<taps;++i) {
++        const double k=double(i)-double(taps-1)/2;
++        const double h=k==0 ? 28000./rate : std::sin(2*pi*14000*k/rate)/(pi*k);
++        const double w=.42-.5*std::cos(2*pi*i/(taps-1))+.08*std::cos(4*pi*i/(taps-1));
++        m_coeff[i]=float(h*w); sum+=m_coeff[i];
++    }
++    for(auto& c:m_coeff) c=float(c/sum);
++    reset(); return true;
++}
++void VorEngineTap::reset() noexcept {
++    m_ring.fill({}); m_pos=m_out=m_phase=0; m_osc=0; m_receiver.discontinuity();
++}
++void VorEngineTap::process(const dsp::Complex* samples,std::size_t count) noexcept {
++    if(!m_rate || !samples) return;
++    for(std::size_t n=0;n<count;++n) {
++        m_ring[m_pos]=samples[n]*dsp::Complex(float(std::cos(m_osc)),float(-std::sin(m_osc)));
++        m_osc+=m_step; if(m_osc>pi) m_osc-=2*pi; else if(m_osc < -pi) m_osc+=2*pi;
++        m_pos=(m_pos+1)%taps;
++        if(++m_phase<m_decimation) continue;
++        m_phase=0; dsp::Complex sum{}; std::size_t pos=m_pos;
++        for(std::size_t j=0;j<taps;++j) { pos=pos?pos-1:taps-1; sum+=m_ring[pos]*m_coeff[j]; }
++        m_output[m_out++]=sum;
++        if(m_out==chunk) { auto result=m_receiver.submitIq(m_output.data(),m_out); if(result==AsyncIqDecoder::SubmitResult::Accepted) ++m_submitted; m_out=0; }
++    }
++}
++}
+diff --git a/tests/standalone/vor_engine/CMakeLists.txt b/tests/standalone/vor_engine/CMakeLists.txt
+new file mode 100644
+--- /dev/null
++++ b/tests/standalone/vor_engine/CMakeLists.txt
+@@ -0,0 +1,5 @@
++cmake_minimum_required(VERSION 3.20)
++project(vor_engine_test LANGUAGES CXX)
++set(CMAKE_CXX_STANDARD 17)
++add_executable(vor_engine_test test.cpp ../../../src/core/VorEngineTap.cpp ../../../src/core/VorAsyncReceiver.cpp ../../../src/core/AsyncIqDecoder.cpp ../../../src/dsp/VorReceiver.cpp)
++target_include_directories(vor_engine_test PRIVATE ../../../src)
+diff --git a/tests/standalone/vor_engine/test.cpp b/tests/standalone/vor_engine/test.cpp
+new file mode 100644
+--- /dev/null
++++ b/tests/standalone/vor_engine/test.cpp
+@@ -0,0 +1,46 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "core/VorEngineTap.h"
++#include <algorithm>
++#include <chrono>
++#include <cmath>
++#include <complex>
++#include <cstdlib>
++#include <iostream>
++#include <thread>
++#include <vector>
++using namespace dsdr;
++constexpr double pi=3.14159265358979323846;
++void check(bool b,const char* s) { if(!b) {std::cerr<<"FAIL "<<s<<'\n';std::exit(1);} }
++std::vector<dsp::Complex> signal(double rate,double radial,double offset,bool vor) {
++ std::vector<dsp::Complex> x; x.reserve(std::size_t(rate*3));
++ for(int i=0;i<int(rate*3);++i) { double t=i/rate;
++  double a=vor?1+.3*std::cos(2*pi*30*t-radial*pi/180)+.3*std::cos(2*pi*9960*t+16*std::sin(2*pi*30*t)):1.;
++  x.emplace_back(float(a*std::cos(2*pi*offset*t)),float(a*std::sin(2*pi*offset*t)));
++ } return x;
++}
++void feed(core::VorEngineTap& tap,const std::vector<dsp::Complex>& v,std::size_t size) {
++ for(std::size_t i=0;i<v.size();) {auto n=std::min(size,v.size()-i);tap.process(v.data()+i,n);i+=n;}
++}
++bool wait(core::VorAsyncReceiver& r,core::VorAsyncReceiver::Result& out) {
++ auto limit=std::chrono::steady_clock::now()+std::chrono::seconds(5);
++ do { if(r.read(out)) return true; std::this_thread::sleep_for(std::chrono::milliseconds(2)); } while(std::chrono::steady_clock::now()<limit); return false;
++}
++int main() {
++ for(unsigned rate:{96000u,192000u,384000u}) for(double az:{0.,90.,270.}) {
++  core::VorAsyncReceiver rx(1024,512); check(rx.configure(core::VorAsyncReceiver::Input::FilteredIq,48000) && rx.start(),"rx start");
++  core::VorEngineTap tap(rx); check(tap.configure(rate,7000),"tap configure");
++  auto input=signal(rate,az,7000,true); const auto original=input;
++  // A: branch not called; B: same input with branch enabled.
++  core::VorAsyncReceiver::Result result;
++  check(tap.submitted()==0 && !rx.read(result),"disabled branch");
++  feed(tap,input,317); check(input==original,"source unchanged");
++  check(wait(rx,result) && result.value.valid,"valid");
++  if(std::abs(std::remainder(result.value.radialDegrees-az,360.))>3) { std::cerr<<rate<<' '<<az<<' '<<result.value.radialDegrees<<'\n'; check(false,"angle"); }
++  tap.reset(); check(!rx.read(result),"discontinuity");
++  auto carrier=signal(rate,az,7000,false); feed(tap,carrier,1021); check(wait(rx,result) && !result.value.valid,"carrier negative");
++  rx.stop();
++ }
++ core::VorAsyncReceiver rx; core::VorEngineTap tap(rx);
++ check(!tap.configure(48000,0) && !tap.configure(100000,0) && !tap.configure(192000,90000),"invalid config");
++ std::cout<<"VOR raw IQ front end 9 rate/angle cases, carrier and discontinuity passed\n";
++}
+diff --git a/docs/decoders/vor-engine-candidate.md b/docs/decoders/vor-engine-candidate.md
+new file mode 100644
+--- /dev/null
++++ b/docs/decoders/vor-engine-candidate.md
+@@ -0,0 +1,15 @@
++# VOR engine integration candidate — not applied
++
++The isolated `VorEngineTap` takes raw IQ before `DspEngine::processAvailable`'s channel processing, translates a configured offset to DC, low-pass filters and decimates 96/192/288/384 ksample/s to complex 48 ksample/s, then feeds `VorAsyncReceiver::FilteredIq`. The FIR is 193 taps, Blackman window, nominal 14 kHz cutoff. In this candidate it must be constructed, configured, reset and called exclusively on the producer/engine thread; the receiver must already be configured for filtered IQ at 48 kHz and running. This is an experimental front end; the filter rejection curve, transitions and system throughput are not measured.
++
++The existing `ChannelProcessor::lastBaseband()` is not a suitable universal VOR source: `configureForMode()` sets the non-wide-FM decimator passband to 8 kHz, below the 9960 Hz subcarrier. Normal output audio is post-demodulation/AGC/filtering and is not a guaranteed VOR composite. Source selection must therefore be explicit: raw IQ of a backend with a supported sample rate, known centre and a chosen VOR frequency offset. The current tap handles raw IQ only, not the audio-source backend, replay, other sample rates or live reconfiguration. The test synthesizes a beacon at +7 kHz in that input.
++
++The engine hookup is intentionally **not yet specified as a safe applicable change**. Before writing it, coordinate with the owner of DspEngine and prove these invariants: opt-in branch and explicit channel/tuning; suppress on audio source or incompatible rate; tune/source/reconnect/centre changes and dropped input invalidate results immediately and reset FIR/decoder before new samples; no stale queued block crosses generations; no producer accesses the tap during configure/detach/destruction; join happens off DSP and UI threads after producer and controller users are quiescent; stop never outlives its source or receiver. An IQ frame drop may be notified separately from already-buffered samples, so resetting at an assumed boundary alone is not sufficient proof. No DspEngine, SessionManager, Main or shared CMake changes are included in this candidate. The existing controller and dialog are not connected.
++
++`tests/standalone/vor_engine/test.cpp` runs a test harness of the proposed raw-IQ branch, **not DspEngine**. It checks no output with the tap uncalled and, on the same unmodified IQ input, successful decode with the branch called: three rates, three angles, +7 kHz offset, 317-sample chunks, a carrier-only negative and reset. The generated carrier has no noise or other station; this does not demonstrate channel rejection or real RF. It also does not test source changes during an active engine dispatch, actual engine audio equivalence, GUI wiring, shutdown ordering, or throughput. More work and real engine A/B tests are required before presenting this as application integration.
++
++```sh
++DSDR_TEST_SILENT_AUDIO=1 cmake -S tests/standalone/vor_engine -B build/vor-engine-check
++DSDR_TEST_SILENT_AUDIO=1 cmake --build build/vor-engine-check -j 4
++DSDR_TEST_SILENT_AUDIO=1 build/vor-engine-check/vor_engine_test
++```
