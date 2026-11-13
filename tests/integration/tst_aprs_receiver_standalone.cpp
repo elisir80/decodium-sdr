@@ -30,7 +30,8 @@ template<typename F> void waitFor(F f) {
 }
 std::vector<dsdr::dsp::Complex> stereo(const std::vector<float>& samples) {
     std::vector<dsdr::dsp::Complex> result; result.reserve(samples.size());
-    for (float x : samples) result.emplace_back(x*1.5f, x*0.5f); return result;
+    for (float x : samples) result.emplace_back(x*1.5f, x*0.5f);
+    return result;
 }
 void submit(AprsReceiver &r, int id, const std::vector<dsdr::dsp::Complex> &v) {
     assert(r.submit(id,v.data(),v.size())==R::Accepted);

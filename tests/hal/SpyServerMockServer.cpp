@@ -9,6 +9,7 @@
 #include <QtEndian>
 
 #include <cmath>
+#include <cstring>
 
 namespace dsdr::test {
 
@@ -144,8 +145,10 @@ void SpyServerMockServer::onClientData()
             m_helloReceived = true;
             sendDeviceInfo();
         } else if (command == static_cast<quint32>(Command::SetSetting) && body.size() >= 8) {
-            const quint32 setting = qFromLittleEndian<quint32>(body.constData());
-            const quint32 value = qFromLittleEndian<quint32>(body.constData() + 4);
+            char settingBytes[8];
+            std::memcpy(settingBytes, body.constData(), sizeof(settingBytes));
+            const quint32 setting = qFromLittleEndian<quint32>(settingBytes);
+            const quint32 value = qFromLittleEndian<quint32>(settingBytes + 4);
             ++m_settingCount;
 
             if (setting == static_cast<quint32>(Setting::IqFrequency))
